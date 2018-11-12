@@ -46,8 +46,7 @@ impl fmt::Display for Chunk {
     }
 }
 
-pub struct Chunker<'a, S: 'a, H> {
-    source: &'a mut S,
+pub struct Chunker<H> {
     hasher: H,
     buzhash: BuzHash,
     mask: u32,
@@ -60,26 +59,15 @@ pub struct Chunker<'a, S: 'a, H> {
     max_chunk_size: usize,
 }
 
-impl<'a, S, H> Chunker<'a, S, H>
+impl<H> Chunker<H>
 where
     H: Digest,
-    S: Read,
 {
-    pub fn new(
-        source: &'a mut S,
-        mask_bits: u32,
-        read_buf_size: usize,
-        buzhash: BuzHash,
-        hasher: H,
-        min_chunk_size: usize,
-        max_chunk_size: usize,
-    ) -> Self
+    pub fn new(mask_bits: u32, read_buf_size: usize, buzhash: BuzHash, hasher: H) -> Self
     where
         H: Digest,
-        S: Read,
     {
         Chunker {
-            source: source,
             buzhash: buzhash,
             buf: vec![0; read_buf_size],
             buf_index: 0,
@@ -88,28 +76,23 @@ where
             chunk_start: 0,
             mask: 2u32.pow(mask_bits) - 1,
             hasher: hasher,
-            min_chunk_size: min_chunk_size,
-            max_chunk_size: max_chunk_size,
+            min_chunk_size: 8 * 1024,
+            max_chunk_size: 1024 * 1024 * 8,
         }
     }
-}
 
-impl<'a, S, H> Iterator for Chunker<'a, S, H>
-where
-    S: Read,
-    H: Digest,
-{
-    type Item = Chunk;
-
-    fn next(&mut self) -> Option<Chunk> {
+    pub fn scan<T>(&mut self, source: &mut T) -> io::Result<(Option<Chunk>)>
+    where
+        T: Read,
+    {
         loop {
             if self.buf_index >= self.buf_size {
                 // Re-fill buffer from source
-                self.buf_size = fill_buf(self.source, &mut self.buf).expect("source error");
+                self.buf_size = fill_buf(source, &mut self.buf)?;
                 self.buf_index = 0;
 
                 if self.buf_size == 0 && self.chunk_start == self.source_index {
-                    return None;
+                    return Ok(None);
                 }
             }
 
@@ -119,18 +102,15 @@ where
 
             if self.buf_size == 0 {
                 // EOF - Report chunk
-                self.chunk_start = chunk_end;
-                return Some(Chunk {
+                self.chunk_start = self.source_index;
+                return Ok(Some(Chunk {
                     offset: chunk_start,
                     length: chunk_length,
                     hash: self.hasher.result_reset().to_vec(),
-                });
+                }));
             }
 
             let val = self.buf[self.buf_index];
-
-            self.buf_index += 1;
-            self.source_index += 1;
 
             self.hasher.input(&[val]);
             self.buzhash.input(val);
@@ -138,17 +118,17 @@ where
                 let hash = self.buzhash.sum();
                 if (hash & self.mask) == 0 || chunk_length >= self.max_chunk_size {
                     // Match or big chunk - Report it
-                    self.chunk_start = chunk_end;
-                    let strong_hash = self.hasher.result_reset();
-
-                    let chunk = Chunk {
+                    self.chunk_start = self.source_index;
+                    return Ok(Some(Chunk {
                         offset: chunk_start,
                         length: chunk_length,
-                        hash: strong_hash.to_vec(),
-                    };
-                    return Some(chunk);
+                        hash: self.hasher.result_reset().to_vec(),
+                    }));
                 }
             }
+
+            self.buf_index += 1;
+            self.source_index += 1;
         }
     }
 }
