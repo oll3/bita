@@ -1,0 +1,11 @@
+[package]
+name = "bita"
+version = "0.1.0"
+authors = ["Olle Sandberg <olle@b3rg.se>"]
+
+[dependencies]
+getopts = "0.2"
+sha2 = "*"
+serde = "*"
+serde_derive = "*"
+bincode = "*"
