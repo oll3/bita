@@ -5,6 +5,11 @@ extern crate serde;
 extern crate serde_derive;
 extern crate sha2;
 
+mod buzhash;
+mod buzhash2;
+mod chunker;
+mod rolling_hasher;
+
 use bincode::serialize_into;
 use getopts::Options;
 use sha2::{Digest, Sha512};
@@ -15,6 +20,10 @@ use std::fs::OpenOptions;
 use std::io;
 use std::io::prelude::*;
 use std::process;
+
+use buzhash::BuzHash;
+use buzhash2::BuzHash2;
+use chunker::*;
 
 #[derive(Debug)]
 struct Config {
@@ -278,12 +287,56 @@ fn main() {
     if let Some(source) = &config.src {
         let mut src_file = File::open(&source).expect(&format!("failed to open file ({})", source));
         signature = generate_signature(&config, hasher, &mut src_file).expect("generate signature");
+        serialize_into(output_file, &signature).expect("serialize");
     } else {
         // Read from stdin
         let stdin = io::stdin();
         let mut src_file = stdin.lock();
-        signature = generate_signature(&config, hasher, &mut src_file).expect("generate signature");
-    }
 
-    serialize_into(output_file, &signature).expect("serialize");
+        let mut rolling_hash = BuzHash2::new(32);
+        let mut chunker = Chunker::new(0xfffff, 1024 * 1024, rolling_hash, hasher);
+        let mut size_array = Vec::new();
+        let mut unique_chunks: HashMap<Vec<u8>, Vec<usize>> = HashMap::new();
+        loop {
+            if let Some(chunk) = chunker.scan(&mut src_file).expect("scan") {
+                println!("Got chunk {}", chunk);
+                size_array.push(chunk.length as u64);
+                match unique_chunks.entry(chunk.hash) {
+                    Entry::Occupied(o) => {
+                        (*o.into_mut()).push(chunk.length);
+                    }
+                    Entry::Vacant(v) => {
+                        v.insert(vec![chunk.length]);
+                    }
+                }
+            } else {
+                break;
+            }
+        }
+        println!("Chunking done!");
+        let tot_size: u64 = size_array.iter().sum();
+        let tot_single_size: usize = unique_chunks
+            .iter()
+            .filter(|(_, v)| (**v).len() == 1)
+            .map(|(_, v)| v[0])
+            .sum();
+        let tot_repeated_size: usize = unique_chunks
+            .iter()
+            .filter(|(_, v)| (**v).len() > 1)
+            .map(|(_, v)| {
+                let s: usize = v.iter().sum();
+                s
+            }).sum();
+
+        println!(
+            "Chunks: {},  avg size: {}, unique: {}, total singles size: {}, total repeated size: {}",
+            size_array.len(),
+            size_to_str(&((tot_size / size_array.len() as u64) as usize)),
+            unique_chunks.len(),
+            size_to_str(&tot_single_size),
+            size_to_str(&tot_repeated_size)
+        );
+
+        //signature = generate_signature(&config, hasher, &mut src_file).expect("generate signature");
+    }
 }
