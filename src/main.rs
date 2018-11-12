@@ -291,25 +291,31 @@ fn main() {
         let mut src_file = stdin.lock();
 
         let mut buzhash = BuzHash::new(32, 0x10324195);
-        let mut chunker = Chunker::new(16, 1024 * 1024, buzhash, hasher);
+        let mut chunker = Chunker::new(
+            &mut src_file,
+            16,
+            1024 * 1024,
+            buzhash,
+            hasher,
+            8 * 1024,
+            8 * 1024 * 1024,
+        );
         let mut size_array = Vec::new();
         let mut unique_chunks: HashMap<Vec<u8>, Vec<usize>> = HashMap::new();
-        loop {
-            if let Some(chunk) = chunker.scan(&mut src_file).expect("scan") {
-                println!("Got chunk {}", chunk);
-                size_array.push(chunk.length as u64);
-                match unique_chunks.entry(chunk.hash) {
-                    Entry::Occupied(o) => {
-                        (*o.into_mut()).push(chunk.length);
-                    }
-                    Entry::Vacant(v) => {
-                        v.insert(vec![chunk.length]);
-                    }
+
+        for chunk in chunker {
+            println!("Got chunk {}", chunk);
+            size_array.push(chunk.length as u64);
+            match unique_chunks.entry(chunk.hash) {
+                Entry::Occupied(o) => {
+                    (*o.into_mut()).push(chunk.length);
                 }
-            } else {
-                break;
+                Entry::Vacant(v) => {
+                    v.insert(vec![chunk.length]);
+                }
             }
         }
+
         println!("Chunking done!");
         let tot_size: u64 = size_array.iter().sum();
         let tot_single_size: usize = unique_chunks
