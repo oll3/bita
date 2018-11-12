@@ -3,10 +3,14 @@ extern crate getopts;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
+extern crate deflate;
+extern crate num_cpus;
 extern crate sha2;
+extern crate threadpool;
 
 mod buzhash;
 mod chunker;
+mod ordered_mpsc;
 
 use bincode::serialize_into;
 use getopts::Options;
@@ -19,9 +23,14 @@ use std::fs::OpenOptions;
 use std::io;
 use std::io::prelude::*;
 use std::process;
+use std::sync::mpsc::{channel, Receiver, Sender};
+use threadpool::ThreadPool;
+
+use deflate::{deflate_bytes_conf, Compression};
 
 use buzhash::BuzHash;
 use chunker::*;
+use ordered_mpsc::OrderedMPSC;
 
 #[derive(Debug)]
 struct Config {
@@ -136,227 +145,225 @@ fn size_to_str(size: &usize) -> String {
     }
 }
 
-// Fill buffer with data from file, or until eof.
-fn fill_buf<T>(file: &mut T, buf: &mut Vec<u8>) -> io::Result<usize>
+#[derive(Debug, Clone)]
+struct HashedChunk {
+    hash: Vec<u8>,
+    chunk: Chunk,
+}
+
+#[derive(Debug, Clone)]
+struct CompressedChunk {
+    hash: Vec<u8>,
+    chunk: Chunk,
+    cdata: Vec<u8>,
+}
+
+#[derive(Debug, Clone)]
+struct ChunkDesc {
+    offset: usize,
+    size: usize,
+    hash: Vec<u8>,
+}
+
+// Calculate a strong hash on every chunk and forward each chunk
+// Returns an array of chunk index.
+fn chunk_and_hash<T, F, H>(
+    src: &mut T,
+    mut chunker: Chunker,
+    hash_chunk: H,
+    pool: &ThreadPool,
+    mut result: F,
+) -> io::Result<(Vec<ChunkDesc>)>
 where
     T: Read,
+    F: FnMut(HashedChunk),
+    H: Fn(&[u8]) -> Vec<u8> + Send + 'static + Copy,
 {
-    let mut read_size = 0;
-    let buf_size = buf.len();
-    while read_size < buf_size {
-        let rc = file.read(&mut buf[read_size..buf_size])?;
-        if rc == 0 {
-            break;
-        } else {
-            read_size += rc;
-        }
-    }
-    return Ok(read_size);
+    let mut chunks: Vec<ChunkDesc> = Vec::new();
+    let mut chunk_channel = OrderedMPSC::new();
+    chunker
+        .scan(src, |chunk| {
+            // For each chunk in file
+            println!("Got chunk (offset: {})", chunk.offset);
+            let chunk = chunk.clone();
+            let chunk_tx = chunk_channel.new_tx();
+            pool.execute(move || {
+                chunk_tx
+                    .send(HashedChunk {
+                        hash: hash_chunk(&chunk.data),
+                        chunk: chunk,
+                    })
+                    .expect("chunk_tx");
+            });
+
+            chunk_channel.rx().try_iter().for_each(|hashed_chunk| {
+                result(hashed_chunk);
+            });
+        })
+        .expect("chunker");
+
+    // Wait for threads to be done
+    pool.join();
+
+    // Forward the last hashed chunks
+    chunk_channel.rx().try_iter().for_each(|hashed_chunk| {
+        result(hashed_chunk);
+    });
+    Ok(chunks)
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
-struct Block {
-    size: u16,
-    hash: Vec<u8>,
-}
-
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
-struct Signature {
-    // Point to a block by index
-    index_to_block: Vec<u32>,
-
-    // Block hash and block size
-    block_hash: Vec<Block>,
-}
-
-struct BlockDesc {
-    offset: usize,
-    size: u16,
-    hash: Vec<u8>,
-}
-
-struct SignatureDigest<H> {
-    truncate_hash: usize,
-    hasher: H,
-    block_feed_index: usize,
-    block_offset: usize,
-
-    index_to_block: Vec<usize>,
-    hash_to_block: HashMap<Vec<u8>, usize>,
-    blocks: Vec<BlockDesc>,
-
-    // Some stats
-    block_dup: Vec<usize>,
-    block_total_dup: usize,
-    block_dedup_size: usize,
-}
-
-impl<H> SignatureDigest<H>
+// Iterate only unique chunks of a source
+fn unique_chunks<T, F, H>(
+    src: &mut T,
+    chunker: Chunker,
+    hash_chunk: H,
+    pool: &ThreadPool,
+    mut result: F,
+) -> io::Result<Vec<ChunkDesc>>
 where
-    H: sha2::Digest,
+    T: Read,
+    F: FnMut(HashedChunk),
+    H: Fn(&[u8]) -> Vec<u8> + Send + 'static + Copy,
 {
-    fn new(hasher: H, truncate_hash: usize) -> Self {
-        SignatureDigest {
-            truncate_hash: truncate_hash,
-            hasher: hasher,
-            block_feed_index: 0,
-            block_offset: 0,
-            block_dup: Vec::new(),
-            block_total_dup: 0,
-            block_dedup_size: 0,
-
-            index_to_block: Vec::new(),
-            hash_to_block: HashMap::new(),
-            blocks: Vec::new(),
-        }
-    }
-
-    fn feed_block(&mut self, block: &[u8]) {
-        // Hash the block data
-        self.hasher.input(block);
-        let mut block_hash = self.hasher.result_reset().to_vec();
-        block_hash.truncate(self.truncate_hash);
-
-        match self.hash_to_block.entry(block_hash) {
+    let mut chunk_map: HashMap<Vec<u8>, usize> = HashMap::new();
+    return chunk_and_hash(
+        src,
+        chunker,
+        hash_chunk,
+        pool,
+        |hashed_chunk| match chunk_map.entry(hashed_chunk.hash.clone()) {
             Entry::Occupied(o) => {
-                // Duplicated block
-                //println!("DUP (current index: {}, dup at:
-                let block_index = *o.into_mut();
-
-                self.index_to_block.push(block_index);
-
-                self.block_dup[block_index] += 1;
-                self.block_total_dup += 1;
+                (*o.into_mut()) += 1;
             }
             Entry::Vacant(v) => {
-                // New block
-                let block_index = self.block_dup.len();
-                self.index_to_block.push(block_index);
-
-                self.blocks.push(BlockDesc {
-                    offset: self.block_offset,
-                    size: block.len() as u16,
-                    hash: v.key().to_vec(),
-                });
-
-                self.block_dup.push(1);
-                self.block_dedup_size += block.len();
-
-                v.insert(block_index);
+                v.insert(1);
+                result(hashed_chunk);
             }
-        };
-
-        self.block_offset += block.len();
-        self.block_feed_index += 1;
-    }
-
-    fn consume(self) -> Signature {
-        Signature {
-            index_to_block: self.index_to_block.iter().map(|i| *i as u32).collect(),
-            block_hash: self
-                .blocks
-                .iter()
-                .map(|b| Block {
-                    size: b.size,
-                    hash: b.hash.to_vec(),
-                }).collect(),
-        }
-    }
+        },
+    );
 }
 
-fn generate_signature<T, H>(config: &Config, hasher: H, src: &mut T) -> io::Result<Signature>
+// Iterate unique and compressed chunks
+fn unique_compressed_chunks<T, F, C, H>(
+    src: &mut T,
+    chunker: Chunker,
+    hash_chunk: H,
+    compress_chunk: C,
+    pool: &ThreadPool,
+    mut result: F,
+) -> io::Result<()>
 where
     T: Read,
-    H: sha2::Digest,
+    F: FnMut(CompressedChunk),
+    C: Fn(&[u8]) -> Vec<u8> + Send + 'static + Copy,
+    H: Fn(&[u8]) -> Vec<u8> + Send + 'static + Copy,
 {
-    let mut buf: Vec<u8> = vec![0; config.block_size as usize];
-    let mut digest = SignatureDigest::new(hasher, config.truncate_hash);
-    loop {
-        let block_size = fill_buf(src, &mut buf)?;
-        if block_size == 0 {
-            break;
-        }
+    let mut chunk_channel = OrderedMPSC::new();
+    unique_chunks(src, chunker, hash_chunk, &pool, |hashed_chunk| {
+        // For each unique chunk
+        let chunk_tx = chunk_channel.new_tx();
+        pool.execute(move || {
+            // Compress the chunk (in thread context)
+            let cdata = compress_chunk(&hashed_chunk.chunk.data);
+            chunk_tx
+                .send(CompressedChunk {
+                    hash: hashed_chunk.hash,
+                    chunk: hashed_chunk.chunk,
+                    cdata: cdata,
+                })
+                .expect("chunk_tx");
+        });
 
-        digest.feed_block(&buf[0..block_size]);
-    }
+        chunk_channel.rx().try_iter().for_each(|compressed_chunk| {
+            result(compressed_chunk);
+        });
+    })?;
 
-    println!("Total file size: {}", size_to_str(&digest.block_offset));
-    println!("Duplicated blocks: {}", digest.block_total_dup);
-    println!("Dedup size: {}", size_to_str(&digest.block_dedup_size));
-    return Ok(digest.consume());
+    // Wait for threads to be done
+    pool.join();
+
+    // Forward the compressed chunks
+    chunk_channel.rx().try_iter().for_each(|compressed_chunk| {
+        result(compressed_chunk);
+    });
+    Ok(())
 }
 
 fn main() {
     let config = parse_opts();
+    let num_threads = num_cpus::get();
+    let pool = ThreadPool::new(num_threads);
 
-    let output_file = OpenOptions::new()
+    // Read from stdin
+    let stdin = io::stdin();
+    let mut src_file = stdin.lock();
+
+    // Setup the chunker
+    let chunker = Chunker::new(
+        15,
+        1024 * 1024,
+        16 * 1024,
+        16 * 1024 * 1024,
+        BuzHash::new(16, 0x10324195),
+    );
+
+    // Compress a chunk
+    let compress_chunk = |data: &[u8]| deflate_bytes_conf(data, Compression::Best);
+
+    // Generate strong hash for a chunk
+    let hash_chunk = |data: &[u8]| {
+        let mut hasher = Sha512::new();
+        hasher.input(data);
+        hasher.result().to_vec()
+    };
+
+    let mut total_compressed_size = 0;
+    let mut total_unique_chunks = 0;
+    let mut total_unique_chunk_size = 0;
+    let chunk_index = unique_compressed_chunks(
+        &mut src_file,
+        chunker,
+        hash_chunk,
+        compress_chunk,
+        &pool,
+        |compressed_chunk| {
+            // For each unique and compressed chunk
+            println!(
+                "Chunk '{}', size: {}, compressed to: {}",
+                HexSlice::new(&compressed_chunk.hash[0..8]),
+                size_to_str(&compressed_chunk.chunk.data.len()),
+                size_to_str(&compressed_chunk.cdata.len())
+            );
+            total_unique_chunks += 1;
+            total_unique_chunk_size += compressed_chunk.chunk.data.len();
+            total_compressed_size += compressed_chunk.cdata.len();
+        },
+    )
+    .expect("chunk_and_hash");
+
+    pool.join();
+
+    println!(
+        "Unique chunks: {}, total size: {}, avg chunk size: {}, compressed size: {}",
+        total_unique_chunks,
+        size_to_str(&total_unique_chunk_size),
+        size_to_str(&(total_unique_chunk_size / total_unique_chunks)),
+        size_to_str(&total_compressed_size)
+    );
+
+    /*    let output_file = OpenOptions::new()
         .truncate(true)
         .create(true)
         .write(true)
         .open(&config.output)
         .expect(&format!("failed to create file ({})", config.output));
-
-    let mut hasher = Sha512::new();
-
-    let signature;
     if let Some(source) = &config.src {
         let mut src_file = File::open(&source).expect(&format!("failed to open file ({})", source));
-        signature = generate_signature(&config, hasher, &mut src_file).expect("generate signature");
-        serialize_into(output_file, &signature).expect("serialize");
+        chunk_file(&mut hasher, &mut src_file);
     } else {
         // Read from stdin
         let stdin = io::stdin();
         let mut src_file = stdin.lock();
-
-        let mut buzhash = BuzHash::new(32, 0x10324195);
-        let mut chunker = Chunker::new(16, 1024 * 1024, 8 * 1024, 8 * 1024 * 1024, buzhash);
-        let mut size_array = Vec::new();
-        let mut unique_chunks: HashMap<Vec<u8>, Vec<usize>> = HashMap::new();
-
-        chunker
-            .scan(&mut src_file, |chunk| {
-                hasher.input(chunk.data);
-                let hash = hasher.result_reset().to_vec();
-                println!(
-                    "Got chunk ({}, hash: {})",
-                    chunk,
-                    HexSlice::new(&hash[0..7])
-                );
-                size_array.push(chunk.length as u64);
-                match unique_chunks.entry(hash) {
-                    Entry::Occupied(o) => {
-                        (*o.into_mut()).push(chunk.length);
-                    }
-                    Entry::Vacant(v) => {
-                        v.insert(vec![chunk.length]);
-                    }
-                }
-            }).expect("scan");
-
-        println!("Chunking done!");
-        let tot_size: u64 = size_array.iter().sum();
-        let tot_single_size: usize = unique_chunks
-            .iter()
-            .filter(|(_, v)| (**v).len() == 1)
-            .map(|(_, v)| v[0])
-            .sum();
-        let tot_repeated_size: usize = unique_chunks
-            .iter()
-            .filter(|(_, v)| (**v).len() > 1)
-            .map(|(_, v)| {
-                let s: usize = v.iter().sum();
-                s
-            }).sum();
-
-        println!(
-            "Chunks: {},  avg size: {}, unique: {}, total singles size: {}, total repeated size: {}",
-            size_array.len(),
-            size_to_str(&((tot_size / size_array.len() as u64) as usize)),
-            unique_chunks.len(),
-            size_to_str(&tot_single_size),
-            size_to_str(&tot_repeated_size)
-        );
-
-        //signature = generate_signature(&config, hasher, &mut src_file).expect("generate signature");
-    }
+        chunk_file(&mut hasher, &mut src_file);
+    }*/
 }

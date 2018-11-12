@@ -1,6 +1,6 @@
 use buzhash::BuzHash;
+use std::io;
 use std::io::prelude::*;
-use std::{fmt, io};
 
 // Fill buffer with data from file, or until eof.
 fn fill_buf<T>(source: &mut T, buf: &mut Vec<u8>) -> io::Result<usize>
@@ -20,17 +20,10 @@ where
     return Ok(read_size);
 }
 
-#[derive(Debug)]
-pub struct Chunk<'a> {
+#[derive(Debug, Clone)]
+pub struct Chunk {
     pub offset: usize,
-    pub length: usize,
-    pub data: &'a [u8],
-}
-
-impl<'a> fmt::Display for Chunk<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "offset: {}, size: {}", self.offset, self.length)
-    }
+    pub data: Vec<u8>,
 }
 
 pub struct Chunker {
@@ -41,7 +34,7 @@ pub struct Chunker {
     buf_size: usize,
     source_index: usize,
     chunk_start: usize,
-    chunk_buf: Vec<u8>,
+    chunk_buf: Chunk,
     min_chunk_size: usize,
     max_chunk_size: usize,
 }
@@ -57,7 +50,10 @@ impl Chunker {
         Chunker {
             buzhash: buzhash,
             buf: vec![0; read_buf_size],
-            chunk_buf: Vec::new(),
+            chunk_buf: Chunk {
+                offset: 0,
+                data: Vec::new(),
+            },
             buf_index: 0,
             buf_size: 0,
             source_index: 0,
@@ -71,7 +67,7 @@ impl Chunker {
     pub fn scan<T, F>(&mut self, source: &mut T, mut result: F) -> io::Result<()>
     where
         T: Read,
-        F: FnMut(Chunk),
+        F: FnMut(&Chunk),
     {
         loop {
             if self.buf_index >= self.buf_size {
@@ -91,17 +87,13 @@ impl Chunker {
             if self.buf_size == 0 {
                 // EOF - Report chunk
                 self.chunk_start = chunk_end;
-                let chunk = Chunk {
-                    offset: chunk_start,
-                    length: chunk_length,
-                    data: &self.chunk_buf,
-                };
-                result(chunk);
+                self.chunk_buf.offset = chunk_start;
+                result(&self.chunk_buf);
                 return Ok(());
             }
 
             let val = self.buf[self.buf_index];
-            self.chunk_buf.push(val);
+            self.chunk_buf.data.push(val);
 
             self.buzhash.input(val);
             if self.buzhash.valid() && chunk_length >= self.min_chunk_size {
@@ -110,15 +102,9 @@ impl Chunker {
                 if (hash & self.mask) == 0 || chunk_length >= self.max_chunk_size {
                     // Match or big chunk - Report it
                     self.chunk_start = chunk_end;
-                    {
-                        let chunk = Chunk {
-                            offset: chunk_start,
-                            length: chunk_length,
-                            data: &self.chunk_buf,
-                        };
-                        result(chunk);
-                    }
-                    self.chunk_buf.clear();
+                    self.chunk_buf.offset = chunk_start;
+                    result(&self.chunk_buf);
+                    self.chunk_buf.data.clear();
                 }
             }
             self.buf_index += 1;

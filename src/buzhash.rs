@@ -88,10 +88,9 @@ impl BuzHash {
 
 #[cfg(test)]
 mod tests {
-    use buzhash2::BuzHash;
+    use buzhash::BuzHash;
     #[test]
     fn equal_sums_for_equal_range() {
-        assert_eq!(2 + 2, 4);
         let window_size = 8;
         let mut h = BuzHash::new(window_size, 0x10324195);
         let data1 = vec![
