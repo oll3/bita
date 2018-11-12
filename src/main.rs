@@ -13,6 +13,7 @@ use getopts::Options;
 use sha2::{Digest, Sha512};
 use std::collections::{hash_map::Entry, HashMap};
 use std::env;
+use std::fmt;
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::io;
@@ -108,6 +109,23 @@ fn parse_opts() -> Config {
     }
 }
 
+struct HexSlice<'a>(&'a [u8]);
+impl<'a> HexSlice<'a> {
+    fn new<T>(data: &'a T) -> HexSlice<'a>
+    where
+        T: ?Sized + AsRef<[u8]> + 'a,
+    {
+        HexSlice(data.as_ref())
+    }
+}
+impl<'a> fmt::Display for HexSlice<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for byte in self.0 {
+            write!(f, "{:x}", byte)?;
+        }
+        Ok(())
+    }
+}
 fn size_to_str(size: &usize) -> String {
     if *size > 1024 * 1024 {
         format!("{} MiB ({} bytes)", size / (1024 * 1024), size)
@@ -278,7 +296,7 @@ fn main() {
         .open(&config.output)
         .expect(&format!("failed to create file ({})", config.output));
 
-    let hasher = Sha512::new();
+    let mut hasher = Sha512::new();
 
     let signature;
     if let Some(source) = &config.src {
@@ -291,14 +309,21 @@ fn main() {
         let mut src_file = stdin.lock();
 
         let mut buzhash = BuzHash::new(32, 0x10324195);
-        let mut chunker = Chunker::new(16, 1024 * 1024, buzhash, hasher);
+        let mut chunker = Chunker::new(16, 1024 * 1024, 8 * 1024, 8 * 1024 * 1024, buzhash);
         let mut size_array = Vec::new();
         let mut unique_chunks: HashMap<Vec<u8>, Vec<usize>> = HashMap::new();
-        loop {
-            if let Some(chunk) = chunker.scan(&mut src_file).expect("scan") {
-                println!("Got chunk {}", chunk);
+
+        chunker
+            .scan(&mut src_file, |chunk| {
+                hasher.input(chunk.data);
+                let hash = hasher.result_reset().to_vec();
+                println!(
+                    "Got chunk ({}, hash: {})",
+                    chunk,
+                    HexSlice::new(&hash[0..7])
+                );
                 size_array.push(chunk.length as u64);
-                match unique_chunks.entry(chunk.hash) {
+                match unique_chunks.entry(hash) {
                     Entry::Occupied(o) => {
                         (*o.into_mut()).push(chunk.length);
                     }
@@ -306,10 +331,8 @@ fn main() {
                         v.insert(vec![chunk.length]);
                     }
                 }
-            } else {
-                break;
-            }
-        }
+            }).expect("scan");
+
         println!("Chunking done!");
         let tot_size: u64 = size_array.iter().sum();
         let tot_single_size: usize = unique_chunks
