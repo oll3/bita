@@ -6,9 +6,7 @@ extern crate serde_derive;
 extern crate sha2;
 
 mod buzhash;
-mod buzhash2;
 mod chunker;
-mod rolling_hasher;
 
 use bincode::serialize_into;
 use getopts::Options;
@@ -22,7 +20,6 @@ use std::io::prelude::*;
 use std::process;
 
 use buzhash::BuzHash;
-use buzhash2::BuzHash2;
 use chunker::*;
 
 #[derive(Debug)]
@@ -293,8 +290,8 @@ fn main() {
         let stdin = io::stdin();
         let mut src_file = stdin.lock();
 
-        let mut rolling_hash = BuzHash2::new(32);
-        let mut chunker = Chunker::new(0xfffff, 1024 * 1024, rolling_hash, hasher);
+        let mut buzhash = BuzHash::new(32, 0x10324195);
+        let mut chunker = Chunker::new(16, 1024 * 1024, buzhash, hasher);
         let mut size_array = Vec::new();
         let mut unique_chunks: HashMap<Vec<u8>, Vec<usize>> = HashMap::new();
         loop {
