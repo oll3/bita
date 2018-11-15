@@ -10,41 +10,35 @@ extern crate threadpool;
 
 mod buzhash;
 mod chunker;
+mod chunker_utils;
+mod compress_cmd;
+mod config;
 mod ordered_mpsc;
+mod string_utils;
 
-use bincode::serialize_into;
 use getopts::Options;
-use sha2::{Digest, Sha512};
-use std::collections::{hash_map::Entry, HashMap};
 use std::env;
-use std::fmt;
-use std::fs::File;
-use std::fs::OpenOptions;
-use std::io;
-use std::io::prelude::*;
 use std::process;
-use std::sync::mpsc::{channel, Receiver, Sender};
 use threadpool::ThreadPool;
 
-use deflate::{deflate_bytes_conf, Compression};
+use config::*;
 
-use buzhash::BuzHash;
-use chunker::*;
-use ordered_mpsc::OrderedMPSC;
-
-#[derive(Debug)]
-struct Config {
-    src: Option<String>,
-    output: String,
-    block_size: usize,
-    truncate_hash: usize,
-}
-
-fn print_usage(program: &str, opts: Options) {
-    let brief = format!("Usage: {} <output file> [options]", program);
-    print!("{}", opts.usage(&brief));
+fn print_usage(program: &str, opts: Options, compress_opts: Options) {
+    let brief = format!("Usage:\n");
+    let brief = brief + &format!("    {} [options] compress [PATH]\n", program);
+    let brief = brief + &format!("    {} [options] unpack [PATH/URL] [PATH]", program);
     println!();
-    println!("    SIZE values can be given in units 'TiB', 'GiB', 'MiB', 'KiB', or 'B' (default).");
+    println!("{}", opts.usage(&brief));
+    println!();
+    println!(
+        "{}",
+        compress_opts.usage_with_format(|opts| {
+            let mut result = "Options for compress:\n".to_string();
+            opts.for_each(|opt| result += &format!("{}\n", opt));
+            result
+        })
+    );
+    println!("    SIZE can be given in units 'B' (default), 'KiB', 'MiB', 'GiB', and 'TiB'.");
     println!();
 }
 
@@ -68,302 +62,83 @@ fn parse_size(size_str: &str) -> usize {
 fn parse_opts() -> Config {
     let args: Vec<String> = env::args().collect();
     let program = args[0].clone();
-    let mut opts = Options::new();
+    let mut base_opts = Options::new();
+    let mut compress_opts = Options::new();
 
-    opts.optopt(
-        "s",
-        "source",
-        "set source file to digest (default is stdin)",
-        "FILE",
-    );
-    opts.optopt("b", "block-size", "set block-size (default 1KiB)", "SIZE");
-    opts.optopt(
+    base_opts.optflag("h", "help", "print command help");
+    base_opts.optflag("f", "force-create", "overwrite output files if they exist");
+
+    compress_opts.optopt("i", "input", "file to digest (defaults to stdin)", "FILE");
+    compress_opts.optopt(
         "t",
-        "truncate-hash",
-        "truncate hash value to bytes (default is 64)",
-        "limit",
+        "hash-lenght",
+        "truncate the length of the stored strong hash",
+        "LENGTH",
     );
-    opts.optflag("h", "help", "print this help menu");
-    let matches = match opts.parse(&args[1..]) {
+
+    let base_matches = match base_opts.parse(&args[1..]) {
         Ok(m) => m,
         Err(f) => panic!(f.to_string()),
     };
-    if matches.opt_present("h") {
-        print_usage(&program, opts);
+    if base_matches.opt_present("h") || base_matches.free.len() < 1 {
+        print_usage(&program, base_opts, compress_opts);
         process::exit(1);
     }
-    let block_size = if let Some(ref val) = matches.opt_str("b") {
-        parse_size(val)
-    } else {
-        1024
-    };
-    let truncate_hash: usize = if let Some(ref val) = matches.opt_str("t") {
-        val.parse().expect("limit")
-    } else {
-        64
-    };
-    let src = matches.opt_str("s");
-    let output = if matches.free.len() == 1 {
-        matches.free[0].clone()
-    } else {
-        print_usage(&program, opts);
-        process::exit(1);
+
+    let force_create = base_matches.opt_present("f");
+    let command = base_matches.free[0].clone();
+
+    // Remove the command from the args array when parsing further
+    let args: Vec<String> = args.into_iter().filter(|arg| *arg != command).collect();
+
+    let base_config = BaseConfig {
+        force_create: force_create,
     };
 
-    Config {
-        src: src,
-        output: output,
-        block_size: block_size,
-        truncate_hash: truncate_hash,
-    }
-}
+    match command.as_str() {
+        "compress" => {
+            // Parse compress related options
 
-struct HexSlice<'a>(&'a [u8]);
-impl<'a> HexSlice<'a> {
-    fn new<T>(data: &'a T) -> HexSlice<'a>
-    where
-        T: ?Sized + AsRef<[u8]> + 'a,
-    {
-        HexSlice(data.as_ref())
-    }
-}
-impl<'a> fmt::Display for HexSlice<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for byte in self.0 {
-            write!(f, "{:x}", byte)?;
+            let compress_matches = match compress_opts.parse(&args[1..]) {
+                Ok(m) => m,
+                Err(f) => panic!(f.to_string()),
+            };
+            let input = compress_matches.opt_str("i");
+            let truncate_hash: Option<usize> = if let Some(ref val) = compress_matches.opt_str("t")
+            {
+                Some(val.parse().expect("LENGTH"))
+            } else {
+                None
+            };
+
+            if compress_matches.free.len() < 1 {
+                println!("Missing output file");
+                print_usage(&program, base_opts, compress_opts);
+                process::exit(1);
+            }
+            let output_file = compress_matches.free[0].clone();
+            Config::Compress(CompressConfig {
+                base: base_config,
+                input: input,
+                output: output_file,
+                truncate_hash: truncate_hash,
+            })
         }
-        Ok(())
+        _ => {
+            println!("Unknown command '{}'", command);
+            print_usage(&program, base_opts, compress_opts);
+            process::exit(1);
+        }
     }
-}
-fn size_to_str(size: &usize) -> String {
-    if *size > 1024 * 1024 {
-        format!("{} MiB ({} bytes)", size / (1024 * 1024), size)
-    } else if *size > 1024 {
-        format!("{} KiB ({} bytes)", size / (1024), size)
-    } else {
-        format!("{} bytes", size)
-    }
-}
-
-#[derive(Debug, Clone)]
-struct HashedChunk {
-    hash: Vec<u8>,
-    chunk: Chunk,
-}
-
-#[derive(Debug, Clone)]
-struct CompressedChunk {
-    hash: Vec<u8>,
-    chunk: Chunk,
-    cdata: Vec<u8>,
-}
-
-#[derive(Debug, Clone)]
-struct ChunkDesc {
-    offset: usize,
-    size: usize,
-    hash: Vec<u8>,
-}
-
-// Calculate a strong hash on every chunk and forward each chunk
-// Returns an array of chunk index.
-fn chunk_and_hash<T, F, H>(
-    src: &mut T,
-    mut chunker: Chunker,
-    hash_chunk: H,
-    pool: &ThreadPool,
-    mut result: F,
-) -> io::Result<(Vec<ChunkDesc>)>
-where
-    T: Read,
-    F: FnMut(HashedChunk),
-    H: Fn(&[u8]) -> Vec<u8> + Send + 'static + Copy,
-{
-    let mut chunks: Vec<ChunkDesc> = Vec::new();
-    let mut chunk_channel = OrderedMPSC::new();
-    chunker
-        .scan(src, |chunk| {
-            // For each chunk in file
-            println!("Got chunk (offset: {})", chunk.offset);
-            let chunk = chunk.clone();
-            let chunk_tx = chunk_channel.new_tx();
-            pool.execute(move || {
-                chunk_tx
-                    .send(HashedChunk {
-                        hash: hash_chunk(&chunk.data),
-                        chunk: chunk,
-                    })
-                    .expect("chunk_tx");
-            });
-
-            chunk_channel.rx().try_iter().for_each(|hashed_chunk| {
-                result(hashed_chunk);
-            });
-        })
-        .expect("chunker");
-
-    // Wait for threads to be done
-    pool.join();
-
-    // Forward the last hashed chunks
-    chunk_channel.rx().try_iter().for_each(|hashed_chunk| {
-        result(hashed_chunk);
-    });
-    Ok(chunks)
-}
-
-// Iterate only unique chunks of a source
-fn unique_chunks<T, F, H>(
-    src: &mut T,
-    chunker: Chunker,
-    hash_chunk: H,
-    pool: &ThreadPool,
-    mut result: F,
-) -> io::Result<Vec<ChunkDesc>>
-where
-    T: Read,
-    F: FnMut(HashedChunk),
-    H: Fn(&[u8]) -> Vec<u8> + Send + 'static + Copy,
-{
-    let mut chunk_map: HashMap<Vec<u8>, usize> = HashMap::new();
-    return chunk_and_hash(
-        src,
-        chunker,
-        hash_chunk,
-        pool,
-        |hashed_chunk| match chunk_map.entry(hashed_chunk.hash.clone()) {
-            Entry::Occupied(o) => {
-                (*o.into_mut()) += 1;
-            }
-            Entry::Vacant(v) => {
-                v.insert(1);
-                result(hashed_chunk);
-            }
-        },
-    );
-}
-
-// Iterate unique and compressed chunks
-fn unique_compressed_chunks<T, F, C, H>(
-    src: &mut T,
-    chunker: Chunker,
-    hash_chunk: H,
-    compress_chunk: C,
-    pool: &ThreadPool,
-    mut result: F,
-) -> io::Result<()>
-where
-    T: Read,
-    F: FnMut(CompressedChunk),
-    C: Fn(&[u8]) -> Vec<u8> + Send + 'static + Copy,
-    H: Fn(&[u8]) -> Vec<u8> + Send + 'static + Copy,
-{
-    let mut chunk_channel = OrderedMPSC::new();
-    unique_chunks(src, chunker, hash_chunk, &pool, |hashed_chunk| {
-        // For each unique chunk
-        let chunk_tx = chunk_channel.new_tx();
-        pool.execute(move || {
-            // Compress the chunk (in thread context)
-            let cdata = compress_chunk(&hashed_chunk.chunk.data);
-            chunk_tx
-                .send(CompressedChunk {
-                    hash: hashed_chunk.hash,
-                    chunk: hashed_chunk.chunk,
-                    cdata: cdata,
-                })
-                .expect("chunk_tx");
-        });
-
-        chunk_channel.rx().try_iter().for_each(|compressed_chunk| {
-            result(compressed_chunk);
-        });
-    })?;
-
-    // Wait for threads to be done
-    pool.join();
-
-    // Forward the compressed chunks
-    chunk_channel.rx().try_iter().for_each(|compressed_chunk| {
-        result(compressed_chunk);
-    });
-    Ok(())
 }
 
 fn main() {
-    let config = parse_opts();
+    //let config = parse_opts();
     let num_threads = num_cpus::get();
     let pool = ThreadPool::new(num_threads);
 
-    // Read from stdin
-    let stdin = io::stdin();
-    let mut src_file = stdin.lock();
-
-    // Setup the chunker
-    let chunker = Chunker::new(
-        15,
-        1024 * 1024,
-        16 * 1024,
-        16 * 1024 * 1024,
-        BuzHash::new(16, 0x10324195),
-    );
-
-    // Compress a chunk
-    let compress_chunk = |data: &[u8]| deflate_bytes_conf(data, Compression::Best);
-
-    // Generate strong hash for a chunk
-    let hash_chunk = |data: &[u8]| {
-        let mut hasher = Sha512::new();
-        hasher.input(data);
-        hasher.result().to_vec()
-    };
-
-    let mut total_compressed_size = 0;
-    let mut total_unique_chunks = 0;
-    let mut total_unique_chunk_size = 0;
-    let chunk_index = unique_compressed_chunks(
-        &mut src_file,
-        chunker,
-        hash_chunk,
-        compress_chunk,
-        &pool,
-        |compressed_chunk| {
-            // For each unique and compressed chunk
-            println!(
-                "Chunk '{}', size: {}, compressed to: {}",
-                HexSlice::new(&compressed_chunk.hash[0..8]),
-                size_to_str(&compressed_chunk.chunk.data.len()),
-                size_to_str(&compressed_chunk.cdata.len())
-            );
-            total_unique_chunks += 1;
-            total_unique_chunk_size += compressed_chunk.chunk.data.len();
-            total_compressed_size += compressed_chunk.cdata.len();
-        },
-    )
-    .expect("chunk_and_hash");
-
-    pool.join();
-
-    println!(
-        "Unique chunks: {}, total size: {}, avg chunk size: {}, compressed size: {}",
-        total_unique_chunks,
-        size_to_str(&total_unique_chunk_size),
-        size_to_str(&(total_unique_chunk_size / total_unique_chunks)),
-        size_to_str(&total_compressed_size)
-    );
-
-    /*    let output_file = OpenOptions::new()
-        .truncate(true)
-        .create(true)
-        .write(true)
-        .open(&config.output)
-        .expect(&format!("failed to create file ({})", config.output));
-    if let Some(source) = &config.src {
-        let mut src_file = File::open(&source).expect(&format!("failed to open file ({})", source));
-        chunk_file(&mut hasher, &mut src_file);
-    } else {
-        // Read from stdin
-        let stdin = io::stdin();
-        let mut src_file = stdin.lock();
-        chunk_file(&mut hasher, &mut src_file);
-    }*/
+    match parse_opts() {
+        Config::Compress(config) => compress_cmd::run(config, pool),
+        _ => process::exit(1),
+    }
 }
