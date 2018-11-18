@@ -1,9 +1,9 @@
 use deflate::{deflate_bytes_conf, Compression};
 use sha2::{Digest, Sha512};
-use std::fmt;
-use std::fs::File;
+use std::fs;
+use std::fs::{File, OpenOptions};
 use std::io;
-use std::io::prelude::*;
+use std::io::{Seek, SeekFrom, Write};
 use string_utils::*;
 use threadpool::ThreadPool;
 
@@ -11,12 +11,13 @@ use buzhash::BuzHash;
 use chunker::*;
 use chunker_utils::*;
 use config::*;
+use file_format;
 
-pub fn run(config: CompressConfig, pool: ThreadPool) {
-    // TODO: Check if provided files can be opened
-
-    // Read from stdin
-
+fn chunks_to_file(
+    config: &CompressConfig,
+    pool: ThreadPool,
+    chunk_file: &mut File,
+) -> (Vec<ChunkDesc>, Vec<file_format::ChunkDescriptor>) {
     // Setup the chunker
     let chunker = Chunker::new(
         15,
@@ -39,43 +40,115 @@ pub fn run(config: CompressConfig, pool: ThreadPool) {
     let mut total_compressed_size = 0;
     let mut total_unique_chunks = 0;
     let mut total_unique_chunk_size = 0;
+    let mut chunk_offset: u64 = 0;
+    let mut chunk_lookup = Vec::new();
     let chunks;
     {
-        let stats = |compressed_chunk: CompressedChunk| {
+        let process_chunk = |compressed_chunk: CompressedChunk| {
             // For each unique and compressed chunk
+            let hash = &compressed_chunk.hash[0..config.hash_length];
             println!(
                 "Chunk '{}', size: {}, compressed to: {}",
-                HexSlice::new(&compressed_chunk.hash[0..8]),
+                HexSlice::new(&hash),
                 size_to_str(&compressed_chunk.chunk.data.len()),
                 size_to_str(&compressed_chunk.cdata.len())
             );
             total_unique_chunks += 1;
             total_unique_chunk_size += compressed_chunk.chunk.data.len();
             total_compressed_size += compressed_chunk.cdata.len();
+
+            // Store a chunk descriptor which referes to the compressed data
+            chunk_lookup.push(file_format::ChunkDescriptor {
+                hash: hash.to_vec(),
+                offset: chunk_offset,
+                chunk_size: compressed_chunk.cdata.len() as u64,
+                compressed: true,
+            });
+
+            chunk_file
+                .write(&compressed_chunk.cdata)
+                .expect("write chunk");
+
+            chunk_offset += compressed_chunk.cdata.len() as u64;
         };
 
-        if let Some(source) = &config.input {
-            let mut src_file =
-                File::open(&source).expect(&format!("failed to open file ({})", source));
-            chunks =
-                unique_compressed_chunks(&mut src_file, chunker, hasher, compressor, &pool, stats)
-                    .expect("compress chunks");
+        if config.input.len() > 0 {
+            let mut src_file = File::open(&config.input)
+                .expect(&format!("failed to open file ({})", config.input));
+            chunks = unique_compressed_chunks(
+                &mut src_file,
+                chunker,
+                hasher,
+                compressor,
+                &pool,
+                process_chunk,
+            ).expect("compress chunks");
         } else {
             let stdin = io::stdin();
             let mut src_file = stdin.lock();
-            chunks =
-                unique_compressed_chunks(&mut src_file, chunker, hasher, compressor, &pool, stats)
-                    .expect("compress chunks");
+            chunks = unique_compressed_chunks(
+                &mut src_file,
+                chunker,
+                hasher,
+                compressor,
+                &pool,
+                process_chunk,
+            ).expect("compress chunks");
         }
     }
     pool.join();
 
     println!(
-        "Total chunks: {}, unique: {}, size: {}, avg chunk size: {}, compressed: {}",
+        "Total chunks: {}, unique: {}, size: {}, avg chunk size: {}, compressed into: {}",
         chunks.len(),
         total_unique_chunks,
         size_to_str(&total_unique_chunk_size),
         size_to_str(&(total_unique_chunk_size / total_unique_chunks)),
         size_to_str(&total_compressed_size)
     );
+
+    return (chunks, chunk_lookup);
+}
+
+pub fn run(config: CompressConfig, pool: ThreadPool) {
+    let mut output_file = OpenOptions::new()
+        .write(true)
+        .create(config.base.force_create)
+        .truncate(config.base.force_create)
+        .create_new(!config.base.force_create)
+        .open(&config.output)
+        .expect(&format!("failed to create file ({})", config.output));
+
+    println!("config.temp_file={}", config.temp_file);
+
+    let mut tmp_chunk_file = OpenOptions::new()
+        .write(true)
+        .read(true)
+        .truncate(true)
+        .create(true)
+        .open(&config.temp_file)
+        .expect("create temp file");
+
+    // Generate chunks and store to a temp file
+    let (chunks, chunk_lookup) = chunks_to_file(&config, pool, &mut tmp_chunk_file);
+
+    let mut build_index = Vec::new();
+    for chunk in chunks {
+        build_index.push(chunk.unique_chunk_index as u64);
+    }
+
+    let file_header = file_format::FileHeader {
+        compression: file_format::Compression::Deflate,
+        build_index: build_index,
+        chunk_lookup: chunk_lookup,
+    };
+
+    // Fill the compounded file
+    output_file
+        .write(&file_format::build_header(&file_header))
+        .expect("write header");
+    tmp_chunk_file.seek(SeekFrom::Start(0)).expect("seek");
+    io::copy(&mut tmp_chunk_file, &mut output_file).expect("copy temp file");
+    drop(tmp_chunk_file);
+    fs::remove_file(&config.temp_file).expect("remove temp file");
 }

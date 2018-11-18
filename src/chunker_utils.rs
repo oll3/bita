@@ -21,6 +21,7 @@ pub struct CompressedChunk {
 
 #[derive(Debug, Clone)]
 pub struct ChunkDesc {
+    pub unique_chunk_index: usize,
     pub offset: usize,
     pub size: usize,
     pub hash: Vec<u8>,
@@ -28,7 +29,7 @@ pub struct ChunkDesc {
 
 // Calculate a strong hash on every chunk and forward each chunk
 // Returns an array of chunk index.
-pub fn chunk_and_hash<T, F, H>(
+pub fn unique_chunks<T, F, H>(
     src: &mut T,
     mut chunker: Chunker,
     hash_chunk: H,
@@ -42,6 +43,9 @@ where
 {
     let mut chunks: Vec<ChunkDesc> = Vec::new();
     let mut chunk_channel = OrderedMPSC::new();
+    let mut chunk_map: HashMap<Vec<u8>, usize> = HashMap::new();
+    let mut unique_chunk_index = 0;
+
     chunker
         .scan(src, |chunk| {
             // For each chunk in file
@@ -52,6 +56,7 @@ where
                 chunk_tx
                     .send((
                         ChunkDesc {
+                            unique_chunk_index: 0,
                             hash: hash.clone(),
                             offset: chunk.offset,
                             size: chunk.data.len(),
@@ -66,9 +71,20 @@ where
             chunk_channel
                 .rx()
                 .try_iter()
-                .for_each(|(chunk_desc, hashed_chunk)| {
-                    result(hashed_chunk);
+                .for_each(|(mut chunk_desc, hashed_chunk)| {
+                    // Update the unique chunk index
+                    chunk_desc.unique_chunk_index = unique_chunk_index;
                     chunks.push(chunk_desc);
+                    match chunk_map.entry(hashed_chunk.hash.clone()) {
+                        Entry::Occupied(o) => {
+                            (*o.into_mut()) += 1;
+                        }
+                        Entry::Vacant(v) => {
+                            v.insert(1);
+                            result(hashed_chunk);
+                            unique_chunk_index += 1;
+                        }
+                    }
                 });
         }).expect("chunker");
 
@@ -79,42 +95,22 @@ where
     chunk_channel
         .rx()
         .try_iter()
-        .for_each(|(chunk_desc, hashed_chunk)| {
-            result(hashed_chunk);
+        .for_each(|(mut chunk_desc, hashed_chunk)| {
+            // Update the unique chunk index
+            chunk_desc.unique_chunk_index = unique_chunk_index;
             chunks.push(chunk_desc);
+            match chunk_map.entry(hashed_chunk.hash.clone()) {
+                Entry::Occupied(o) => {
+                    (*o.into_mut()) += 1;
+                }
+                Entry::Vacant(v) => {
+                    v.insert(1);
+                    result(hashed_chunk);
+                    unique_chunk_index += 1;
+                }
+            }
         });
     Ok(chunks)
-}
-
-// Iterate only unique chunks of a source
-pub fn unique_chunks<T, F, H>(
-    src: &mut T,
-    chunker: Chunker,
-    hash_chunk: H,
-    pool: &ThreadPool,
-    mut result: F,
-) -> io::Result<Vec<ChunkDesc>>
-where
-    T: Read,
-    F: FnMut(HashedChunk),
-    H: Fn(&[u8]) -> Vec<u8> + Send + 'static + Copy,
-{
-    let mut chunk_map: HashMap<Vec<u8>, usize> = HashMap::new();
-    return chunk_and_hash(
-        src,
-        chunker,
-        hash_chunk,
-        pool,
-        |hashed_chunk| match chunk_map.entry(hashed_chunk.hash.clone()) {
-            Entry::Occupied(o) => {
-                (*o.into_mut()) += 1;
-            }
-            Entry::Vacant(v) => {
-                v.insert(1);
-                result(hashed_chunk);
-            }
-        },
-    );
 }
 
 // Iterate unique and compressed chunks

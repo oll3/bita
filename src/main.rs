@@ -1,5 +1,5 @@
 extern crate bincode;
-extern crate getopts;
+extern crate docopt;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
@@ -13,122 +13,53 @@ mod chunker;
 mod chunker_utils;
 mod compress_cmd;
 mod config;
+mod file_format;
 mod ordered_mpsc;
 mod string_utils;
 
-use getopts::Options;
 use std::env;
 use std::process;
 use threadpool::ThreadPool;
 
 use config::*;
+use docopt::Docopt;
 
-fn print_usage(program: &str, opts: Options, compress_opts: Options) {
-    let brief = format!("Usage:\n");
-    let brief = brief + &format!("    {} [options] compress [PATH]\n", program);
-    let brief = brief + &format!("    {} [options] unpack [PATH/URL] [PATH]", program);
-    println!();
-    println!("{}", opts.usage(&brief));
-    println!();
-    println!(
-        "{}",
-        compress_opts.usage_with_format(|opts| {
-            let mut result = "Options for compress:\n".to_string();
-            opts.for_each(|opt| result += &format!("{}\n", opt));
-            result
-        })
-    );
-    println!("    SIZE can be given in units 'B' (default), 'KiB', 'MiB', 'GiB', and 'TiB'.");
-    println!();
-}
+const USAGE: &'static str = "
+Usage:
+  bita [options] compress [INPUT] <OUTPUT>
+  bita [options] unpack <URL/FILE> [OUTPUT]
 
-fn parse_size(size_str: &str) -> usize {
-    let size_val: String = size_str.chars().filter(|a| a.is_numeric()).collect();
-    let size_val: usize = size_val.parse().expect("parse");
-    let size_unit: String = size_str.chars().filter(|a| !a.is_numeric()).collect();
-    if size_unit.len() == 0 {
-        return size_val;
-    }
-    match size_unit.as_str() {
-        "TiB" => 1024 * 1024 * 1024 * 1024 * size_val,
-        "GiB" => 1024 * 1024 * 1024 * size_val,
-        "MiB" => 1024 * 1024 * size_val,
-        "KiB" => 1024 * size_val,
-        "B" => size_val,
-        _ => panic!("Invalid size unit"),
-    }
-}
+Generic options:
+  -h, --help              Show this screen.
+  -f, --force-create      Overwrite output files if they exist.
+
+Compressor options:
+  --hash-length LENGTH    Truncate the length of the stored strong hash [default: 64].
+";
 
 fn parse_opts() -> Config {
-    let args: Vec<String> = env::args().collect();
-    let program = args[0].clone();
-    let mut base_opts = Options::new();
-    let mut compress_opts = Options::new();
+    let argv: Vec<String> = env::args().collect();
 
-    base_opts.optflag("h", "help", "print command help");
-    base_opts.optflag("f", "force-create", "overwrite output files if they exist");
+    let args = Docopt::new(USAGE)
+        .and_then(|d| d.argv(argv.into_iter()).parse())
+        .unwrap_or_else(|e| e.exit());
 
-    compress_opts.optopt("i", "input", "file to digest (defaults to stdin)", "FILE");
-    compress_opts.optopt(
-        "t",
-        "hash-lenght",
-        "truncate the length of the stored strong hash",
-        "LENGTH",
-    );
+    if args.get_bool("compress") {
+        let output = args.get_str("OUTPUT");
+        let temp_file = output.to_string() + ".tmp";
 
-    let base_matches = match base_opts.parse(&args[1..]) {
-        Ok(m) => m,
-        Err(f) => panic!(f.to_string()),
-    };
-    if base_matches.opt_present("h") || base_matches.free.len() < 1 {
-        print_usage(&program, base_opts, compress_opts);
+        Config::Compress(CompressConfig {
+            base: BaseConfig {
+                force_create: args.get_bool("--force-create"),
+            },
+            input: args.get_str("INPUT").to_string(),
+            output: output.to_string(),
+            hash_length: args.get_str("--hash-length").parse().expect("LENGTH"),
+            temp_file: temp_file,
+        })
+    } else {
+        println!("Unknown command");
         process::exit(1);
-    }
-
-    let force_create = base_matches.opt_present("f");
-    let command = base_matches.free[0].clone();
-
-    // Remove the command from the args array when parsing further
-    let args: Vec<String> = args.into_iter().filter(|arg| *arg != command).collect();
-
-    let base_config = BaseConfig {
-        force_create: force_create,
-    };
-
-    match command.as_str() {
-        "compress" => {
-            // Parse compress related options
-
-            let compress_matches = match compress_opts.parse(&args[1..]) {
-                Ok(m) => m,
-                Err(f) => panic!(f.to_string()),
-            };
-            let input = compress_matches.opt_str("i");
-            let truncate_hash: Option<usize> = if let Some(ref val) = compress_matches.opt_str("t")
-            {
-                Some(val.parse().expect("LENGTH"))
-            } else {
-                None
-            };
-
-            if compress_matches.free.len() < 1 {
-                println!("Missing output file");
-                print_usage(&program, base_opts, compress_opts);
-                process::exit(1);
-            }
-            let output_file = compress_matches.free[0].clone();
-            Config::Compress(CompressConfig {
-                base: base_config,
-                input: input,
-                output: output_file,
-                truncate_hash: truncate_hash,
-            })
-        }
-        _ => {
-            println!("Unknown command '{}'", command);
-            print_usage(&program, base_opts, compress_opts);
-            process::exit(1);
-        }
     }
 }
 

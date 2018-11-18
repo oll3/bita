@@ -8,9 +8,10 @@ pub struct CompressConfig {
     pub base: BaseConfig,
 
     // Use stdin if input not given
-    pub input: Option<String>,
+    pub input: String,
     pub output: String,
-    pub truncate_hash: Option<usize>,
+    pub temp_file: String,
+    pub hash_length: usize,
 }
 #[derive(Debug)]
 pub struct UnpackConfig {
