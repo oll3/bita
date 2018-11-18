@@ -1,4 +1,5 @@
 use ordered_mpsc::OrderedMPSC;
+use sha2::{Digest, Sha512};
 use std::collections::{hash_map::Entry, HashMap};
 use std::io;
 use std::io::prelude::*;
@@ -35,7 +36,7 @@ pub fn unique_chunks<T, F, H>(
     hash_chunk: H,
     pool: &ThreadPool,
     mut result: F,
-) -> io::Result<(Vec<ChunkDesc>)>
+) -> io::Result<(Vec<u8>, Vec<ChunkDesc>)>
 where
     T: Read,
     F: FnMut(HashedChunk),
@@ -46,9 +47,11 @@ where
     let mut chunk_map: HashMap<Vec<u8>, usize> = HashMap::new();
     let mut unique_chunk_index = 0;
 
+    let mut file_hash = Sha512::new();
     chunker
         .scan(src, |chunk| {
             // For each chunk in file
+            file_hash.input(&chunk.data);
             let chunk = chunk.clone();
             let chunk_tx = chunk_channel.new_tx();
             pool.execute(move || {
@@ -110,7 +113,7 @@ where
                 }
             }
         });
-    Ok(chunks)
+    Ok((file_hash.result().to_vec(), chunks))
 }
 
 // Iterate unique and compressed chunks
@@ -121,7 +124,7 @@ pub fn unique_compressed_chunks<T, F, C, H>(
     compress_chunk: C,
     pool: &ThreadPool,
     mut result: F,
-) -> io::Result<Vec<ChunkDesc>>
+) -> io::Result<(Vec<u8>, Vec<ChunkDesc>)>
 where
     T: Read,
     F: FnMut(CompressedChunk),
@@ -129,7 +132,7 @@ where
     H: Fn(&[u8]) -> Vec<u8> + Send + 'static + Copy,
 {
     let mut chunk_channel = OrderedMPSC::new();
-    let chunks = unique_chunks(src, chunker, hash_chunk, &pool, |hashed_chunk| {
+    let (file_hash, chunks) = unique_chunks(src, chunker, hash_chunk, &pool, |hashed_chunk| {
         // For each unique chunk
         let chunk_tx = chunk_channel.new_tx();
         pool.execute(move || {
@@ -155,5 +158,5 @@ where
     chunk_channel.rx().try_iter().for_each(|compressed_chunk| {
         result(compressed_chunk);
     });
-    Ok(chunks)
+    Ok((file_hash, chunks))
 }

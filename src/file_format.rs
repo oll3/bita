@@ -21,6 +21,7 @@ pub struct FileHeader {
     pub build_index: Vec<u64>,
     pub chunk_lookup: Vec<ChunkDescriptor>,
     pub compression: Compression,
+    pub source_hash: Vec<u8>,
 }
 
 fn size_vec(s: u64) -> [u8; 8] {
