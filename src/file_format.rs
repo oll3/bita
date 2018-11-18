@@ -13,7 +13,7 @@ pub struct ChunkDescriptor {
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub enum Compression {
-    Deflate,
+    LZMA,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]

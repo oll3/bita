@@ -1,9 +1,10 @@
-use deflate::{deflate_bytes_conf, Compression};
+use flate2::{Compress, Compression, FlushCompress};
+use lzma::LzmaWriter;
 use sha2::{Digest, Sha512};
 use std::fs;
 use std::fs::{File, OpenOptions};
 use std::io;
-use std::io::{Seek, SeekFrom, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use string_utils::*;
 use threadpool::ThreadPool;
 
@@ -28,7 +29,15 @@ fn chunks_to_file(
     );
 
     // Compress a chunk
-    let compressor = |data: &[u8]| deflate_bytes_conf(data, Compression::Best);
+    let chunk_compressor = |data: &[u8]| {
+        let mut result = vec![];
+        {
+            let mut f = LzmaWriter::new_compressor(&mut result, 6).unwrap();
+            f.write(data);
+            f.finish();
+        }
+        return result;
+    };
 
     // Generate strong hash for a chunk
     let hasher = |data: &[u8]| {
@@ -73,24 +82,26 @@ fn chunks_to_file(
         };
 
         if config.input.len() > 0 {
+            // Read source from file
             let mut src_file = File::open(&config.input)
                 .expect(&format!("failed to open file ({})", config.input));
             chunks = unique_compressed_chunks(
                 &mut src_file,
                 chunker,
                 hasher,
-                compressor,
+                chunk_compressor,
                 &pool,
                 process_chunk,
             ).expect("compress chunks");
         } else {
+            // Read source from stdin
             let stdin = io::stdin();
             let mut src_file = stdin.lock();
             chunks = unique_compressed_chunks(
                 &mut src_file,
                 chunker,
                 hasher,
-                compressor,
+                chunk_compressor,
                 &pool,
                 process_chunk,
             ).expect("compress chunks");
@@ -132,18 +143,20 @@ pub fn run(config: CompressConfig, pool: ThreadPool) {
     // Generate chunks and store to a temp file
     let (chunks, chunk_lookup) = chunks_to_file(&config, pool, &mut tmp_chunk_file);
 
+    // Generate the file chunk index
     let mut build_index = Vec::new();
     for chunk in chunks {
         build_index.push(chunk.unique_chunk_index as u64);
     }
 
+    // Store header to output file
     let file_header = file_format::FileHeader {
-        compression: file_format::Compression::Deflate,
+        compression: file_format::Compression::LZMA,
         build_index: build_index,
         chunk_lookup: chunk_lookup,
     };
 
-    // Fill the compounded file
+    // Copy chunks from temporary chunk tile to the output one
     output_file
         .write(&file_format::build_header(&file_header))
         .expect("write header");

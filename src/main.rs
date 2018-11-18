@@ -3,7 +3,8 @@ extern crate docopt;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
-extern crate deflate;
+extern crate flate2;
+extern crate lzma;
 extern crate num_cpus;
 extern crate sha2;
 extern crate threadpool;
