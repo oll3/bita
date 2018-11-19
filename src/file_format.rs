@@ -22,6 +22,10 @@ pub struct FileHeader {
     pub chunk_lookup: Vec<ChunkDescriptor>,
     pub compression: Compression,
     pub source_hash: Vec<u8>,
+    pub avg_chunk_size: usize,
+    pub min_chunk_size: usize,
+    pub max_chunk_size: usize,
+    pub hash_window_size: usize,
 }
 
 fn size_vec(s: u64) -> [u8; 8] {
@@ -39,7 +43,7 @@ fn size_vec(s: u64) -> [u8; 8] {
 
 pub fn build_header(header: &FileHeader) -> Vec<u8> {
     // header magic number + version
-    let magic = vec![0x63, 0x10, 0x9b, 0x41];
+    let magic = "bita".as_bytes(); //vec!['b', 'i', 't', 'a'];
     let mut file_buf: Vec<u8> = vec![];
     let mut hasher = Sha512::new();
     let mut header_buf: Vec<u8> = Vec::new();

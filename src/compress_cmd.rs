@@ -20,11 +20,11 @@ fn chunks_to_file(
 ) -> (Vec<u8>, Vec<ChunkDesc>, Vec<file_format::ChunkDescriptor>) {
     // Setup the chunker
     let chunker = Chunker::new(
-        15,
         1024 * 1024,
-        16 * 1024,
-        16 * 1024 * 1024,
-        BuzHash::new(16, 0x10324195),
+        config.avg_chunk_size as u32,
+        config.min_chunk_size,
+        config.max_chunk_size,
+        BuzHash::new(config.hash_window_size as usize, 0x10324195),
     );
 
     // Compress a chunk
@@ -55,7 +55,7 @@ fn chunks_to_file(
     {
         let process_chunk = |compressed_chunk: CompressedChunk| {
             // For each unique and compressed chunk
-            let hash = &compressed_chunk.hash[0..config.hash_length];
+            let hash = &compressed_chunk.hash[0..config.hash_length as usize];
             println!(
                 "Chunk '{}', size: {}, compressed to: {}",
                 HexSlice::new(&hash),
@@ -162,6 +162,10 @@ pub fn run(config: CompressConfig, pool: ThreadPool) {
         build_index: build_index,
         chunk_lookup: chunk_lookup,
         source_hash: file_hash,
+        avg_chunk_size: config.avg_chunk_size,
+        min_chunk_size: config.min_chunk_size,
+        max_chunk_size: config.max_chunk_size,
+        hash_window_size: config.hash_window_size,
     };
 
     // Copy chunks from temporary chunk tile to the output one

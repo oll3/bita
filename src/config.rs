@@ -12,6 +12,10 @@ pub struct CompressConfig {
     pub output: String,
     pub temp_file: String,
     pub hash_length: usize,
+    pub avg_chunk_size: usize,
+    pub min_chunk_size: usize,
+    pub max_chunk_size: usize,
+    pub hash_window_size: usize,
 }
 #[derive(Debug)]
 pub struct UnpackConfig {

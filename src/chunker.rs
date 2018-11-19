@@ -28,21 +28,21 @@ pub struct Chunk {
 
 pub struct Chunker {
     buzhash: BuzHash,
-    mask: u32,
     buf: Vec<u8>,
     buf_index: usize,
     buf_size: usize,
     source_index: usize,
     chunk_start: usize,
     chunk_buf: Chunk,
+    chunk_filter: u32,
     min_chunk_size: usize,
     max_chunk_size: usize,
 }
 
 impl Chunker {
     pub fn new(
-        mask_bits: u32,
         read_buf_size: usize,
+        avg_chunk_size: u32,
         min_chunk_size: usize,
         max_chunk_size: usize,
         buzhash: BuzHash,
@@ -58,7 +58,7 @@ impl Chunker {
             buf_size: 0,
             source_index: 0,
             chunk_start: 0,
-            mask: 2u32.pow(mask_bits) - 1,
+            chunk_filter: avg_chunk_size / 2,
             min_chunk_size: min_chunk_size,
             max_chunk_size: max_chunk_size,
         }
@@ -99,7 +99,9 @@ impl Chunker {
             if self.buzhash.valid() && chunk_length >= self.min_chunk_size {
                 let hash = self.buzhash.sum();
 
-                if (hash & self.mask) == 0 || chunk_length >= self.max_chunk_size {
+                if (hash % self.chunk_filter) == (self.chunk_filter - 1)
+                    || chunk_length >= self.max_chunk_size
+                {
                     // Match or big chunk - Report it
                     self.chunk_start = chunk_end;
                     self.chunk_buf.offset = chunk_start;
