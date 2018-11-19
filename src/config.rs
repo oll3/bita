@@ -20,6 +20,11 @@ pub struct CompressConfig {
 #[derive(Debug)]
 pub struct UnpackConfig {
     pub base: BaseConfig,
+
+    pub input: String,
+    pub output: String,
+    pub seed_files: Vec<String>,
+    pub seed_stdin: bool,
 }
 
 #[derive(Debug)]

@@ -8,6 +8,7 @@ extern crate num_cpus;
 extern crate sha2;
 extern crate threadpool;
 
+mod archive_reader;
 mod buzhash;
 mod chunker;
 mod chunker_utils;
@@ -16,6 +17,7 @@ mod config;
 mod file_format;
 mod ordered_mpsc;
 mod string_utils;
+mod unpack_cmd;
 
 use std::process;
 use threadpool::ThreadPool;
@@ -93,6 +95,26 @@ fn parse_opts() -> Config {
                         .value_name("LENGTH")
                         .help("Truncate the length of the stored strong hash [default: 64]."),
                 ),
+        ).subcommand(
+            SubCommand::with_name("unpack")
+                .about("Unpack a file.")
+                .arg(
+                    Arg::with_name("INPUT")
+                        .value_name("INPUT")
+                        .help("Input file. Can be a local cba file or a URL.")
+                        .required(true),
+                ).arg(
+                    Arg::with_name("OUTPUT")
+                        .value_name("OUTPUT")
+                        .help("Output file.")
+                        .required(true),
+                ).arg(
+                    Arg::with_name("seed")
+                        .value_name("FILE")
+                        .long("seed")
+                        .help("File(s) to use as seed while unpacking.")
+                        .multiple(true),
+                ),
         ).get_matches();
 
     let base_config = BaseConfig {
@@ -128,6 +150,21 @@ fn parse_opts() -> Config {
             max_chunk_size: max_chunk_size,
             hash_window_size: hash_window_size,
         })
+    } else if let Some(matches) = matches.subcommand_matches("unpack") {
+        let input = matches.value_of("INPUT").unwrap();
+        let output = matches.value_of("OUTPUT").unwrap_or("");
+        let seed_files = matches
+            .values_of("seed")
+            .unwrap_or_default()
+            .map(|s| s.to_string())
+            .collect();
+        Config::Unpack(UnpackConfig {
+            base: base_config,
+            input: input.to_string(),
+            output: output.to_string(),
+            seed_files: seed_files,
+            seed_stdin: false,
+        })
     } else {
         println!("Unknown command");
         process::exit(1);
@@ -141,6 +178,7 @@ fn main() {
 
     match parse_opts() {
         Config::Compress(config) => compress_cmd::run(config, pool),
+        Config::Unpack(config) => unpack_cmd::run(config, pool),
         _ => process::exit(1),
     }
 }

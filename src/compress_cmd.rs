@@ -17,7 +17,12 @@ fn chunks_to_file(
     config: &CompressConfig,
     pool: ThreadPool,
     chunk_file: &mut File,
-) -> (Vec<u8>, Vec<ChunkDesc>, Vec<file_format::ChunkDescriptor>) {
+) -> (
+    usize,
+    Vec<u8>,
+    Vec<ChunkDesc>,
+    Vec<file_format::ChunkDescriptor>,
+) {
     // Setup the chunker
     let chunker = Chunker::new(
         1024 * 1024,
@@ -31,9 +36,12 @@ fn chunks_to_file(
     let chunk_compressor = |data: &[u8]| {
         let mut result = vec![];
         {
-            let mut f = LzmaWriter::new_compressor(&mut result, 6).unwrap();
-            f.write(data);
-            f.finish();
+            let mut f = LzmaWriter::new_compressor(&mut result, 6).expect("new compressor");
+            let mut wc = 0;
+            while wc < data.len() {
+                wc += f.write(&data[wc..]).expect("write compressor");
+            }
+            f.finish().expect("finish compressor");
         }
         return result;
     };
@@ -49,36 +57,54 @@ fn chunks_to_file(
     let mut total_unique_chunks = 0;
     let mut total_unique_chunk_size = 0;
     let mut chunk_offset: u64 = 0;
-    let mut chunk_lookup = Vec::new();
+    let mut chunk_descriptors = Vec::new();
     let chunks;
+    let file_size;
     let file_hash;
     {
-        let process_chunk = |compressed_chunk: CompressedChunk| {
+        let process_chunk = |comp_chunk: CompressedChunk| {
             // For each unique and compressed chunk
-            let hash = &compressed_chunk.hash[0..config.hash_length as usize];
+            let chunk_data;
+            let hash = &comp_chunk.hash[0..config.hash_length as usize];
+            let use_compressed = comp_chunk.cdata.len() < comp_chunk.chunk.data.len();
+            if use_compressed {
+                // Use the compressed data
+                chunk_data = &comp_chunk.cdata;
+            } else {
+                // Compressed chunk bigger than raw - Use raw
+                chunk_data = &comp_chunk.chunk.data;
+            }
+
             println!(
-                "Chunk '{}', size: {}, compressed to: {}",
+                "Chunk {}, '{}', offset: {}, size: {}, compressed to: {}, archive: {}",
+                total_unique_chunks,
                 HexSlice::new(&hash),
-                size_to_str(&compressed_chunk.chunk.data.len()),
-                size_to_str(&compressed_chunk.cdata.len())
+                comp_chunk.chunk.offset,
+                size_to_str(&comp_chunk.chunk.data.len()),
+                size_to_str(&comp_chunk.cdata.len()),
+                match use_compressed {
+                    true => "compressed",
+                    false => "raw",
+                }
             );
+
             total_unique_chunks += 1;
-            total_unique_chunk_size += compressed_chunk.chunk.data.len();
-            total_compressed_size += compressed_chunk.cdata.len();
+            total_unique_chunk_size += comp_chunk.chunk.data.len();
+            total_compressed_size += chunk_data.len();
 
             // Store a chunk descriptor which referes to the compressed data
-            chunk_lookup.push(file_format::ChunkDescriptor {
+            chunk_descriptors.push(file_format::ChunkDescriptor {
                 hash: hash.to_vec(),
-                offset: chunk_offset,
-                chunk_size: compressed_chunk.cdata.len() as u64,
-                compressed: true,
+                source_offsets: vec![], // will be filled after chunking is done
+                source_size: comp_chunk.chunk.data.len() as u64,
+                archive_offset: chunk_offset,
+                archive_size: chunk_data.len() as u64,
+                compressed: use_compressed,
             });
 
-            chunk_file
-                .write(&compressed_chunk.cdata)
-                .expect("write chunk");
+            chunk_file.write(chunk_data).expect("write chunk");
 
-            chunk_offset += compressed_chunk.cdata.len() as u64;
+            chunk_offset += comp_chunk.cdata.len() as u64;
         };
 
         if config.input.len() > 0 {
@@ -86,7 +112,7 @@ fn chunks_to_file(
             let mut src_file = File::open(&config.input)
                 .expect(&format!("failed to open file ({})", config.input));
 
-            let (tmp_file_hash, tmp_chunks) = unique_compressed_chunks(
+            let (tmp_file_size, tmp_file_hash, tmp_chunks) = unique_compressed_chunks(
                 &mut src_file,
                 chunker,
                 hasher,
@@ -94,13 +120,14 @@ fn chunks_to_file(
                 &pool,
                 process_chunk,
             ).expect("compress chunks");
+            file_size = tmp_file_size;
             file_hash = tmp_file_hash;
             chunks = tmp_chunks;
         } else {
             // Read source from stdin
             let stdin = io::stdin();
             let mut src_file = stdin.lock();
-            let (tmp_file_hash, tmp_chunks) = unique_compressed_chunks(
+            let (tmp_file_size, tmp_file_hash, tmp_chunks) = unique_compressed_chunks(
                 &mut src_file,
                 chunker,
                 hasher,
@@ -108,6 +135,7 @@ fn chunks_to_file(
                 &pool,
                 process_chunk,
             ).expect("compress chunks");
+            file_size = tmp_file_size;
             file_hash = tmp_file_hash;
             chunks = tmp_chunks;
         }
@@ -123,7 +151,7 @@ fn chunks_to_file(
         size_to_str(&total_compressed_size)
     );
 
-    return (file_hash, chunks, chunk_lookup);
+    return (file_size, file_hash, chunks, chunk_descriptors);
 }
 
 pub fn run(config: CompressConfig, pool: ThreadPool) {
@@ -146,26 +174,30 @@ pub fn run(config: CompressConfig, pool: ThreadPool) {
         .expect("create temp file");
 
     // Generate chunks and store to a temp file
-    let (file_hash, chunks, chunk_lookup) = chunks_to_file(&config, pool, &mut tmp_chunk_file);
+    let (file_size, file_hash, chunks, mut chunk_descriptors) =
+        chunks_to_file(&config, pool, &mut tmp_chunk_file);
 
     println!("Source hash: {}", HexSlice::new(&file_hash));
 
-    // Generate the file chunk index
-    let mut build_index = Vec::new();
+    // Fill out the destination offset of each chunk descriptor
     for chunk in chunks {
-        build_index.push(chunk.unique_chunk_index as u64);
+        chunk_descriptors[chunk.unique_chunk_index]
+            .source_offsets
+            .push(chunk.offset as u64);
     }
 
     // Store header to output file
-    let file_header = file_format::FileHeader {
-        compression: file_format::Compression::LZMA,
-        build_index: build_index,
-        chunk_lookup: chunk_lookup,
-        source_hash: file_hash,
-        avg_chunk_size: config.avg_chunk_size,
-        min_chunk_size: config.min_chunk_size,
-        max_chunk_size: config.max_chunk_size,
-        hash_window_size: config.hash_window_size,
+    let file_header = file_format::ArchiveHeader {
+        version: file_format::ArchiveVersion::V1(file_format::ArchiveHeaderV1 {
+            compression: file_format::Compression::LZMA,
+            chunk_descriptors: chunk_descriptors,
+            source_hash: file_hash,
+            source_total_size: file_size as u64,
+            avg_chunk_size: config.avg_chunk_size,
+            min_chunk_size: config.min_chunk_size,
+            max_chunk_size: config.max_chunk_size,
+            hash_window_size: config.hash_window_size,
+        }),
     };
 
     // Copy chunks from temporary chunk tile to the output one

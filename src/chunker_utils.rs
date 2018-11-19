@@ -36,7 +36,7 @@ pub fn unique_chunks<T, F, H>(
     hash_chunk: H,
     pool: &ThreadPool,
     mut result: F,
-) -> io::Result<(Vec<u8>, Vec<ChunkDesc>)>
+) -> io::Result<(usize, Vec<u8>, Vec<ChunkDesc>)>
 where
     T: Read,
     F: FnMut(HashedChunk),
@@ -46,12 +46,14 @@ where
     let mut chunk_channel = OrderedMPSC::new();
     let mut chunk_map: HashMap<Vec<u8>, usize> = HashMap::new();
     let mut unique_chunk_index = 0;
+    let mut file_size = 0;
 
     let mut file_hash = Sha512::new();
     chunker
         .scan(src, |chunk| {
             // For each chunk in file
             file_hash.input(&chunk.data);
+            file_size += chunk.data.len();
             let chunk = chunk.clone();
             let chunk_tx = chunk_channel.new_tx();
             pool.execute(move || {
@@ -113,7 +115,7 @@ where
             }
             chunks.push(chunk_desc);
         });
-    Ok((file_hash.result().to_vec(), chunks))
+    Ok((file_size, file_hash.result().to_vec(), chunks))
 }
 
 // Iterate unique and compressed chunks
@@ -124,7 +126,7 @@ pub fn unique_compressed_chunks<T, F, C, H>(
     compress_chunk: C,
     pool: &ThreadPool,
     mut result: F,
-) -> io::Result<(Vec<u8>, Vec<ChunkDesc>)>
+) -> io::Result<(usize, Vec<u8>, Vec<ChunkDesc>)>
 where
     T: Read,
     F: FnMut(CompressedChunk),
@@ -132,24 +134,25 @@ where
     H: Fn(&[u8]) -> Vec<u8> + Send + 'static + Copy,
 {
     let mut chunk_channel = OrderedMPSC::new();
-    let (file_hash, chunks) = unique_chunks(src, chunker, hash_chunk, &pool, |hashed_chunk| {
-        // For each unique chunk
-        let chunk_tx = chunk_channel.new_tx();
-        pool.execute(move || {
-            // Compress the chunk (in thread context)
-            let cdata = compress_chunk(&hashed_chunk.chunk.data);
-            chunk_tx
-                .send(CompressedChunk {
-                    hash: hashed_chunk.hash,
-                    chunk: hashed_chunk.chunk,
-                    cdata: cdata,
-                }).expect("chunk_tx");
-        });
+    let (file_size, file_hash, chunks) =
+        unique_chunks(src, chunker, hash_chunk, &pool, |hashed_chunk| {
+            // For each unique chunk
+            let chunk_tx = chunk_channel.new_tx();
+            pool.execute(move || {
+                // Compress the chunk (in thread context)
+                let cdata = compress_chunk(&hashed_chunk.chunk.data);
+                chunk_tx
+                    .send(CompressedChunk {
+                        hash: hashed_chunk.hash,
+                        chunk: hashed_chunk.chunk,
+                        cdata: cdata,
+                    }).expect("chunk_tx");
+            });
 
-        chunk_channel.rx().try_iter().for_each(|compressed_chunk| {
-            result(compressed_chunk);
-        });
-    })?;
+            chunk_channel.rx().try_iter().for_each(|compressed_chunk| {
+                result(compressed_chunk);
+            });
+        })?;
 
     // Wait for threads to be done
     pool.join();
@@ -158,5 +161,5 @@ where
     chunk_channel.rx().try_iter().for_each(|compressed_chunk| {
         result(compressed_chunk);
     });
-    Ok((file_hash, chunks))
+    Ok((file_size, file_hash, chunks))
 }
