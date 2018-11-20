@@ -1,5 +1,5 @@
 extern crate bincode;
-extern crate docopt;
+extern crate clap;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
@@ -17,33 +17,14 @@ mod file_format;
 mod ordered_mpsc;
 mod string_utils;
 
-use std::env;
 use std::process;
 use threadpool::ThreadPool;
 
+use clap::{App, Arg, SubCommand};
 use config::*;
-use docopt::Docopt;
 
-const USAGE: &'static str = "
-Usage:
-  bita [options] compress [INPUT] <OUTPUT>
-  bita [options] unpack <URL/FILE> [OUTPUT]
-
-Generic options:
-  -h, --help              Show this screen.
-  -f, --force-create      Overwrite output files if they exist.
-
-Compressor options:
-  --hash-length LENGTH    Truncate the length of the stored strong hash [default: 64].
-
-  --avg-chunk-size SIZE   Average size of chunks [default: 64KiB].
-  --min-chunk-size SIZE   Minimal size of chunks [default: 16KiB].
-  --max-chunk-size SIZE   Maximal size of chunks [default: 16MiB].
-
-  --buzhash-window SIZE   Size of the buzhash window [default: 16B].
-
-  SIZE parameter be given in units 'B' (default), 'KiB', 'MiB', 'GiB', and 'TiB'.
-";
+const PKG_VERSION: &'static str = env!("CARGO_PKG_VERSION");
+const PKG_NAME: &'static str = env!("CARGO_PKG_NAME");
 
 fn parse_size(size_str: &str) -> usize {
     let size_val: String = size_str.chars().filter(|a| a.is_numeric()).collect();
@@ -63,24 +44,71 @@ fn parse_size(size_str: &str) -> usize {
 }
 
 fn parse_opts() -> Config {
-    let argv: Vec<String> = env::args().collect();
+    let matches = App::new(PKG_NAME)
+        .version(PKG_VERSION)
+        .arg(
+            Arg::with_name("force-create")
+                .short("f")
+                .long("force-create")
+                .help("Overwrite output files if they exist.")
+                .global(true),
+        ).subcommand(
+            SubCommand::with_name("compress")
+                .about("Compress a file or stream.")
+                .arg(
+                    Arg::with_name("INPUT")
+                        .short("i")
+                        .long("input")
+                        .value_name("FILE")
+                        .help("Input file. If none is given the stdin will be used.")
+                        .required(false),
+                ).arg(
+                    Arg::with_name("OUTPUT")
+                        .value_name("OUTPUT")
+                        .help("Output file.")
+                        .required(true),
+                ).arg(
+                    Arg::with_name("avg-chunk-size")
+                        .long("avg-chunk-size")
+                        .value_name("SIZE")
+                        .help("Average size of chunks [default: 64KiB]."),
+                ).arg(
+                    Arg::with_name("min-chunk-size")
+                        .long("min-chunk-size")
+                        .value_name("SIZE")
+                        .help("Minimal size of chunks [default: 16KiB]."),
+                ).arg(
+                    Arg::with_name("max-chunk-size")
+                        .long("max-chunk-size")
+                        .value_name("SIZE")
+                        .help("Maximal size of chunks [default: 16MiB]."),
+                ).arg(
+                    Arg::with_name("buzhash-window")
+                        .long("buzhash-window")
+                        .value_name("SIZE")
+                        .help("Size of the buzhash window [default: 16B]."),
+                ).arg(
+                    Arg::with_name("hash-length")
+                        .long("hash-length")
+                        .value_name("LENGTH")
+                        .help("Truncate the length of the stored strong hash [default: 64]."),
+                ),
+        ).get_matches();
 
-    let args = Docopt::new(USAGE)
-        .and_then(|d| d.argv(argv.into_iter()).parse())
-        .unwrap_or_else(|e| e.exit());
+    let base_config = BaseConfig {
+        force_create: matches.is_present("force-create"),
+    };
 
-    if args.get_bool("compress") {
-        let output = args.get_str("OUTPUT");
+    if let Some(matches) = matches.subcommand_matches("compress") {
+        let output = matches.value_of("OUTPUT").unwrap();
+        let input = matches.value_of("INPUT").unwrap_or("");
         let temp_file = output.to_string() + ".tmp";
 
-        let avg_chunk_size = parse_size(args.get_str("--avg-chunk-size"));
-        let min_chunk_size = parse_size(args.get_str("--min-chunk-size"));
-        let max_chunk_size = parse_size(args.get_str("--max-chunk-size"));
-        let hash_window_size = parse_size(args.get_str("--buzhash-window"));
-
-        println!("avg_chunk_size={}", avg_chunk_size);
-        println!("min_chunk_size={}", min_chunk_size);
-        println!("max_chunk_size={}", max_chunk_size);
+        let avg_chunk_size = parse_size(matches.value_of("avg-chunk-size").unwrap_or("64KiB"));
+        let min_chunk_size = parse_size(matches.value_of("min-chunk-size").unwrap_or("16KiB"));
+        let max_chunk_size = parse_size(matches.value_of("max-chunk-size").unwrap_or("16MiB"));
+        let hash_window_size = parse_size(matches.value_of("buzhash-window").unwrap_or("16B"));
+        let hash_length = matches.value_of("hash-length").unwrap_or("64");
 
         if min_chunk_size > avg_chunk_size {
             panic!("min-chunk-size > avg-chunk-size");
@@ -90,12 +118,10 @@ fn parse_opts() -> Config {
         }
 
         Config::Compress(CompressConfig {
-            base: BaseConfig {
-                force_create: args.get_bool("--force-create"),
-            },
-            input: args.get_str("INPUT").to_string(),
+            base: base_config,
+            input: input.to_string(),
             output: output.to_string(),
-            hash_length: args.get_str("--hash-length").parse().expect("LENGTH"),
+            hash_length: hash_length.parse().expect("LENGTH"),
             temp_file: temp_file,
             avg_chunk_size: avg_chunk_size,
             min_chunk_size: min_chunk_size,
