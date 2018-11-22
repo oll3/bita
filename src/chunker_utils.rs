@@ -75,19 +75,19 @@ where
                 .rx()
                 .try_iter()
                 .for_each(|(mut chunk_desc, hashed_chunk)| {
-                    // Update the unique chunk index
-                    chunk_desc.unique_chunk_index = unique_chunk_index;
-                    chunks.push(chunk_desc);
                     match chunk_map.entry(hashed_chunk.hash.clone()) {
                         Entry::Occupied(o) => {
-                            (*o.into_mut()) += 1;
+                            chunk_desc.unique_chunk_index = *o.into_mut();
                         }
                         Entry::Vacant(v) => {
-                            v.insert(1);
+                            // Chunk is unique - Pass forward
+                            chunk_desc.unique_chunk_index = unique_chunk_index;
+                            v.insert(unique_chunk_index);
                             result(hashed_chunk);
                             unique_chunk_index += 1;
                         }
                     }
+                    chunks.push(chunk_desc);
                 });
         }).expect("chunker");
 
@@ -99,19 +99,19 @@ where
         .rx()
         .try_iter()
         .for_each(|(mut chunk_desc, hashed_chunk)| {
-            // Update the unique chunk index
-            chunk_desc.unique_chunk_index = unique_chunk_index;
-            chunks.push(chunk_desc);
             match chunk_map.entry(hashed_chunk.hash.clone()) {
                 Entry::Occupied(o) => {
-                    (*o.into_mut()) += 1;
+                    chunk_desc.unique_chunk_index = *o.into_mut();
                 }
                 Entry::Vacant(v) => {
-                    v.insert(1);
+                    // Chunk is unique - Pass forward
+                    chunk_desc.unique_chunk_index = unique_chunk_index;
+                    v.insert(unique_chunk_index);
                     result(hashed_chunk);
                     unique_chunk_index += 1;
                 }
             }
+            chunks.push(chunk_desc);
         });
     Ok((file_hash.result().to_vec(), chunks))
 }
