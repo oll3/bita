@@ -81,7 +81,7 @@ impl Chunker {
             }
 
             let chunk_start = self.chunk_start;
-            let chunk_end = self.source_index;
+            let chunk_end = self.source_index + 1;
             let chunk_length = chunk_end - chunk_start;
 
             if self.buf_size == 0 {
