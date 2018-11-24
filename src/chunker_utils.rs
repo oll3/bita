@@ -7,15 +7,17 @@ use threadpool::ThreadPool;
 
 use chunker::*;
 
+pub type HashBuf = Vec<u8>;
+
 #[derive(Debug, Clone)]
 pub struct HashedChunk {
-    pub hash: Vec<u8>,
+    pub hash: HashBuf,
     pub chunk: Chunk,
 }
 
 #[derive(Debug, Clone)]
 pub struct CompressedChunk {
-    pub hash: Vec<u8>,
+    pub hash: HashBuf,
     pub chunk: Chunk,
     pub cdata: Vec<u8>,
 }
@@ -25,7 +27,7 @@ pub struct ChunkDesc {
     pub unique_chunk_index: usize,
     pub offset: usize,
     pub size: usize,
-    pub hash: Vec<u8>,
+    pub hash: HashBuf,
 }
 
 // Calculate a strong hash on every chunk and forward each chunk
@@ -36,7 +38,7 @@ pub fn unique_chunks<T, F, H>(
     hash_chunk: H,
     pool: &ThreadPool,
     mut result: F,
-) -> io::Result<(usize, Vec<u8>, Vec<ChunkDesc>)>
+) -> io::Result<(usize, HashBuf, Vec<ChunkDesc>)>
 where
     T: Read,
     F: FnMut(HashedChunk),

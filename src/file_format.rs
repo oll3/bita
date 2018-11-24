@@ -1,4 +1,5 @@
 use bincode::serialize_into;
+use chunker_utils::HashBuf;
 use sha2::{Digest, Sha512};
 use std::fmt;
 use string_utils::*;
@@ -6,7 +7,7 @@ use string_utils::*;
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct ChunkDescriptor {
     // Hash of (uncompressed) chunk
-    pub hash: Vec<u8>,
+    pub hash: HashBuf,
 
     // Is chunk compressed
     pub compressed: bool,
@@ -28,7 +29,7 @@ pub enum Compression {
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct ArchiveHeaderV1 {
     // Hash of the source file
-    pub source_hash: Vec<u8>,
+    pub source_hash: HashBuf,
 
     // Total size of the source file
     pub source_total_size: u64,
