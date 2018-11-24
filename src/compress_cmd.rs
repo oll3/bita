@@ -196,6 +196,7 @@ pub fn run(config: CompressConfig, pool: ThreadPool) {
             min_chunk_size: config.min_chunk_size,
             max_chunk_size: config.max_chunk_size,
             hash_window_size: config.hash_window_size,
+            hash_length: config.hash_length,
         }),
     };
 

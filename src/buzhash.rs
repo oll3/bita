@@ -33,6 +33,7 @@ static BUZHASH_TABLE: &'static [u32] = &[
     0x87abd4a7, 0x2799ae4f, 0x3b80cac, 0xd56e7604, 0x8b07ed07, 0x944552c5, 0x5b93e058, 0x8fbd2c92,
 ];
 
+#[derive(Clone)]
 pub struct BuzHash {
     buf: Vec<u8>,
     index: usize,

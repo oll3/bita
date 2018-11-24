@@ -28,6 +28,10 @@ pub struct ArchiveReader<T> {
     pub min_chunk_size: usize,
     pub max_chunk_size: usize,
     pub hash_window_size: usize,
+    pub hash_length: usize,
+
+    // Statistics - Total bytes read from archive
+    pub total_read: u64,
 }
 
 impl<T> ArchiveReader<T>
@@ -91,6 +95,7 @@ where
         let min_chunk_size = header_v1.min_chunk_size;
         let max_chunk_size = header_v1.max_chunk_size;
         let hash_window_size = header_v1.hash_window_size;
+        let hash_length = header_v1.hash_length;
 
         let mut chunk_order: Vec<file_format::ChunkDescriptor> = Vec::new();
         let mut chunk_map: HashMap<HashBuf, usize> = HashMap::new();
@@ -117,6 +122,8 @@ where
             min_chunk_size: min_chunk_size,
             max_chunk_size: max_chunk_size,
             hash_window_size: hash_window_size,
+            hash_length: hash_length,
+            total_read: 0,
         };
     }
 
@@ -125,12 +132,12 @@ where
         self.chunk_map.iter().map(|x| x.0.clone()).collect()
     }
 
-    // Check if a chunk is present in archive
-    pub fn chunk_present(&self, hash: &HashBuf) -> bool {
-        if let Some(_) = self.chunk_map.get(hash) {
-            true
+    // Get source offsets of a chunk
+    pub fn chunk_source_offsets(&self, hash: &HashBuf) -> Vec<u64> {
+        if let Some(index) = self.chunk_map.get(hash) {
+            return self.chunks[*index].source_offsets.clone();
         } else {
-            false
+            vec![]
         }
     }
 
@@ -192,6 +199,8 @@ where
                     size_to_str(&chunk_buf.data.len()),
                     cd.source_offsets
                 );
+
+                self.total_read += cd.archive_size;
             } else {
                 // Archived chunk is NOT compressed.
                 chunk_buf.data.resize(cd.archive_size as usize, 0);
@@ -205,16 +214,18 @@ where
                     size_to_str(&chunk_buf.data.len()),
                     cd.source_offsets
                 );
+
+                self.total_read += cd.archive_size;
             }
 
             // Chunk buffer is filled. Verify chunk data by chunk hash.
             hasher.input(&chunk_buf.data);
             let hash = hasher.result_reset().to_vec();
-            if hash[0..cd.hash.len()] != cd.hash[0..] {
+            if hash[0..self.hash_length] != cd.hash[0..self.hash_length] {
                 panic!(
                     "Chunk hash mismatch (expected: {}, got: {})",
-                    HexSlice::new(&cd.hash[0..]),
-                    HexSlice::new(&hash[0..cd.hash.len()])
+                    HexSlice::new(&cd.hash[0..self.hash_length]),
+                    HexSlice::new(&hash[0..self.hash_length])
                 );
             }
 

@@ -45,6 +45,7 @@ pub struct ArchiveHeaderV1 {
     pub min_chunk_size: usize,
     pub max_chunk_size: usize,
     pub hash_window_size: usize,
+    pub hash_length: usize,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]

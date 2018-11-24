@@ -26,6 +26,7 @@ pub struct Chunk {
     pub data: Vec<u8>,
 }
 
+#[derive(Clone)]
 pub struct Chunker {
     buzhash: BuzHash,
     buf: Vec<u8>,
