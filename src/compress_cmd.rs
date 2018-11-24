@@ -56,7 +56,7 @@ fn chunks_to_file(
     let mut total_compressed_size = 0;
     let mut total_unique_chunks = 0;
     let mut total_unique_chunk_size = 0;
-    let mut chunk_offset: u64 = 0;
+    let mut archive_offset: u64 = 0;
     let mut chunk_descriptors = Vec::new();
     let chunks;
     let file_size;
@@ -97,14 +97,13 @@ fn chunks_to_file(
                 hash: hash.to_vec(),
                 source_offsets: vec![], // will be filled after chunking is done
                 source_size: comp_chunk.chunk.data.len() as u64,
-                archive_offset: chunk_offset,
+                archive_offset: archive_offset,
                 archive_size: chunk_data.len() as u64,
                 compressed: use_compressed,
             });
 
             chunk_file.write(chunk_data).expect("write chunk");
-
-            chunk_offset += comp_chunk.cdata.len() as u64;
+            archive_offset += chunk_data.len() as u64;
         };
 
         if config.input.len() > 0 {
