@@ -1,6 +1,9 @@
+use chunker_utils::HashBuf;
 use lzma::LzmaWriter;
 use sha2::{Digest, Sha512};
+use std::collections::{HashMap, HashSet};
 use std::io::prelude::*;
+use std::io::SeekFrom;
 use string_utils::*;
 
 use chunker;
@@ -8,13 +11,28 @@ use file_format;
 
 pub struct ArchiveReader<T> {
     input: T,
-    header: file_format::ArchiveHeaderV1,
-    chunk_index: usize,
+
+    // Go from chunk hash to archive chunk index (chunks vector)
+    chunk_map: HashMap<HashBuf, usize>,
+
+    // List of chunk descriptors
+    chunks: Vec<file_format::ChunkDescriptor>,
+
+    pub archive_chunks_offset: u64,
+
+    // Size of the original source file
+    pub source_total_size: u64,
+
+    // Chunker parameters used when this archive was created
+    pub avg_chunk_size: usize,
+    pub min_chunk_size: usize,
+    pub max_chunk_size: usize,
+    pub hash_window_size: usize,
 }
 
 impl<T> ArchiveReader<T>
 where
-    T: Read,
+    T: Read + Seek,
 {
     pub fn verify_pre_header(pre_header: &[u8]) -> Result<usize, &'static str> {
         if pre_header.len() < 12 {
@@ -65,47 +83,99 @@ where
 
         let header_v1 = match header.version {
             file_format::ArchiveVersion::V1(v1) => v1,
-            _ => panic!("Unknown archive version"),
         };
+
+        // Extract and store parameters from file header
+        let source_total_size = header_v1.source_total_size;
+        let avg_chunk_size = header_v1.avg_chunk_size;
+        let min_chunk_size = header_v1.min_chunk_size;
+        let max_chunk_size = header_v1.max_chunk_size;
+        let hash_window_size = header_v1.hash_window_size;
+
+        let mut chunk_order: Vec<file_format::ChunkDescriptor> = Vec::new();
+        let mut chunk_map: HashMap<HashBuf, usize> = HashMap::new();
+        {
+            let mut index = 0;
+            for desc in header_v1.chunk_descriptors {
+                chunk_map.insert(desc.hash.clone(), index);
+                chunk_order.push(desc);
+                index += 1;
+            }
+        }
+
+        // The input file's offset should be where the actual chunk data
+        // starts now. Store it.
+        let archive_chunks_offset = input.seek(SeekFrom::Current(0)).expect("seek");
 
         return ArchiveReader {
             input: input,
-            header: header_v1,
-            chunk_index: 0,
+            chunk_map: chunk_map,
+            chunks: chunk_order,
+            source_total_size: source_total_size,
+            archive_chunks_offset: archive_chunks_offset,
+            avg_chunk_size: avg_chunk_size,
+            min_chunk_size: min_chunk_size,
+            max_chunk_size: max_chunk_size,
+            hash_window_size: hash_window_size,
         };
     }
 
-    pub fn source_total_size(&self) -> u64 {
-        self.header.source_total_size
+    // Get a set of all chunks present in archive
+    pub fn chunk_hash_set(&self) -> HashSet<HashBuf> {
+        self.chunk_map.iter().map(|x| x.0.clone()).collect()
     }
 
-    // Iterate over chunks. TODO: Use iterator.
-    pub fn iter_chunks<F>(&mut self, mut result: F)
+    // Check if a chunk is present in archive
+    pub fn chunk_present(&self, hash: &HashBuf) -> bool {
+        if let Some(_) = self.chunk_map.get(hash) {
+            true
+        } else {
+            false
+        }
+    }
+
+    // Get chunk data for listed chunks if present in archive
+    pub fn read_chunk_data<F>(&mut self, chunks: &HashSet<HashBuf>, mut result: F)
     where
         F: FnMut(&chunker::Chunk),
     {
+        let mut index = 0;
+        let mut descriptors: Vec<(usize, &file_format::ChunkDescriptor)> = Vec::new();
+        for chunk in &self.chunks {
+            // Create list of all chunks which we need to read from archive
+            if chunks.contains(&chunk.hash) {
+                descriptors.push((index, &chunk));
+            }
+            index += 1;
+        }
+
+        // TODO: Merge chunks which are in exaxt sequence in archive so that we can
+        // do as few reads/request from source file.
         let mut chunk_buf = chunker::Chunk {
             offset: 0,
             data: vec![],
         };
-        let mut hasher = Sha512::new();
         let mut comp_buf: Vec<u8> = vec![];
+        let mut hasher = Sha512::new();
 
-        // For each chunk
-        while self.chunk_index < self.header.chunk_descriptors.len() {
-            let cd = &self.header.chunk_descriptors[self.chunk_index];
+        for (index, cd) in descriptors {
+            // Set input file pointer to archive offset
+            self.input
+                .seek(SeekFrom::Start(
+                    self.archive_chunks_offset + cd.archive_offset,
+                )).expect("seek offset");
 
             if cd.compressed {
                 // Archived chunk is compressed.
                 // Read compressed data and unpack into chunk buffer.
                 chunk_buf.data.resize(0, 0);
                 comp_buf.resize(cd.archive_size as usize, 0);
-                let rc = self
-                    .input
+                self.input
                     .read_exact(&mut comp_buf)
                     .expect("read compressed archive data");
 
                 {
+                    // Decompress data
                     let mut f = LzmaWriter::new_decompressor(&mut chunk_buf.data)
                         .expect("new decompressor");
                     let mut wc = 0;
@@ -116,7 +186,7 @@ where
                 }
                 println!(
                     "Chunk {} '{}', size {}, decompressed to {}, insert at {:?}",
-                    self.chunk_index,
+                    index,
                     HexSlice::new(&cd.hash),
                     size_to_str(&(cd.archive_size as usize)),
                     size_to_str(&chunk_buf.data.len()),
@@ -124,14 +194,13 @@ where
                 );
             } else {
                 // Archived chunk is NOT compressed.
-                chunk_buf.data.resize(cd.source_size as usize, 0);
+                chunk_buf.data.resize(cd.archive_size as usize, 0);
                 self.input
                     .read_exact(&mut chunk_buf.data)
                     .expect("read archive data");
-
                 println!(
                     "Chunk {} '{}', size {}, uncompressed, insert at {:?}",
-                    self.chunk_index,
+                    index,
                     HexSlice::new(&cd.hash),
                     size_to_str(&chunk_buf.data.len()),
                     cd.source_offsets
@@ -142,14 +211,18 @@ where
             hasher.input(&chunk_buf.data);
             let hash = hasher.result_reset().to_vec();
             if hash[0..cd.hash.len()] != cd.hash[0..] {
-                panic!("Hash mismatch at chunk index {}", self.chunk_index);
+                panic!(
+                    "Chunk hash mismatch (expected: {}, got: {})",
+                    HexSlice::new(&cd.hash[0..]),
+                    HexSlice::new(&hash[0..cd.hash.len()])
+                );
             }
 
+            // For each offset where this chunk was found in source
             for offset in &cd.source_offsets {
                 chunk_buf.offset = *offset as usize;
                 result(&chunk_buf);
             }
-            self.chunk_index += 1;
         }
     }
 }

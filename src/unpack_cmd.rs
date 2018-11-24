@@ -9,13 +9,14 @@ use chunker_utils::*;
 use config::*;
 use file_format;
 
-pub fn run(config: UnpackConfig, pool: ThreadPool) {
+pub fn run(config: UnpackConfig, _pool: ThreadPool) {
     println!("Do unpack ({:?})", config);
 
-    let mut src_file =
+    let src_file =
         File::open(&config.input).expect(&format!("failed to open file ({})", config.input));
 
-    let mut input_stream = ArchiveReader::new(src_file);
+    let mut reader = ArchiveReader::new(src_file);
+    let chunk_hash_set = reader.chunk_hash_set();
 
     // Create or open output file.
     // TODO: Check if the given file is a block device or a regular file.
@@ -30,10 +31,10 @@ pub fn run(config: UnpackConfig, pool: ThreadPool) {
         .expect(&format!("failed to create file ({})", config.output));
 
     output_file
-        .set_len(input_stream.source_total_size())
+        .set_len(reader.source_total_size)
         .expect("resize output file");
 
-    input_stream.iter_chunks(|chunk| {
+    reader.read_chunk_data(&chunk_hash_set, |chunk| {
         output_file
             .seek(SeekFrom::Start(chunk.offset as u64))
             .expect("seek output");

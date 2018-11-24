@@ -4,7 +4,7 @@ use sha2::{Digest, Sha512};
 use std::fmt;
 use string_utils::*;
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct ChunkDescriptor {
     // Hash of (uncompressed) chunk
     pub hash: HashBuf,
