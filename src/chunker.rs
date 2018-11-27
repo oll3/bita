@@ -38,6 +38,8 @@ pub struct Chunker {
     chunk_filter: u32,
     min_chunk_size: usize,
     max_chunk_size: usize,
+    last_val: u8,
+    repeated_count: usize,
 }
 
 impl Chunker {
@@ -62,6 +64,8 @@ impl Chunker {
             chunk_filter: avg_chunk_size / 2,
             min_chunk_size: min_chunk_size,
             max_chunk_size: max_chunk_size,
+            repeated_count: 0,
+            last_val: 0,
         }
     }
 
@@ -94,9 +98,22 @@ impl Chunker {
             }
 
             let val = self.buf[self.buf_index];
+
+            // Optimization - If the buzhash window is full of the same value
+            // then there is no need pushing another one of the same as the hash
+            // won't change.
+            if val == self.last_val {
+                self.repeated_count += 1;
+            } else {
+                self.repeated_count = 0;
+                self.last_val = val;
+            }
+            if self.repeated_count < self.buzhash.window_size() {
+                self.buzhash.input(val);
+            }
+
             self.chunk_buf.data.push(val);
 
-            self.buzhash.input(val);
             if self.buzhash.valid() && chunk_length >= self.min_chunk_size {
                 let hash = self.buzhash.sum();
 

@@ -64,6 +64,10 @@ impl BuzHash {
         self.window_full
     }
 
+    pub fn window_size(&self) -> usize {
+        self.window
+    }
+
     // Push and process a byte
     pub fn input(&mut self, in_val: u8) {
         if !self.window_full {
