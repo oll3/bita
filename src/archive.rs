@@ -27,7 +27,7 @@ pub enum Compression {
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
-pub struct ArchiveHeaderV1 {
+pub struct HeaderV1 {
     // Hash of the source file
     pub source_hash: HashBuf,
 
@@ -49,19 +49,19 @@ pub struct ArchiveHeaderV1 {
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
-pub enum ArchiveVersion {
-    V1(ArchiveHeaderV1),
+pub enum Version {
+    V1(HeaderV1),
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
-pub struct ArchiveHeader {
-    pub version: ArchiveVersion,
+pub struct Header {
+    pub version: Version,
 }
 
-impl fmt::Display for ArchiveHeader {
+impl fmt::Display for Header {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.version {
-            ArchiveVersion::V1(ref v1) => write!(
+            Version::V1(ref v1) => write!(
                 f,
                 "chunks: {}, compression: {:?}, source hash: {}, source size: {}",
                 v1.chunk_descriptors.len(),
@@ -97,7 +97,7 @@ pub fn vec_to_size(sv: &[u8]) -> u64 {
         | ((sv[7] as u64) << 0)
 }
 
-pub fn build_header(header: &ArchiveHeader) -> Vec<u8> {
+pub fn build_header(header: &Header) -> Vec<u8> {
     // header magic
     let magic = "bita".as_bytes();
     let mut file_buf: Vec<u8> = vec![];

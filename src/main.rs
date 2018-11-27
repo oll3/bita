@@ -8,13 +8,13 @@ extern crate num_cpus;
 extern crate sha2;
 extern crate threadpool;
 
+mod archive;
 mod archive_reader;
 mod buzhash;
 mod chunker;
 mod chunker_utils;
 mod compress_cmd;
 mod config;
-mod file_format;
 mod ordered_mpsc;
 mod string_utils;
 mod unpack_cmd;

@@ -7,11 +7,11 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use string_utils::*;
 use threadpool::ThreadPool;
 
+use archive;
 use buzhash::BuzHash;
 use chunker::*;
 use chunker_utils::*;
 use config::*;
-use file_format;
 
 fn chunks_to_file(
     config: &CompressConfig,
@@ -21,7 +21,7 @@ fn chunks_to_file(
     usize,
     Vec<u8>,
     Vec<ChunkDesc>,
-    Vec<file_format::ChunkDescriptor>,
+    Vec<archive::ChunkDescriptor>,
 ) {
     // Setup the chunker
     let chunker = Chunker::new(
@@ -33,7 +33,7 @@ fn chunks_to_file(
     );
 
     // Compress a chunk
-    let chunk_compressor = |data: &[u8]| {
+    fn chunk_compressor(data: &[u8]) -> Vec<u8> {
         let mut result = vec![];
         {
             let mut f = LzmaWriter::new_compressor(&mut result, 6).expect("new compressor");
@@ -47,10 +47,10 @@ fn chunks_to_file(
     };
 
     // Generate strong hash for a chunk
-    let hasher = |data: &[u8]| {
-        let mut hasher = Sha512::new();
-        hasher.input(data);
-        hasher.result().to_vec()
+    fn hasher(data: &[u8]) -> Vec<u8> {
+        let mut h = Sha512::new();
+        h.input(data);
+        h.result().to_vec()
     };
 
     let mut total_compressed_size = 0;
@@ -93,7 +93,7 @@ fn chunks_to_file(
             total_compressed_size += chunk_data.len();
 
             // Store a chunk descriptor which referes to the compressed data
-            chunk_descriptors.push(file_format::ChunkDescriptor {
+            chunk_descriptors.push(archive::ChunkDescriptor {
                 hash: hash.to_vec(),
                 source_offsets: vec![], // will be filled after chunking is done
                 source_size: comp_chunk.chunk.data.len() as u64,
@@ -186,9 +186,9 @@ pub fn run(config: CompressConfig, pool: ThreadPool) {
     }
 
     // Store header to output file
-    let file_header = file_format::ArchiveHeader {
-        version: file_format::ArchiveVersion::V1(file_format::ArchiveHeaderV1 {
-            compression: file_format::Compression::LZMA,
+    let file_header = archive::Header {
+        version: archive::Version::V1(archive::HeaderV1 {
+            compression: archive::Compression::LZMA,
             chunk_descriptors: chunk_descriptors,
             source_hash: file_hash,
             source_total_size: file_size as u64,
@@ -202,7 +202,7 @@ pub fn run(config: CompressConfig, pool: ThreadPool) {
 
     // Copy chunks from temporary chunk tile to the output one
     output_file
-        .write(&file_format::build_header(&file_header))
+        .write(&archive::build_header(&file_header))
         .expect("write header");
     tmp_chunk_file.seek(SeekFrom::Start(0)).expect("seek");
     io::copy(&mut tmp_chunk_file, &mut output_file).expect("copy temp file");

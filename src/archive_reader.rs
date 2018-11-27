@@ -6,8 +6,8 @@ use std::io::prelude::*;
 use std::io::SeekFrom;
 use string_utils::*;
 
+use archive;
 use chunker;
-use file_format;
 
 pub struct ArchiveReader<T> {
     input: T,
@@ -16,7 +16,7 @@ pub struct ArchiveReader<T> {
     chunk_map: HashMap<HashBuf, usize>,
 
     // List of chunk descriptors
-    chunks: Vec<file_format::ChunkDescriptor>,
+    chunks: Vec<archive::ChunkDescriptor>,
 
     pub archive_chunks_offset: u64,
 
@@ -46,7 +46,7 @@ where
             return Err("Not an archive");
         }
 
-        let header_size = file_format::vec_to_size(&pre_header[4..12]) as usize;
+        let header_size = archive::vec_to_size(&pre_header[4..12]) as usize;
         return Ok(header_size);
     }
 
@@ -69,8 +69,7 @@ where
             .expect("read archive header");
 
         // ...and deserialize it
-        let header: file_format::ArchiveHeader =
-            bincode::deserialize(&header_buf).expect("unpack header");
+        let header: archive::Header = bincode::deserialize(&header_buf).expect("unpack header");
 
         // Verify the header against the header hash
         let mut hasher = Sha512::new();
@@ -86,7 +85,7 @@ where
         println!("{}", header);
 
         let header_v1 = match header.version {
-            file_format::ArchiveVersion::V1(v1) => v1,
+            archive::Version::V1(v1) => v1,
         };
 
         // Extract and store parameters from file header
@@ -97,7 +96,7 @@ where
         let hash_window_size = header_v1.hash_window_size;
         let hash_length = header_v1.hash_length;
 
-        let mut chunk_order: Vec<file_format::ChunkDescriptor> = Vec::new();
+        let mut chunk_order: Vec<archive::ChunkDescriptor> = Vec::new();
         let mut chunk_map: HashMap<HashBuf, usize> = HashMap::new();
         {
             let mut index = 0;
@@ -147,7 +146,7 @@ where
         F: FnMut(&chunker::Chunk),
     {
         let mut index = 0;
-        let mut descriptors: Vec<(usize, &file_format::ChunkDescriptor)> = Vec::new();
+        let mut descriptors: Vec<(usize, &archive::ChunkDescriptor)> = Vec::new();
         for chunk in &self.chunks {
             // Create list of all chunks which we need to read from archive
             if chunks.contains(&chunk.hash) {
