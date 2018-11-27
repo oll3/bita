@@ -35,7 +35,7 @@ static BUZHASH_TABLE: &'static [u32] = &[
 
 #[derive(Clone)]
 pub struct BuzHash {
-    buf: Vec<u8>,
+    buf: Vec<u32>,
     index: usize,
     window: usize,
     hash_sum: u32,
@@ -70,16 +70,16 @@ impl BuzHash {
 
     // Push and process a byte
     pub fn input(&mut self, in_val: u8) {
+        let in_val = self.buzhash_table[in_val as usize];
         if !self.window_full {
             // Initialize sequence until window is full
             let shift = self.window - (self.index + 1);
-            self.hash_sum ^= self.buzhash_table[in_val as usize].rotate_left(shift as u32);
+            self.hash_sum ^= in_val.rotate_left(shift as u32);
             self.window_full = self.index >= (self.window - 1);
         } else {
             let out_val = self.buf[self.index];
-            self.hash_sum = self.hash_sum.rotate_left(1)
-                ^ self.buzhash_table[out_val as usize].rotate_left(self.window as u32)
-                ^ self.buzhash_table[in_val as usize];
+            self.hash_sum =
+                self.hash_sum.rotate_left(1) ^ out_val.rotate_left(self.window as u32) ^ in_val;
         }
         self.buf[self.index] = in_val;
         self.index = (self.index + 1) % self.window;
