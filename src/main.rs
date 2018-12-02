@@ -3,6 +3,7 @@ extern crate clap;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
+extern crate curl;
 extern crate lzma;
 extern crate num_cpus;
 extern crate sha2;
@@ -16,6 +17,7 @@ mod chunker_utils;
 mod compress_cmd;
 mod config;
 mod ordered_mpsc;
+mod remote_reader;
 mod string_utils;
 mod unpack_cmd;
 
@@ -172,7 +174,6 @@ fn parse_opts() -> Config {
 }
 
 fn main() {
-    //let config = parse_opts();
     let num_threads = num_cpus::get();
     let pool = ThreadPool::new(num_threads);
 

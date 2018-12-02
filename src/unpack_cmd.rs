@@ -10,6 +10,7 @@ use archive_reader::*;
 use chunker::Chunker;
 use chunker_utils::*;
 use config::*;
+use remote_reader::RemoteReader;
 use string_utils::*;
 
 fn fill_from_seed<T, F>(
@@ -46,8 +47,10 @@ fn fill_from_seed<T, F>(
 pub fn run(config: UnpackConfig, pool: ThreadPool) {
     println!("Do unpack ({:?})", config);
 
-    let src_file =
-        File::open(&config.input).expect(&format!("failed to open file ({})", config.input));
+    let src_file = RemoteReader::new(&config.input);
+
+    /*    let src_file =
+        File::open(&config.input).expect(&format!("failed to open file ({})", config.input));*/
 
     let mut archive = ArchiveReader::new(src_file);
     let mut chunks_left = archive.chunk_hash_set();

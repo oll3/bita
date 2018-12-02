@@ -2,8 +2,8 @@ use chunker_utils::HashBuf;
 use lzma::LzmaWriter;
 use sha2::{Digest, Sha512};
 use std::collections::{HashMap, HashSet};
+use std::io;
 use std::io::prelude::*;
-use std::io::SeekFrom;
 use string_utils::*;
 
 use archive;
@@ -34,9 +34,25 @@ pub struct ArchiveReader<T> {
     pub total_read: u64,
 }
 
+// Trait to implement for archive backends
+pub trait ArchiveBackend {
+    // Read from archive into the given buffer.
+    // Should read the exact number of bytes of the given buffer and start read at
+    // given offset.
+    fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> io::Result<()>;
+
+    // Read and return chunked data
+    fn read_in_chunks<F: FnMut(Vec<u8>)>(
+        &mut self,
+        start_offset: u64,
+        chunk_sizes: &Vec<u64>,
+        chunk_callback: F,
+    ) -> io::Result<()>;
+}
+
 impl<T> ArchiveReader<T>
 where
-    T: Read + Seek,
+    T: ArchiveBackend,
 {
     pub fn verify_pre_header(pre_header: &[u8]) -> Result<usize, &'static str> {
         if pre_header.len() < 12 {
@@ -52,10 +68,13 @@ where
 
     pub fn new(mut input: T) -> Self {
         // Read the pre-header (file magic, version and size)
+        let mut input_offset: u64 = 0;
         let mut header_buf = vec![0; 12];
         input
-            .read_exact(&mut header_buf)
+            .read_at(0, &mut header_buf)
             .expect("read archive pre-header");
+
+        input_offset += 12;
 
         let header_size =
             Self::verify_pre_header(&header_buf[0..12]).expect("verify archive header");
@@ -65,8 +84,9 @@ where
         // Read the header
         header_buf.resize(header_size, 0);
         input
-            .read_exact(&mut header_buf)
+            .read_at(input_offset, &mut header_buf)
             .expect("read archive header");
+        input_offset += header_size as u64;
 
         // ...and deserialize it
         let header: archive::Header = bincode::deserialize(&header_buf).expect("unpack header");
@@ -76,7 +96,10 @@ where
         hasher.input(&header_buf);
 
         header_buf.resize(64, 0);
-        input.read_exact(&mut header_buf).expect("read header hash");
+        input
+            .read_at(input_offset, &mut header_buf)
+            .expect("read header hash");
+        input_offset += 64;
 
         if header_buf != hasher.result().to_vec() {
             panic!("Corrupt archive header");
@@ -107,16 +130,12 @@ where
             }
         }
 
-        // The input file's offset should be where the actual chunk data
-        // starts now. Store it.
-        let archive_chunks_offset = input.seek(SeekFrom::Current(0)).expect("seek");
-
         return ArchiveReader {
             input: input,
             chunk_map: chunk_map,
             chunks: chunk_order,
             source_total_size: source_total_size,
-            archive_chunks_offset: archive_chunks_offset,
+            archive_chunks_offset: input_offset,
             avg_chunk_size: avg_chunk_size,
             min_chunk_size: min_chunk_size,
             max_chunk_size: max_chunk_size,
@@ -140,99 +159,121 @@ where
         }
     }
 
-    // Get chunk data for listed chunks if present in archive
+    // Group chunks which are placed in sequence inside archive
+    fn group_chunks_in_sequence(
+        mut chunks: Vec<&archive::ChunkDescriptor>,
+    ) -> Vec<Vec<&archive::ChunkDescriptor>> {
+        let mut group_list = vec![];
+        if chunks.len() == 0 {
+            return group_list;
+        }
+        let mut group = vec![chunks.remove(0)];
+        while chunks.len() > 0 {
+            let chunk = chunks.remove(0);
+
+            let prev_chunk_end =
+                group.last().unwrap().archive_offset + group.last().unwrap().archive_size;
+
+            if prev_chunk_end == chunk.archive_offset {
+                // Chunk is placed right next to the previous chunk
+                group.push(chunk);
+            } else {
+                group_list.push(group);
+                group = vec![chunk];
+            }
+        }
+        group_list.push(group);
+        return group_list;
+    }
+
+    // Get chunk data for all listed chunks if present in archive
     pub fn read_chunk_data<F>(&mut self, chunks: &HashSet<HashBuf>, mut result: F)
     where
         F: FnMut(&chunker::Chunk),
     {
-        let mut index = 0;
-        let mut descriptors: Vec<(usize, &archive::ChunkDescriptor)> = Vec::new();
-        for chunk in &self.chunks {
-            // Create list of all chunks which we need to read from archive
-            if chunks.contains(&chunk.hash) {
-                descriptors.push((index, &chunk));
-            }
-            index += 1;
-        }
+        // Create list of chunks which are in archive. The order of the list should
+        // be the same otder as the chunk data in archive.
+        let descriptors: Vec<&archive::ChunkDescriptor> = self
+            .chunks
+            .iter()
+            .filter(|chunk| chunks.contains(&chunk.hash))
+            .collect();
 
-        // TODO: Merge chunks which are in exaxt sequence in archive so that we can
-        // do as few reads/request from source file.
+        // Create groups of chunks so that we can make a single request for all chunks
+        // which are placed in sequence in archive.
+        let grouped_chunks = Self::group_chunks_in_sequence(descriptors.clone());
+
+        let mut hasher = Sha512::new();
         let mut chunk_buf = chunker::Chunk {
             offset: 0,
             data: vec![],
         };
-        let mut comp_buf: Vec<u8> = vec![];
-        let mut hasher = Sha512::new();
 
-        for (index, cd) in descriptors {
-            // Set input file pointer to archive offset
+        let hash_length = self.hash_length;
+        let mut total_read = 0;
+
+        for group in grouped_chunks {
+            let start_offset = self.archive_chunks_offset + group[0].archive_offset;
+            let chunk_sizes = group.iter().map(|c| c.archive_size).collect();
+
+            let mut chunk_index = 0;
             self.input
-                .seek(SeekFrom::Start(
-                    self.archive_chunks_offset + cd.archive_offset,
-                )).expect("seek offset");
-
-            if cd.compressed {
-                // Archived chunk is compressed.
-                // Read compressed data and unpack into chunk buffer.
-                chunk_buf.data.resize(0, 0);
-                comp_buf.resize(cd.archive_size as usize, 0);
-                self.input
-                    .read_exact(&mut comp_buf)
-                    .expect("read compressed archive data");
-
-                {
-                    // Decompress data
-                    let mut f = LzmaWriter::new_decompressor(&mut chunk_buf.data)
-                        .expect("new decompressor");
-                    let mut wc = 0;
-                    while wc < comp_buf.len() {
-                        wc += f.write(&comp_buf[wc..]).expect("write decompressor");
+                .read_in_chunks(start_offset, &chunk_sizes, |archive_data| {
+                    let cd = &group[chunk_index];
+                    if cd.compressed {
+                        // Archived chunk is compressed
+                        chunk_buf.data.resize(0, 0);
+                        {
+                            // Decompress archive data
+                            let mut f = LzmaWriter::new_decompressor(&mut chunk_buf.data)
+                                .expect("new decompressor");
+                            let mut wc = 0;
+                            while wc < archive_data.len() {
+                                wc += f.write(&archive_data[wc..]).expect("write decompressor");
+                            }
+                            f.finish().expect("finish decompressor");
+                        }
+                        println!(
+                            "Chunk '{}', size {}, decompressed to {}, insert at {:?}",
+                            HexSlice::new(&cd.hash),
+                            size_to_str(&(cd.archive_size as usize)),
+                            size_to_str(&chunk_buf.data.len()),
+                            cd.source_offsets
+                        );
+                        total_read += cd.archive_size;
+                    } else {
+                        // Archived chunk is NOT compressed
+                        chunk_buf.data = archive_data;
+                        println!(
+                            "Chunk '{}', size {}, uncompressed, insert at {:?}",
+                            HexSlice::new(&cd.hash),
+                            size_to_str(&chunk_buf.data.len()),
+                            cd.source_offsets
+                        );
+                        total_read += cd.archive_size;
                     }
-                    f.finish().expect("finish decompressor");
-                }
-                println!(
-                    "Chunk {} '{}', size {}, decompressed to {}, insert at {:?}",
-                    index,
-                    HexSlice::new(&cd.hash),
-                    size_to_str(&(cd.archive_size as usize)),
-                    size_to_str(&chunk_buf.data.len()),
-                    cd.source_offsets
-                );
 
-                self.total_read += cd.archive_size;
-            } else {
-                // Archived chunk is NOT compressed.
-                chunk_buf.data.resize(cd.archive_size as usize, 0);
-                self.input
-                    .read_exact(&mut chunk_buf.data)
-                    .expect("read archive data");
-                println!(
-                    "Chunk {} '{}', size {}, uncompressed, insert at {:?}",
-                    index,
-                    HexSlice::new(&cd.hash),
-                    size_to_str(&chunk_buf.data.len()),
-                    cd.source_offsets
-                );
+                    // Verify data by hash
+                    hasher.input(&chunk_buf.data);
+                    let hash = hasher.result_reset().to_vec();
+                    if hash[0..hash_length] != cd.hash[0..hash_length] {
+                        panic!(
+                            "Chunk hash mismatch (expected: {}, got: {})",
+                            HexSlice::new(&cd.hash[0..hash_length]),
+                            HexSlice::new(&hash[0..hash_length])
+                        );
+                    }
 
-                self.total_read += cd.archive_size;
-            }
+                    // For each offset where this chunk was found in source
+                    for offset in &cd.source_offsets {
+                        chunk_buf.offset = *offset as usize;
+                        result(&chunk_buf);
+                    }
 
-            // Chunk buffer is filled. Verify chunk data by chunk hash.
-            hasher.input(&chunk_buf.data);
-            let hash = hasher.result_reset().to_vec();
-            if hash[0..self.hash_length] != cd.hash[0..self.hash_length] {
-                panic!(
-                    "Chunk hash mismatch (expected: {}, got: {})",
-                    HexSlice::new(&cd.hash[0..self.hash_length]),
-                    HexSlice::new(&hash[0..self.hash_length])
-                );
-            }
-
-            // For each offset where this chunk was found in source
-            for offset in &cd.source_offsets {
-                chunk_buf.offset = *offset as usize;
-                result(&chunk_buf);
-            }
+                    chunk_index += 1;
+                }).expect("read chunks");
         }
+        self.total_read = total_read;
+        return;
     }
 }
