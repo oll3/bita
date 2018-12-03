@@ -80,8 +80,8 @@ fn chunks_to_file(
                 total_unique_chunks,
                 HexSlice::new(&hash),
                 comp_chunk.chunk.offset,
-                size_to_str(&comp_chunk.chunk.data.len()),
-                size_to_str(&comp_chunk.cdata.len()),
+                size_to_str(comp_chunk.chunk.data.len()),
+                size_to_str(comp_chunk.cdata.len()),
                 match use_compressed {
                     true => "compressed",
                     false => "raw",
@@ -145,9 +145,9 @@ fn chunks_to_file(
         "Total chunks: {}, unique: {}, size: {}, avg chunk size: {}, compressed into: {}",
         chunks.len(),
         total_unique_chunks,
-        size_to_str(&total_unique_chunk_size),
-        size_to_str(&(total_unique_chunk_size / total_unique_chunks)),
-        size_to_str(&total_compressed_size)
+        size_to_str(total_unique_chunk_size),
+        size_to_str(total_unique_chunk_size / total_unique_chunks),
+        size_to_str(total_compressed_size)
     );
 
     return (file_size, file_hash, chunks, chunk_descriptors);

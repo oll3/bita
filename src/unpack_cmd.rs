@@ -116,7 +116,7 @@ where
                 println!(
                     "Chunk '{}', size {} read from seed {}",
                     HexSlice::new(hash),
-                    size_to_str(&(chunk_data.len())),
+                    size_to_str(chunk_data.len()),
                     seed,
                 );
 
@@ -149,8 +149,8 @@ where
 
     println!(
         "Unpacked using {} from seed and {} from archive.",
-        size_to_str(&total_read_from_seed),
-        size_to_str(&(archive.total_read as usize))
+        size_to_str(total_read_from_seed),
+        size_to_str(archive.total_read)
     );
 }
 

@@ -236,8 +236,8 @@ where
                         println!(
                             "Chunk '{}', size {}, decompressed to {}, insert at {:?}",
                             HexSlice::new(&cd.hash),
-                            size_to_str(&(cd.archive_size as usize)),
-                            size_to_str(&chunk_buf.data.len()),
+                            size_to_str(cd.archive_size),
+                            size_to_str(chunk_buf.data.len()),
                             cd.source_offsets
                         );
                         total_read += cd.archive_size;
@@ -247,7 +247,7 @@ where
                         println!(
                             "Chunk '{}', size {}, uncompressed, insert at {:?}",
                             HexSlice::new(&cd.hash),
-                            size_to_str(&chunk_buf.data.len()),
+                            size_to_str(chunk_buf.data.len()),
                             cd.source_offsets
                         );
                         total_read += cd.archive_size;
