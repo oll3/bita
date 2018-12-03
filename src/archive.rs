@@ -1,6 +1,6 @@
 use bincode::serialize_into;
+use blake2::{Blake2b, Digest};
 use chunker_utils::HashBuf;
-use sha2::{Digest, Sha512};
 use std::fmt;
 use string_utils::*;
 
@@ -101,7 +101,7 @@ pub fn build_header(header: &Header) -> Vec<u8> {
     // header magic
     let magic = "bita".as_bytes();
     let mut file_buf: Vec<u8> = vec![];
-    let mut hasher = Sha512::new();
+    let mut hasher = Blake2b::new();
     let mut header_buf: Vec<u8> = Vec::new();
     serialize_into(&mut header_buf, header).expect("serialize");
     hasher.input(&header_buf);

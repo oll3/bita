@@ -1,5 +1,5 @@
+use blake2::{Blake2b, Digest};
 use lzma::LzmaWriter;
-use sha2::{Digest, Sha512};
 use std::fs;
 use std::fs::{File, OpenOptions};
 use std::io;
@@ -48,7 +48,7 @@ fn chunks_to_file(
 
     // Generate strong hash for a chunk
     fn hasher(data: &[u8]) -> Vec<u8> {
-        let mut h = Sha512::new();
+        let mut h = Blake2b::new();
         h.input(data);
         h.result().to_vec()
     };

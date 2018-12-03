@@ -1,5 +1,5 @@
+use blake2::{Blake2b, Digest};
 use ordered_mpsc::OrderedMPSC;
-use sha2::{Digest, Sha512};
 use std::collections::{hash_map::Entry, HashMap};
 use std::io;
 use std::io::prelude::*;
@@ -50,7 +50,7 @@ where
     let mut unique_chunk_index = 0;
     let mut file_size = 0;
 
-    let mut file_hash = Sha512::new();
+    let mut file_hash = Blake2b::new();
     chunker
         .scan(src, |chunk| {
             // For each chunk in file

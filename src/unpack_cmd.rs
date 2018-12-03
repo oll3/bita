@@ -1,5 +1,5 @@
+use blake2::{Blake2b, Digest};
 use buzhash::BuzHash;
-use sha2::{Digest, Sha512};
 use std::collections::HashSet;
 use std::fs::{File, OpenOptions};
 use std::io;
@@ -54,11 +54,10 @@ fn fill_from_seed<T, F>(
     // matches, otherwise error or warn user?
     // Generate strong hash for a chunk
     let hasher = |data: &[u8]| {
-        let mut hasher = Sha512::new();
+        let mut hasher = Blake2b::new();
         hasher.input(data);
         hasher.result().to_vec()
     };
-
     unique_chunks(&mut seed_input, chunker, hasher, &pool, |hashed_chunk| {
         let hash = &hashed_chunk.hash[0..hash_length].to_vec();
         if chunk_hash_set.contains(hash) {

@@ -1,6 +1,6 @@
+use blake2::{Blake2b, Digest};
 use chunker_utils::HashBuf;
 use lzma::LzmaWriter;
-use sha2::{Digest, Sha512};
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::io::prelude::*;
@@ -92,7 +92,7 @@ where
         let header: archive::Header = bincode::deserialize(&header_buf).expect("unpack header");
 
         // Verify the header against the header hash
-        let mut hasher = Sha512::new();
+        let mut hasher = Blake2b::new();
         hasher.input(&header_buf);
 
         header_buf.resize(64, 0);
@@ -203,7 +203,7 @@ where
         // which are placed in sequence in archive.
         let grouped_chunks = Self::group_chunks_in_sequence(descriptors.clone());
 
-        let mut hasher = Sha512::new();
+        let mut hasher = Blake2b::new();
         let mut chunk_buf = chunker::Chunk {
             offset: 0,
             data: vec![],

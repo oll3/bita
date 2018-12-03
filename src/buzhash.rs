@@ -69,6 +69,7 @@ impl BuzHash {
     }
 
     // Push and process a byte
+    #[inline(always)]
     pub fn input(&mut self, in_val: u8) {
         let in_val = self.buzhash_table[in_val as usize];
         if !self.window_full {
@@ -86,6 +87,7 @@ impl BuzHash {
     }
 
     // Get current hash sum
+    #[inline(always)]
     pub fn sum(&self) -> u32 {
         self.hash_sum
     }
