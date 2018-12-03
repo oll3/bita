@@ -12,6 +12,7 @@ use chunker::Chunker;
 use chunker_utils::*;
 use config::*;
 use remote_reader::RemoteReader;
+use std::os::linux::fs::MetadataExt;
 use string_utils::*;
 
 impl ArchiveBackend for File {
@@ -29,7 +30,6 @@ impl ArchiveBackend for File {
         self.seek(SeekFrom::Start(start_offset))?;
         for chunk_size in chunk_sizes {
             let mut buf: Vec<u8> = vec![0; *chunk_size as usize];
-            //buf.resize(*chunk_size as usize, 0);
             self.read_exact(&mut buf[..])?;
             chunk_callback(buf);
         }
@@ -75,20 +75,34 @@ where
     let mut chunks_left = archive.chunk_hash_set();
 
     // Create or open output file.
-    // TODO: Check if the given file is a block device or a regular file.
-    // If it is a block device we should not try to change its size,
-    // instead ensure that the source size is the same as the block device.
     let mut output_file = OpenOptions::new()
         .write(true)
         .create(config.base.force_create)
-        .truncate(config.base.force_create)
         .create_new(!config.base.force_create)
         .open(&config.output)
-        .expect(&format!("failed to create file ({})", config.output));
+        .expect(&format!("failed to open output file ({})", config.output));
 
-    output_file
-        .set_len(archive.source_total_size)
-        .expect("resize output file");
+    // Check if the given output file is a regular file or block device.
+    // If it is a block device we should check its size against the target size before
+    // writing. If a regular file then resize that file to target size.
+    let meta = output_file.metadata().expect("meta");
+    if meta.st_mode() & 0x6000 == 0x6000 {
+        // Output is a block device
+        let size = output_file.seek(SeekFrom::End(0)).expect("seek size");
+        if size != archive.source_total_size {
+            panic!(
+                "Size of output ({}) differ from size of archive target file ({})",
+                size_to_str(size),
+                size_to_str(archive.source_total_size)
+            );
+        }
+        output_file.seek(SeekFrom::Start(0)).expect("seek reset");
+    } else {
+        // Output is a reqular file
+        output_file
+            .set_len(archive.source_total_size)
+            .expect("resize output file");
+    }
 
     // Setup chunker to use when chunking seed input
     let chunker = Chunker::new(
