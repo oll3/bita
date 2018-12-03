@@ -107,7 +107,7 @@ pub fn run(config: UnpackConfig, pool: ThreadPool) {
                     output_file
                         .seek(SeekFrom::Start(offset as u64))
                         .expect("seek output");
-                    output_file.write(&chunk_data).expect("write output");
+                    output_file.write_all(&chunk_data).expect("write output");
                 }
             },
             &pool,
@@ -125,10 +125,7 @@ pub fn run(config: UnpackConfig, pool: ThreadPool) {
         output_file
             .seek(SeekFrom::Start(chunk.offset as u64))
             .expect("seek output");
-        let wc = output_file.write(&chunk.data).expect("write output");
-        if wc != chunk.data.len() {
-            panic!("wc != chunk.data.len()");
-        }
+        output_file.write_all(&chunk.data).expect("write output");
     });
 
     println!(
