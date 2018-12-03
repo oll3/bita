@@ -2,6 +2,7 @@ use buzhash::BuzHash;
 use sha2::{Digest, Sha512};
 use std::collections::HashSet;
 use std::fs::{File, OpenOptions};
+use std::io;
 use std::io::prelude::*;
 use std::io::SeekFrom;
 use threadpool::ThreadPool;
@@ -12,6 +13,29 @@ use chunker_utils::*;
 use config::*;
 use remote_reader::RemoteReader;
 use string_utils::*;
+
+impl ArchiveBackend for File {
+    fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> io::Result<()> {
+        self.seek(SeekFrom::Start(offset))?;
+        self.read_exact(buf)?;
+        Ok(())
+    }
+    fn read_in_chunks<F: FnMut(Vec<u8>)>(
+        &mut self,
+        start_offset: u64,
+        chunk_sizes: &Vec<u64>,
+        mut chunk_callback: F,
+    ) -> io::Result<()> {
+        self.seek(SeekFrom::Start(start_offset))?;
+        for chunk_size in chunk_sizes {
+            let mut buf: Vec<u8> = vec![0; *chunk_size as usize];
+            //buf.resize(*chunk_size as usize, 0);
+            self.read_exact(&mut buf[..])?;
+            chunk_callback(buf);
+        }
+        Ok(())
+    }
+}
 
 fn fill_from_seed<T, F>(
     mut seed_input: T,
@@ -44,15 +68,10 @@ fn fill_from_seed<T, F>(
     }).expect("compress chunks");
 }
 
-pub fn run(config: UnpackConfig, pool: ThreadPool) {
-    println!("Do unpack ({:?})", config);
-
-    let src_file = RemoteReader::new(&config.input);
-
-    /*    let src_file =
-        File::open(&config.input).expect(&format!("failed to open file ({})", config.input));*/
-
-    let mut archive = ArchiveReader::new(src_file);
+fn unpack_input<T>(mut archive: ArchiveReader<T>, config: UnpackConfig, pool: ThreadPool)
+where
+    T: ArchiveBackend,
+{
     let mut chunks_left = archive.chunk_hash_set();
 
     // Create or open output file.
@@ -133,4 +152,21 @@ pub fn run(config: UnpackConfig, pool: ThreadPool) {
         size_to_str(&total_read_from_seed),
         size_to_str(&(archive.total_read as usize))
     );
+}
+
+pub fn run(config: UnpackConfig, pool: ThreadPool) {
+    println!("Do unpack ({:?})", config);
+
+    if &config.input[0..7] == "http://" || &config.input[0..8] == "https://" {
+        println!("Using remote reader");
+        let remote_source = RemoteReader::new(&config.input);
+        let archive = ArchiveReader::new(remote_source);
+        unpack_input(archive, config, pool);
+    } else {
+        println!("Using file reader");
+        let local_file =
+            File::open(&config.input).expect(&format!("failed to open file ({})", config.input));
+        let archive = ArchiveReader::new(local_file);
+        unpack_input(archive, config, pool);
+    }
 }
