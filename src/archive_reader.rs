@@ -24,7 +24,7 @@ pub struct ArchiveReader<T> {
     pub source_total_size: u64,
 
     // Chunker parameters used when this archive was created
-    pub avg_chunk_size: usize,
+    pub chunk_filter_bits: u32,
     pub min_chunk_size: usize,
     pub max_chunk_size: usize,
     pub hash_window_size: usize,
@@ -113,7 +113,7 @@ where
 
         // Extract and store parameters from file header
         let source_total_size = header_v1.source_total_size;
-        let avg_chunk_size = header_v1.avg_chunk_size;
+        let chunk_filter_bits = header_v1.chunk_filter_bits;
         let min_chunk_size = header_v1.min_chunk_size;
         let max_chunk_size = header_v1.max_chunk_size;
         let hash_window_size = header_v1.hash_window_size;
@@ -136,7 +136,7 @@ where
             chunks: chunk_order,
             source_total_size: source_total_size,
             archive_chunks_offset: input_offset,
-            avg_chunk_size: avg_chunk_size,
+            chunk_filter_bits: chunk_filter_bits,
             min_chunk_size: min_chunk_size,
             max_chunk_size: max_chunk_size,
             hash_window_size: hash_window_size,

@@ -12,7 +12,7 @@ pub struct CompressConfig {
     pub output: String,
     pub temp_file: String,
     pub hash_length: usize,
-    pub avg_chunk_size: usize,
+    pub chunk_filter_bits: u32,
     pub min_chunk_size: usize,
     pub max_chunk_size: usize,
     pub hash_window_size: usize,

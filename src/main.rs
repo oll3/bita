@@ -75,7 +75,7 @@ fn parse_opts() -> Config {
                     Arg::with_name("avg-chunk-size")
                         .long("avg-chunk-size")
                         .value_name("SIZE")
-                        .help("Average size of chunks [default: 64KiB]."),
+                        .help("Indication of target chunk size [default: 64KiB]."),
                 ).arg(
                     Arg::with_name("min-chunk-size")
                         .long("min-chunk-size")
@@ -134,6 +134,7 @@ fn parse_opts() -> Config {
         let hash_window_size = parse_size(matches.value_of("buzhash-window").unwrap_or("16B"));
         let hash_length = matches.value_of("hash-length").unwrap_or("64");
 
+        let chunk_filter_bits = avg_chunk_size.leading_zeros();
         if min_chunk_size > avg_chunk_size {
             panic!("min-chunk-size > avg-chunk-size");
         }
@@ -147,7 +148,7 @@ fn parse_opts() -> Config {
             output: output.to_string(),
             hash_length: hash_length.parse().expect("LENGTH"),
             temp_file: temp_file,
-            avg_chunk_size: avg_chunk_size,
+            chunk_filter_bits: chunk_filter_bits,
             min_chunk_size: min_chunk_size,
             max_chunk_size: max_chunk_size,
             hash_window_size: hash_window_size,

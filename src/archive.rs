@@ -41,7 +41,7 @@ pub struct HeaderV1 {
     pub compression: Compression,
 
     // Chunker parameters used to create the archive
-    pub avg_chunk_size: usize,
+    pub chunk_filter_bits: u32,
     pub min_chunk_size: usize,
     pub max_chunk_size: usize,
     pub hash_window_size: usize,

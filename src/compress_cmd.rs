@@ -26,7 +26,7 @@ fn chunks_to_file(
     // Setup the chunker
     let chunker = Chunker::new(
         1024 * 1024,
-        config.avg_chunk_size as u32,
+        config.chunk_filter_bits,
         config.min_chunk_size,
         config.max_chunk_size,
         BuzHash::new(config.hash_window_size as usize, 0x10324195),
@@ -192,7 +192,7 @@ pub fn run(config: CompressConfig, pool: ThreadPool) {
             chunk_descriptors: chunk_descriptors,
             source_hash: file_hash,
             source_total_size: file_size as u64,
-            avg_chunk_size: config.avg_chunk_size,
+            chunk_filter_bits: config.chunk_filter_bits,
             min_chunk_size: config.min_chunk_size,
             max_chunk_size: config.max_chunk_size,
             hash_window_size: config.hash_window_size,

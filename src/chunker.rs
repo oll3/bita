@@ -31,7 +31,7 @@ pub struct Chunk {
 #[derive(Clone)]
 pub struct Chunker {
     buzhash: BuzHash,
-    chunk_filter: u32,
+    filter_mask: u32,
     min_chunk_size: usize,
     max_chunk_size: usize,
     last_val: u8,
@@ -42,7 +42,7 @@ pub struct Chunker {
 impl Chunker {
     pub fn new(
         read_buf_size: usize,
-        avg_chunk_size: u32,
+        chunk_filter_bits: u32,
         min_chunk_size: usize,
         max_chunk_size: usize,
         buzhash: BuzHash,
@@ -50,7 +50,7 @@ impl Chunker {
         Chunker {
             buzhash: buzhash,
             read_buf_size: read_buf_size,
-            chunk_filter: avg_chunk_size / 2,
+            filter_mask: !0 >> (32 - chunk_filter_bits),
             min_chunk_size: min_chunk_size,
             max_chunk_size: max_chunk_size,
             repeated_count: 0,
@@ -112,7 +112,7 @@ impl Chunker {
 
                     if !got_chunk && self.buzhash.valid() {
                         let hash = self.buzhash.sum();
-                        got_chunk = (hash % self.chunk_filter) == (self.chunk_filter - 1);
+                        got_chunk = hash | self.filter_mask == hash;
                     }
 
                     if got_chunk {

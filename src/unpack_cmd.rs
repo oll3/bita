@@ -106,7 +106,7 @@ where
     // Setup chunker to use when chunking seed input
     let chunker = Chunker::new(
         1024 * 1024,
-        archive.avg_chunk_size as u32,
+        archive.chunk_filter_bits,
         archive.min_chunk_size,
         archive.max_chunk_size,
         BuzHash::new(archive.hash_window_size as usize, 0x10324195),
