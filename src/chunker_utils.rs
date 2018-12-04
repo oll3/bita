@@ -36,7 +36,7 @@ pub struct ChunkDesc {
 // Returns an array of chunk index.
 pub fn unique_chunks<T, F, H>(
     src: &mut T,
-    mut chunker: Chunker,
+    chunker: &mut Chunker,
     hash_chunk: H,
     pool: &ThreadPool,
     mut result: F,
@@ -125,7 +125,7 @@ where
 // Iterate unique and compressed chunks
 pub fn unique_compressed_chunks<T, F, C, H>(
     src: &mut T,
-    chunker: Chunker,
+    chunker: &mut Chunker,
     hash_chunk: H,
     compress_chunk: C,
     pool: &ThreadPool,

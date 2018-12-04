@@ -1,6 +1,7 @@
 use buzhash::BuzHash;
 use std::io;
 use std::io::prelude::*;
+use std::time::{Duration, Instant};
 
 fn append_to_buf<T>(source: &mut T, buf: &mut Vec<u8>, count: usize) -> io::Result<usize>
 where
@@ -37,6 +38,8 @@ pub struct Chunker {
     last_val: u8,
     repeated_count: usize,
     read_buf_size: usize,
+    pub scan_time: Duration,
+    pub read_time: Duration,
 }
 
 impl Chunker {
@@ -55,6 +58,8 @@ impl Chunker {
             max_chunk_size: max_chunk_size,
             repeated_count: 0,
             last_val: 0,
+            scan_time: Duration::new(0, 0),
+            read_time: Duration::new(0, 0),
         }
     }
 
@@ -75,7 +80,9 @@ impl Chunker {
 
         loop {
             // Fill buffer from source input
+            let read_start_time = Instant::now();
             let rc = append_to_buf(source, &mut buf, self.read_buf_size)?;
+            self.read_time += read_start_time.elapsed();
             if rc == 0 {
                 // EOF
                 if buf.len() > 0 {
@@ -84,6 +91,7 @@ impl Chunker {
                 return Ok(());
             }
 
+            let mut start_scan_time = Instant::now();
             while buf_index < buf.len() {
                 let val = buf[buf_index];
                 let chunk_end = source_index + 1;
@@ -117,12 +125,15 @@ impl Chunker {
 
                     if got_chunk {
                         // Match or big chunk - Report it
+                        self.scan_time += start_scan_time.elapsed();
                         result(chunk_start, buf.drain(..chunk_length).collect());
+                        start_scan_time = Instant::now();
                         buf_index = 0;
                         chunk_start = chunk_end;
                     }
                 }
             }
+            self.scan_time += start_scan_time.elapsed();
         }
     }
 }

@@ -24,7 +24,7 @@ fn chunks_to_file(
     Vec<archive::ChunkDescriptor>,
 ) {
     // Setup the chunker
-    let chunker = Chunker::new(
+    let mut chunker = Chunker::new(
         1024 * 1024,
         config.chunk_filter_bits,
         config.min_chunk_size,
@@ -113,7 +113,7 @@ fn chunks_to_file(
 
             let (tmp_file_size, tmp_file_hash, tmp_chunks) = unique_compressed_chunks(
                 &mut src_file,
-                chunker,
+                &mut chunker,
                 hasher,
                 chunk_compressor,
                 &pool,
@@ -128,7 +128,7 @@ fn chunks_to_file(
             let mut src_file = stdin.lock();
             let (tmp_file_size, tmp_file_hash, tmp_chunks) = unique_compressed_chunks(
                 &mut src_file,
-                chunker,
+                &mut chunker,
                 hasher,
                 chunk_compressor,
                 &pool,

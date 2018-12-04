@@ -12,6 +12,7 @@ use chunker::Chunker;
 use chunker_utils::*;
 use config::*;
 use remote_reader::RemoteReader;
+use std::io::BufWriter;
 use std::os::linux::fs::MetadataExt;
 use string_utils::*;
 
@@ -39,7 +40,7 @@ impl ArchiveBackend for File {
 
 fn fill_from_seed<T, F>(
     mut seed_input: T,
-    chunker: Chunker,
+    mut chunker: Chunker,
     hash_length: usize,
     chunk_hash_set: &mut HashSet<HashBuf>,
     mut result: F,
@@ -58,13 +59,27 @@ fn fill_from_seed<T, F>(
         hasher.input(data);
         hasher.result().to_vec()
     };
-    unique_chunks(&mut seed_input, chunker, hasher, &pool, |hashed_chunk| {
-        let hash = &hashed_chunk.hash[0..hash_length].to_vec();
-        if chunk_hash_set.contains(hash) {
-            result(hash, &hashed_chunk.data);
-            chunk_hash_set.remove(hash);
-        }
-    }).expect("compress chunks");
+    unique_chunks(
+        &mut seed_input,
+        &mut chunker,
+        hasher,
+        &pool,
+        |hashed_chunk| {
+            let hash = &hashed_chunk.hash[0..hash_length].to_vec();
+            if chunk_hash_set.contains(hash) {
+                result(hash, &hashed_chunk.data);
+                chunk_hash_set.remove(hash);
+            }
+        },
+    ).expect("compress chunks");
+
+    println!(
+        "Chunker - scan time: {}.{:03} s, read time: {}.{:03} s",
+        chunker.scan_time.as_secs(),
+        chunker.scan_time.subsec_millis(),
+        chunker.read_time.as_secs(),
+        chunker.read_time.subsec_millis()
+    );
 }
 
 fn unpack_input<T>(mut archive: ArchiveReader<T>, config: UnpackConfig, pool: ThreadPool)
@@ -102,6 +117,8 @@ where
             .set_len(archive.source_total_size)
             .expect("resize output file");
     }
+
+    let mut output_file = BufWriter::new(output_file);
 
     // Setup chunker to use when chunking seed input
     let chunker = Chunker::new(
