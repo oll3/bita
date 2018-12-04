@@ -12,13 +12,15 @@ pub type HashBuf = Vec<u8>;
 #[derive(Debug, Clone)]
 pub struct HashedChunk {
     pub hash: HashBuf,
-    pub chunk: Chunk,
+    pub offset: usize,
+    pub data: Vec<u8>,
 }
 
 #[derive(Debug, Clone)]
 pub struct CompressedChunk {
     pub hash: HashBuf,
-    pub chunk: Chunk,
+    pub offset: usize,
+    pub data: Vec<u8>,
     pub cdata: Vec<u8>,
 }
 
@@ -52,25 +54,25 @@ where
 
     let mut file_hash = Blake2b::new();
     chunker
-        .scan(src, |chunk| {
+        .scan(src, |chunk_offset, chunk_data| {
             // For each chunk in file
-            file_hash.input(&chunk.data);
-            file_size += chunk.data.len();
-            let chunk = chunk.clone();
+            file_hash.input(&chunk_data);
+            file_size += chunk_data.len();
             let chunk_tx = chunk_channel.new_tx();
             pool.execute(move || {
-                let hash = hash_chunk(&chunk.data);
+                let hash = hash_chunk(&chunk_data);
                 chunk_tx
                     .send((
                         ChunkDesc {
                             unique_chunk_index: 0,
                             hash: hash.clone(),
-                            offset: chunk.offset,
-                            size: chunk.data.len(),
+                            offset: chunk_offset,
+                            size: chunk_data.len(),
                         },
                         HashedChunk {
                             hash: hash,
-                            chunk: chunk,
+                            offset: chunk_offset,
+                            data: chunk_data,
                         },
                     )).expect("chunk_tx");
             });
@@ -142,11 +144,12 @@ where
             let chunk_tx = chunk_channel.new_tx();
             pool.execute(move || {
                 // Compress the chunk (in thread context)
-                let cdata = compress_chunk(&hashed_chunk.chunk.data);
+                let cdata = compress_chunk(&hashed_chunk.data);
                 chunk_tx
                     .send(CompressedChunk {
                         hash: hashed_chunk.hash,
-                        chunk: hashed_chunk.chunk,
+                        offset: hashed_chunk.offset,
+                        data: hashed_chunk.data,
                         cdata: cdata,
                     }).expect("chunk_tx");
             });

@@ -66,21 +66,21 @@ fn chunks_to_file(
             // For each unique and compressed chunk
             let chunk_data;
             let hash = &comp_chunk.hash[0..config.hash_length as usize];
-            let use_compressed = comp_chunk.cdata.len() < comp_chunk.chunk.data.len();
+            let use_compressed = comp_chunk.cdata.len() < comp_chunk.data.len();
             if use_compressed {
                 // Use the compressed data
                 chunk_data = &comp_chunk.cdata;
             } else {
                 // Compressed chunk bigger than raw - Use raw
-                chunk_data = &comp_chunk.chunk.data;
+                chunk_data = &comp_chunk.data;
             }
 
             println!(
                 "Chunk {}, '{}', offset: {}, size: {}, compressed to: {}, archive: {}",
                 total_unique_chunks,
                 HexSlice::new(&hash),
-                comp_chunk.chunk.offset,
-                size_to_str(comp_chunk.chunk.data.len()),
+                comp_chunk.offset,
+                size_to_str(comp_chunk.data.len()),
                 size_to_str(comp_chunk.cdata.len()),
                 match use_compressed {
                     true => "compressed",
@@ -89,14 +89,14 @@ fn chunks_to_file(
             );
 
             total_unique_chunks += 1;
-            total_unique_chunk_size += comp_chunk.chunk.data.len();
+            total_unique_chunk_size += comp_chunk.data.len();
             total_compressed_size += chunk_data.len();
 
             // Store a chunk descriptor which referes to the compressed data
             chunk_descriptors.push(archive::ChunkDescriptor {
                 hash: hash.to_vec(),
                 source_offsets: vec![], // will be filled after chunking is done
-                source_size: comp_chunk.chunk.data.len() as u64,
+                source_size: comp_chunk.data.len() as u64,
                 archive_offset: archive_offset,
                 archive_size: chunk_data.len() as u64,
                 compressed: use_compressed,

@@ -83,7 +83,10 @@ impl BuzHash {
                 self.hash_sum.rotate_left(1) ^ out_val.rotate_left(self.window as u32) ^ in_val;
         }
         self.buf[self.index] = in_val;
-        self.index = (self.index + 1) % self.window;
+        self.index += 1;
+        if self.index >= self.window {
+            self.index = 0;
+        }
     }
 
     // Get current hash sum

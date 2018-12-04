@@ -2,21 +2,23 @@ use buzhash::BuzHash;
 use std::io;
 use std::io::prelude::*;
 
-// Fill buffer with data from file, or until eof.
-fn fill_buf<T>(source: &mut T, buf: &mut Vec<u8>) -> io::Result<usize>
+fn append_to_buf<T>(source: &mut T, buf: &mut Vec<u8>, count: usize) -> io::Result<usize>
 where
     T: Read,
 {
     let mut read_size = 0;
     let buf_size = buf.len();
-    while read_size < buf_size {
-        let rc = source.read(&mut buf[read_size..buf_size])?;
+    buf.resize(buf_size + count, 0);
+    while read_size < count {
+        let offset = buf_size + read_size;
+        let rc = source.read(&mut buf[offset..])?;
         if rc == 0 {
             break;
         } else {
             read_size += rc;
         }
     }
+    buf.resize(buf_size + read_size, 0);
     return Ok(read_size);
 }
 
@@ -29,16 +31,12 @@ pub struct Chunk {
 #[derive(Clone)]
 pub struct Chunker {
     buzhash: BuzHash,
-    buf: Vec<u8>,
-    buf_size: usize,
-    source_index: usize,
-    chunk_start: usize,
-    chunk_buf: Chunk,
     chunk_filter: u32,
     min_chunk_size: usize,
     max_chunk_size: usize,
     last_val: u8,
     repeated_count: usize,
+    read_buf_size: usize,
 }
 
 impl Chunker {
@@ -51,14 +49,7 @@ impl Chunker {
     ) -> Self {
         Chunker {
             buzhash: buzhash,
-            buf: vec![0; read_buf_size],
-            chunk_buf: Chunk {
-                offset: 0,
-                data: Vec::new(),
-            },
-            buf_size: 0,
-            source_index: 0,
-            chunk_start: 0,
+            read_buf_size: read_buf_size,
             chunk_filter: avg_chunk_size / 2,
             min_chunk_size: min_chunk_size,
             max_chunk_size: max_chunk_size,
@@ -70,56 +61,67 @@ impl Chunker {
     pub fn scan<T, F>(&mut self, source: &mut T, mut result: F) -> io::Result<()>
     where
         T: Read,
-        F: FnMut(&Chunk),
+        F: FnMut(usize, Vec<u8>),
     {
-        loop {
-            // Re-fill buffer from source
-            self.buf_size = fill_buf(source, &mut self.buf)?;
+        let mut source_index: usize = 0;
+        let mut buf = Vec::new();
+        let mut buf_index = 0;
+        let mut chunk_start = 0;
+        let mut repeated_count = 0;
+        let mut last_val = 0;
 
-            if self.buf_size == 0 {
+        // Assuming min chunk size is less than buzhash window size
+        let buzhash_input_limit = self.min_chunk_size - self.buzhash.window_size();
+
+        loop {
+            // Fill buffer from source input
+            let rc = append_to_buf(source, &mut buf, self.read_buf_size)?;
+            if rc == 0 {
                 // EOF
-                if self.chunk_buf.data.len() > 0 {
-                    self.chunk_buf.offset = self.chunk_start;
-                    self.chunk_start = self.source_index + 1;
-                    result(&self.chunk_buf);
+                if buf.len() > 0 {
+                    result(chunk_start, buf.drain(..).collect());
                 }
                 return Ok(());
             }
 
-            for val in &self.buf {
-                let chunk_start = self.chunk_start;
-                let chunk_end = self.source_index + 1;
+            while buf_index < buf.len() {
+                let val = buf[buf_index];
+                let chunk_end = source_index + 1;
                 let chunk_length = chunk_end - chunk_start;
 
-                // Optimization - If the buzhash window is full of the same value
-                // then there is no need pushing another one of the same as the hash
-                // won't change.
-                if *val == self.last_val {
-                    self.repeated_count += 1;
-                } else {
-                    self.repeated_count = 0;
-                    self.last_val = *val;
-                }
-                if self.repeated_count < self.buzhash.window_size() {
-                    self.buzhash.input(*val);
-                }
-
-                self.chunk_buf.data.push(*val);
-
-                if self.buzhash.valid() && chunk_length >= self.min_chunk_size {
-                    let hash = self.buzhash.sum();
-
-                    if (hash % self.chunk_filter) == (self.chunk_filter - 1)
-                        || chunk_length >= self.max_chunk_size
-                    {
-                        // Match or big chunk - Report it
-                        self.chunk_start = chunk_end;
-                        self.chunk_buf.offset = chunk_start;
-                        result(&self.chunk_buf);
-                        self.chunk_buf.data.clear();
+                if chunk_length >= buzhash_input_limit {
+                    if val == last_val {
+                        repeated_count += 1;
+                    } else {
+                        repeated_count = 0;
+                        last_val = val;
+                    }
+                    // Optimization - If the buzhash window is full of the same value
+                    // then there is no need pushing another one of the same as the hash
+                    // won't change.
+                    if repeated_count < self.buzhash.window_size() {
+                        self.buzhash.input(val);
                     }
                 }
-                self.source_index += 1;
+
+                buf_index += 1;
+                source_index += 1;
+
+                if chunk_length >= self.min_chunk_size {
+                    let mut got_chunk = chunk_length >= self.max_chunk_size;
+
+                    if !got_chunk && self.buzhash.valid() {
+                        let hash = self.buzhash.sum();
+                        got_chunk = (hash % self.chunk_filter) == (self.chunk_filter - 1);
+                    }
+
+                    if got_chunk {
+                        // Match or big chunk - Report it
+                        result(chunk_start, buf.drain(..chunk_length).collect());
+                        buf_index = 0;
+                        chunk_start = chunk_end;
+                    }
+                }
             }
         }
     }

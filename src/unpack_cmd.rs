@@ -61,7 +61,7 @@ fn fill_from_seed<T, F>(
     unique_chunks(&mut seed_input, chunker, hasher, &pool, |hashed_chunk| {
         let hash = &hashed_chunk.hash[0..hash_length].to_vec();
         if chunk_hash_set.contains(hash) {
-            result(hash, &hashed_chunk.chunk.data);
+            result(hash, &hashed_chunk.data);
             chunk_hash_set.remove(hash);
         }
     }).expect("compress chunks");
