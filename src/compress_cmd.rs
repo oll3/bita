@@ -117,6 +117,7 @@ fn chunks_to_file(
                 hasher,
                 chunk_compressor,
                 &pool,
+                true,
                 process_chunk,
             ).expect("compress chunks");
             file_size = tmp_file_size;
@@ -132,6 +133,7 @@ fn chunks_to_file(
                 hasher,
                 chunk_compressor,
                 &pool,
+                true,
                 process_chunk,
             ).expect("compress chunks");
             file_size = tmp_file_size;

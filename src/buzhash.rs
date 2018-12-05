@@ -41,6 +41,8 @@ pub struct BuzHash {
     hash_sum: u32,
     buzhash_table: Vec<u32>,
     window_full: bool,
+    last_input: u8,
+    repeated_input: usize,
 }
 
 impl BuzHash {
@@ -52,6 +54,8 @@ impl BuzHash {
             hash_sum: 0,
             buzhash_table: Self::generate_seeded_table(seed),
             window_full: false,
+            last_input: 0,
+            repeated_input: 0,
         }
     }
 
@@ -68,29 +72,46 @@ impl BuzHash {
         self.window
     }
 
-    // Push and process a byte
-    #[inline(always)]
-    pub fn input(&mut self, in_val: u8) {
-        let in_val = self.buzhash_table[in_val as usize];
+    pub fn init(&mut self, in_val: u8) {
         if !self.window_full {
+            let in_val = self.buzhash_table[in_val as usize];
             // Initialize sequence until window is full
             let shift = self.window - (self.index + 1);
             self.hash_sum ^= in_val.rotate_left(shift as u32);
             self.window_full = self.index >= (self.window - 1);
+            self.buf[self.index] = in_val;
+            self.index += 1;
+            if self.index >= self.window {
+                self.index = 0;
+            }
+        }
+    }
+
+    // Push and process a byte
+    pub fn input(&mut self, in_val: u8) {
+        // If the buzhash window is full of the same value then there is no
+        // need pushing another one of the same as it won't change the hash.
+        if in_val == self.last_input {
+            self.repeated_input += 1;
         } else {
+            self.repeated_input = 0;
+            self.last_input = in_val;
+        }
+        if self.repeated_input < self.window {
+            let in_val = self.buzhash_table[in_val as usize];
+
             let out_val = self.buf[self.index];
             self.hash_sum =
                 self.hash_sum.rotate_left(1) ^ out_val.rotate_left(self.window as u32) ^ in_val;
-        }
-        self.buf[self.index] = in_val;
-        self.index += 1;
-        if self.index >= self.window {
-            self.index = 0;
+            self.buf[self.index] = in_val;
+            self.index += 1;
+            if self.index >= self.window {
+                self.index = 0;
+            }
         }
     }
 
     // Get current hash sum
-    #[inline(always)]
     pub fn sum(&self) -> u32 {
         self.hash_sum
     }

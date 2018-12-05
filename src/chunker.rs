@@ -66,14 +66,12 @@ impl Chunker {
     pub fn scan<T, F>(&mut self, source: &mut T, mut result: F) -> io::Result<()>
     where
         T: Read,
-        F: FnMut(usize, Vec<u8>),
+        F: FnMut(usize, &[u8]),
     {
         let mut source_index: usize = 0;
         let mut buf = Vec::new();
         let mut buf_index = 0;
         let mut chunk_start = 0;
-        let mut repeated_count = 0;
-        let mut last_val = 0;
 
         // Assuming min chunk size is less than buzhash window size
         let buzhash_input_limit = self.min_chunk_size - self.buzhash.window_size();
@@ -86,9 +84,16 @@ impl Chunker {
             if rc == 0 {
                 // EOF
                 if buf.len() > 0 {
-                    result(chunk_start, buf.drain(..).collect());
+                    result(chunk_start, &buf[..]);
                 }
                 return Ok(());
+            }
+
+            while !self.buzhash.valid() && buf_index < buf.len() {
+                // Initialize the buzhash
+                self.buzhash.init(buf[buf_index]);
+                buf_index += 1;
+                source_index += 1;
             }
 
             let mut start_scan_time = Instant::now();
@@ -98,18 +103,7 @@ impl Chunker {
                 let chunk_length = chunk_end - chunk_start;
 
                 if chunk_length >= buzhash_input_limit {
-                    if val == last_val {
-                        repeated_count += 1;
-                    } else {
-                        repeated_count = 0;
-                        last_val = val;
-                    }
-                    // Optimization - If the buzhash window is full of the same value
-                    // then there is no need pushing another one of the same as the hash
-                    // won't change.
-                    if repeated_count < self.buzhash.window_size() {
-                        self.buzhash.input(val);
-                    }
+                    self.buzhash.input(val);
                 }
 
                 buf_index += 1;
@@ -118,16 +112,18 @@ impl Chunker {
                 if chunk_length >= self.min_chunk_size {
                     let mut got_chunk = chunk_length >= self.max_chunk_size;
 
-                    if !got_chunk && self.buzhash.valid() {
+                    if !got_chunk {
                         let hash = self.buzhash.sum();
                         got_chunk = hash | self.filter_mask == hash;
                     }
 
                     if got_chunk {
                         // Match or big chunk - Report it
+                        //let chunk_data = buf.drain(..chunk_length).collect();
                         self.scan_time += start_scan_time.elapsed();
-                        result(chunk_start, buf.drain(..chunk_length).collect());
+                        result(chunk_start, &buf[..chunk_length]);
                         start_scan_time = Instant::now();
+                        buf.drain(..chunk_length);
                         buf_index = 0;
                         chunk_start = chunk_end;
                     }

@@ -4,6 +4,7 @@ use lzma::LzmaWriter;
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::io::prelude::*;
+use std::time::{Duration, Instant};
 use string_utils::*;
 
 use archive;
@@ -212,6 +213,9 @@ where
         let hash_length = self.hash_length;
         let mut total_read = 0;
 
+        let mut decompress_time = Duration::new(0, 0);
+        let mut verify_time = Duration::new(0, 0);
+
         for group in grouped_chunks {
             let start_offset = self.archive_chunks_offset + group[0].archive_offset;
             let chunk_sizes = group.iter().map(|c| c.archive_size).collect();
@@ -225,11 +229,14 @@ where
                         chunk_buf.data.resize(0, 0);
                         {
                             // Decompress archive data
+                            //let decomp_start_time = Instant::now();
                             let mut f = LzmaWriter::new_decompressor(&mut chunk_buf.data)
                                 .expect("new decompressor");
                             let mut wc = 0;
                             while wc < archive_data.len() {
+                                let decomp_start_time = Instant::now();
                                 wc += f.write(&archive_data[wc..]).expect("write decompressor");
+                                decompress_time += decomp_start_time.elapsed();
                             }
                             f.finish().expect("finish decompressor");
                         }
@@ -254,15 +261,17 @@ where
                     }
 
                     // Verify data by hash
+                    let verify_start_time = Instant::now();
                     hasher.input(&chunk_buf.data);
                     let hash = hasher.result_reset().to_vec();
-                    if hash[0..hash_length] != cd.hash[0..hash_length] {
+                    if hash[..hash_length] != cd.hash[..hash_length] {
                         panic!(
                             "Chunk hash mismatch (expected: {}, got: {})",
                             HexSlice::new(&cd.hash[0..hash_length]),
                             HexSlice::new(&hash[0..hash_length])
                         );
                     }
+                    verify_time += verify_start_time.elapsed();
 
                     // For each offset where this chunk was found in source
                     for offset in &cd.source_offsets {
@@ -273,6 +282,13 @@ where
                     chunk_index += 1;
                 }).expect("read chunks");
         }
+        println!(
+            "Decompression time: {}.{:03} s, verify time: {}.{:03} s",
+            decompress_time.as_secs(),
+            decompress_time.subsec_millis(),
+            verify_time.as_secs(),
+            verify_time.subsec_millis()
+        );
         self.total_read = total_read;
         return;
     }

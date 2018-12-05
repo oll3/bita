@@ -39,6 +39,7 @@ pub fn unique_chunks<T, F, H>(
     chunker: &mut Chunker,
     hash_chunk: H,
     pool: &ThreadPool,
+    hash_input: bool,
     mut result: F,
 ) -> io::Result<(usize, HashBuf, Vec<ChunkDesc>)>
 where
@@ -52,11 +53,20 @@ where
     let mut unique_chunk_index = 0;
     let mut file_size = 0;
 
-    let mut file_hash = Blake2b::new();
+    let mut input_hasher_opt = if hash_input {
+        Some(Blake2b::new())
+    } else {
+        None
+    };
     chunker
         .scan(src, |chunk_offset, chunk_data| {
             // For each chunk in file
-            file_hash.input(&chunk_data);
+            match input_hasher_opt {
+                Some(ref mut hasher) => hasher.input(chunk_data),
+                _ => {}
+            }
+            //file_hash.input(chunk_data);
+            let chunk_data = chunk_data.to_vec();
             file_size += chunk_data.len();
             let chunk_tx = chunk_channel.new_tx();
             pool.execute(move || {
@@ -72,7 +82,7 @@ where
                         HashedChunk {
                             hash: hash,
                             offset: chunk_offset,
-                            data: chunk_data,
+                            data: chunk_data.to_vec(),
                         },
                     )).expect("chunk_tx");
             });
@@ -119,7 +129,12 @@ where
             }
             chunks.push(chunk_desc);
         });
-    Ok((file_size, file_hash.result().to_vec(), chunks))
+    let total_hash = match input_hasher_opt {
+        Some(ref mut hasher) => hasher.clone().result().to_vec(),
+        _ => vec![],
+    };
+
+    Ok((file_size, total_hash, chunks))
 }
 
 // Iterate unique and compressed chunks
@@ -129,6 +144,7 @@ pub fn unique_compressed_chunks<T, F, C, H>(
     hash_chunk: H,
     compress_chunk: C,
     pool: &ThreadPool,
+    hash_input: bool,
     mut result: F,
 ) -> io::Result<(usize, Vec<u8>, Vec<ChunkDesc>)>
 where
@@ -138,8 +154,13 @@ where
     H: Fn(&[u8]) -> Vec<u8> + Send + 'static + Copy,
 {
     let mut chunk_channel = OrderedMPSC::new();
-    let (file_size, file_hash, chunks) =
-        unique_chunks(src, chunker, hash_chunk, &pool, |hashed_chunk| {
+    let (file_size, file_hash, chunks) = unique_chunks(
+        src,
+        chunker,
+        hash_chunk,
+        &pool,
+        hash_input,
+        |hashed_chunk| {
             // For each unique chunk
             let chunk_tx = chunk_channel.new_tx();
             pool.execute(move || {
@@ -157,7 +178,8 @@ where
             chunk_channel.rx().try_iter().for_each(|compressed_chunk| {
                 result(compressed_chunk);
             });
-        })?;
+        },
+    )?;
 
     // Wait for threads to be done
     pool.join();

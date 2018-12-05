@@ -38,7 +38,7 @@ impl ArchiveBackend for File {
     }
 }
 
-fn fill_from_seed<T, F>(
+fn chunk_seed<T, F>(
     mut seed_input: T,
     mut chunker: Chunker,
     hash_length: usize,
@@ -64,6 +64,7 @@ fn fill_from_seed<T, F>(
         &mut chunker,
         hasher,
         &pool,
+        false,
         |hashed_chunk| {
             let hash = &hashed_chunk.hash[0..hash_length].to_vec();
             if chunk_hash_set.contains(hash) {
@@ -136,7 +137,7 @@ where
         let seed_file = File::open(&seed).expect(&format!("failed to open file ({})", seed));
 
         println!("{} chunks missing. Search in {}.", chunks_left.len(), seed);
-        fill_from_seed(
+        chunk_seed(
             seed_file,
             chunker.clone(),
             archive.hash_length,

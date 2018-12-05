@@ -5,12 +5,15 @@ use archive_reader::ArchiveBackend;
 
 pub struct RemoteReader {
     url: String,
+    handle: curl::easy::Easy,
 }
 
 impl RemoteReader {
     pub fn new(url: &str) -> Self {
+        let handle = Easy::new();
         RemoteReader {
             url: url.to_string(),
+            handle: handle,
         }
     }
 }
@@ -20,7 +23,30 @@ impl ArchiveBackend for RemoteReader {
         if buf.len() == 0 {
             return Ok(());
         }
-        read_from(&self.url, offset, buf)?;
+
+        let end_offset = offset + (buf.len() - 1) as u64;
+
+        let mut data = Vec::new();
+        self.handle.url(&self.url)?;
+        self.handle.range(&format!("{}-{}", offset, end_offset))?;
+        {
+            let mut transfer = self.handle.transfer();
+            transfer.write_function(|new_data| {
+                data.extend_from_slice(new_data);
+                Ok(new_data.len())
+            })?;
+            transfer.perform()?;
+        }
+
+        for i in 0..data.len() {
+            buf[i] = data[i];
+        }
+
+        println!(
+            "Requested {} bytes, fetched {} bytes",
+            buf.len(),
+            data.len()
+        );
         Ok(())
     }
 
@@ -40,15 +66,14 @@ impl ArchiveBackend for RemoteReader {
         );
 
         // Create get request
-        let mut handle = Easy::new();
         let mut chunk_buf: Vec<u8> = vec![];
         let mut chunk_index = 0;
         let end_offset = start_offset + tot_size - 1;
-
-        handle.url(&self.url)?;
-        handle.range(&format!("{}-{}", start_offset, end_offset))?;
+        self.handle.url(&self.url)?;
+        self.handle
+            .range(&format!("{}-{}", start_offset, end_offset))?;
         {
-            let mut transfer = handle.transfer();
+            let mut transfer = self.handle.transfer();
             transfer.write_function(|new_data| {
                 // Got data back from server
                 chunk_buf.extend_from_slice(new_data);
@@ -67,33 +92,4 @@ impl ArchiveBackend for RemoteReader {
         }
         Ok(())
     }
-}
-
-//TODO: Use result as return type
-pub fn read_from(url: &str, start_offset: u64, buf: &mut [u8]) -> io::Result<usize> {
-    let end_offset = start_offset + (buf.len() - 1) as u64;
-
-    let mut data = Vec::new();
-    let mut handle = Easy::new();
-    handle.url(url)?;
-    handle.range(&format!("{}-{}", start_offset, end_offset))?;
-    {
-        let mut transfer = handle.transfer();
-        transfer.write_function(|new_data| {
-            data.extend_from_slice(new_data);
-            Ok(new_data.len())
-        })?;
-        transfer.perform()?;
-    }
-
-    for i in 0..data.len() {
-        buf[i] = data[i];
-    }
-
-    println!(
-        "Requested {} bytes, fetched {} bytes",
-        buf.len(),
-        data.len()
-    );
-    return Ok(data.len());
 }
