@@ -1,3 +1,4 @@
+use atty::Stream;
 use blake2::{Blake2b, Digest};
 use buzhash::BuzHash;
 use std::collections::HashSet;
@@ -133,10 +134,12 @@ where
     let mut total_read_from_seed = 0;
     let mut total_from_archive = 0;
 
-    for seed in config.seed_files {
-        let seed_file = File::open(&seed).expect(&format!("failed to open file ({})", seed));
-
-        println!("{} chunks missing. Search in {}.", chunks_left.len(), seed);
+    // Run input seed files through chunker and use chunks which are in the target file.
+    // Start with scanning stdin, if not a tty.
+    if !atty::is(Stream::Stdin) {
+        let stdin = io::stdin();
+        let seed_file = stdin.lock();
+        println!("Scanning stdin for chunks...");
         chunk_seed(
             seed_file,
             chunker.clone(),
@@ -145,10 +148,9 @@ where
             |hash, chunk_data| {
                 // Got chunk
                 println!(
-                    "Chunk '{}', size {} read from seed {}",
+                    "Chunk '{}', size {} read from seed stdin",
                     HexSlice::new(hash),
                     size_to_str(chunk_data.len()),
-                    seed,
                 );
 
                 total_read_from_seed += chunk_data.len();
@@ -162,14 +164,50 @@ where
             },
             &pool,
         );
+        println!(
+            "Reached end of stdin ({} chunks missing)",
+            chunks_left.len()
+        );
+    }
+    // Now scan through all given seed files
+    for seed in config.seed_files {
+        if chunks_left.len() > 0 {
+            let seed_file = File::open(&seed).expect(&format!("failed to open file ({})", seed));
+            println!("Scanning {} for chunks...", seed);
+            chunk_seed(
+                seed_file,
+                chunker.clone(),
+                archive.hash_length,
+                &mut chunks_left,
+                |hash, chunk_data| {
+                    // Got chunk
+                    println!(
+                        "Chunk '{}', size {} read from seed {}",
+                        HexSlice::new(hash),
+                        size_to_str(chunk_data.len()),
+                        seed,
+                    );
 
-        if chunks_left.len() == 0 {
-            println!("All chunks was found in seed.");
-            break;
+                    total_read_from_seed += chunk_data.len();
+
+                    for offset in archive.chunk_source_offsets(hash) {
+                        output_file
+                            .seek(SeekFrom::Start(offset as u64))
+                            .expect("seek output");
+                        output_file.write_all(&chunk_data).expect("write output");
+                    }
+                },
+                &pool,
+            );
+            println!(
+                "Reached end of {} ({} chunks missing)",
+                seed,
+                chunks_left.len()
+            );
         }
-        println!("{} chunks still missing.", chunks_left.len());
     }
 
+    // Fetch rest of the chunks from archive
     archive.read_chunk_data(&chunks_left, |chunk| {
         total_from_archive += chunk.data.len();
         output_file

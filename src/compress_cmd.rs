@@ -1,3 +1,4 @@
+use atty::Stream;
 use blake2::{Blake2b, Digest};
 use lzma::LzmaWriter;
 use std::fs;
@@ -123,7 +124,7 @@ fn chunks_to_file(
             file_size = tmp_file_size;
             file_hash = tmp_file_hash;
             chunks = tmp_chunks;
-        } else {
+        } else if !atty::is(Stream::Stdin) {
             // Read source from stdin
             let stdin = io::stdin();
             let mut src_file = stdin.lock();
@@ -139,6 +140,8 @@ fn chunks_to_file(
             file_size = tmp_file_size;
             file_hash = tmp_file_hash;
             chunks = tmp_chunks;
+        } else {
+            panic!("Missing input file");
         }
     }
     pool.join();
