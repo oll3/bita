@@ -1,3 +1,5 @@
+#[macro_use]
+extern crate error_chain;
 extern crate bincode;
 extern crate clap;
 extern crate serde;
@@ -27,6 +29,11 @@ use threadpool::ThreadPool;
 
 use clap::{App, Arg, SubCommand};
 use config::*;
+
+mod errors {
+    // Create the Error, ErrorKind, ResultExt, and Result types
+    error_chain!{}
+}
 
 const PKG_VERSION: &'static str = env!("CARGO_PKG_VERSION");
 const PKG_NAME: &'static str = env!("CARGO_PKG_NAME");
@@ -175,13 +182,40 @@ fn parse_opts() -> Config {
     }
 }
 
+//use errors::*;
+
+/*fn test_err() -> Result<()> {
+    use std::fs::File;
+
+    // This operation will fail
+    File::open("contacts").chain_err(|| "unable to open contacts file")?;
+
+    Ok(())
+}*/
+
 fn main() {
     let num_threads = num_cpus::get();
     let pool = ThreadPool::new(num_threads);
 
-    match parse_opts() {
+    /*if let Err(ref e) = test_err() {
+    }*/
+
+    let result = match parse_opts() {
         Config::Compress(config) => compress_cmd::run(config, pool),
         Config::Unpack(config) => unpack_cmd::run(config, pool),
-        _ => process::exit(1),
+    };
+    if let Err(ref e) = result {
+        println!("error: {}", e);
+
+        for e in e.iter().skip(1) {
+            println!("Caused by: {}", e);
+        }
+        // The backtrace is not always generated. Try to run this example
+        // with `RUST_BACKTRACE=1`.
+        if let Some(backtrace) = e.backtrace() {
+            println!("backtrace: {:?}", backtrace);
+        }
+
+        ::std::process::exit(1);
     }
 }

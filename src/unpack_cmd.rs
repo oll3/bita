@@ -12,28 +12,33 @@ use archive_reader::*;
 use chunker::Chunker;
 use chunker_utils::*;
 use config::*;
+use errors::*;
 use remote_reader::RemoteReader;
 use std::io::BufWriter;
 use std::os::linux::fs::MetadataExt;
 use string_utils::*;
 
 impl ArchiveBackend for File {
-    fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> io::Result<()> {
-        self.seek(SeekFrom::Start(offset))?;
-        self.read_exact(buf)?;
+    fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> Result<()> {
+        self.seek(SeekFrom::Start(offset))
+            .chain_err(|| "failed to seek archive file")?;
+        self.read_exact(buf)
+            .chain_err(|| "failed to read archive file")?;
         Ok(())
     }
-    fn read_in_chunks<F: FnMut(Vec<u8>)>(
+    fn read_in_chunks<F: FnMut(Vec<u8>) -> Result<()>>(
         &mut self,
         start_offset: u64,
         chunk_sizes: &Vec<u64>,
         mut chunk_callback: F,
-    ) -> io::Result<()> {
-        self.seek(SeekFrom::Start(start_offset))?;
+    ) -> Result<()> {
+        self.seek(SeekFrom::Start(start_offset))
+            .chain_err(|| "failed to seek archive file")?;
         for chunk_size in chunk_sizes {
             let mut buf: Vec<u8> = vec![0; *chunk_size as usize];
-            self.read_exact(&mut buf[..])?;
-            chunk_callback(buf);
+            self.read_exact(&mut buf[..])
+                .chain_err(|| "failed to read archive file")?;
+            chunk_callback(buf)?;
         }
         Ok(())
     }
@@ -46,7 +51,8 @@ fn chunk_seed<T, F>(
     chunk_hash_set: &mut HashSet<HashBuf>,
     mut result: F,
     pool: &ThreadPool,
-) where
+) -> Result<()>
+where
     T: Read,
     F: FnMut(&HashBuf, &Vec<u8>),
 {
@@ -73,7 +79,7 @@ fn chunk_seed<T, F>(
                 chunk_hash_set.remove(hash);
             }
         },
-    ).expect("compress chunks");
+    ).chain_err(|| "failed to get unique chunks")?;
 
     println!(
         "Chunker - scan time: {}.{:03} s, read time: {}.{:03} s",
@@ -82,9 +88,15 @@ fn chunk_seed<T, F>(
         chunker.read_time.as_secs(),
         chunker.read_time.subsec_millis()
     );
+
+    Ok(())
 }
 
-fn unpack_input<T>(mut archive: ArchiveReader<T>, config: UnpackConfig, pool: ThreadPool)
+fn unpack_input<T>(
+    mut archive: ArchiveReader<T>,
+    config: UnpackConfig,
+    pool: ThreadPool,
+) -> Result<()>
 where
     T: ArchiveBackend,
 {
@@ -96,15 +108,19 @@ where
         .create(config.base.force_create)
         .create_new(!config.base.force_create)
         .open(&config.output)
-        .expect(&format!("failed to open output file ({})", config.output));
+        .chain_err(|| format!("failed to open output file ({})", config.output))?;
 
     // Check if the given output file is a regular file or block device.
     // If it is a block device we should check its size against the target size before
     // writing. If a regular file then resize that file to target size.
-    let meta = output_file.metadata().expect("meta");
+    let meta = output_file
+        .metadata()
+        .chain_err(|| "unable to get file meta data")?;
     if meta.st_mode() & 0x6000 == 0x6000 {
         // Output is a block device
-        let size = output_file.seek(SeekFrom::End(0)).expect("seek size");
+        let size = output_file
+            .seek(SeekFrom::End(0))
+            .chain_err(|| "unable to seek output file")?;
         if size != archive.source_total_size {
             panic!(
                 "Size of output ({}) differ from size of archive target file ({})",
@@ -112,12 +128,14 @@ where
                 size_to_str(archive.source_total_size)
             );
         }
-        output_file.seek(SeekFrom::Start(0)).expect("seek reset");
+        output_file
+            .seek(SeekFrom::Start(0))
+            .chain_err(|| "unable to seek output file")?;
     } else {
         // Output is a reqular file
         output_file
             .set_len(archive.source_total_size)
-            .expect("resize output file");
+            .chain_err(|| "unable to resize output file")?;
     }
 
     let mut output_file = BufWriter::new(output_file);
@@ -163,7 +181,7 @@ where
                 }
             },
             &pool,
-        );
+        )?;
         println!(
             "Reached end of stdin ({} chunks missing)",
             chunks_left.len()
@@ -172,7 +190,8 @@ where
     // Now scan through all given seed files
     for seed in config.seed_files {
         if chunks_left.len() > 0 {
-            let seed_file = File::open(&seed).expect(&format!("failed to open file ({})", seed));
+            let seed_file =
+                File::open(&seed).chain_err(|| format!("failed to open seed file ({})", seed))?;
             println!("Scanning {} for chunks...", seed);
             chunk_seed(
                 seed_file,
@@ -198,7 +217,7 @@ where
                     }
                 },
                 &pool,
-            );
+            )?;
             println!(
                 "Reached end of {} ({} chunks missing)",
                 seed,
@@ -212,30 +231,38 @@ where
         total_from_archive += chunk.data.len();
         output_file
             .seek(SeekFrom::Start(chunk.offset as u64))
-            .expect("seek output");
-        output_file.write_all(&chunk.data).expect("write output");
-    });
+            .chain_err(|| "failed to seek output file")?;
+        output_file
+            .write_all(&chunk.data)
+            .chain_err(|| "failed to write output file")?;
+
+        Ok(())
+    })?;
 
     println!(
         "Unpacked using {} from seed and {} from archive.",
         size_to_str(total_read_from_seed),
         size_to_str(archive.total_read)
     );
+
+    Ok(())
 }
 
-pub fn run(config: UnpackConfig, pool: ThreadPool) {
+pub fn run(config: UnpackConfig, pool: ThreadPool) -> Result<()> {
     println!("Do unpack ({:?})", config);
 
     if &config.input[0..7] == "http://" || &config.input[0..8] == "https://" {
         println!("Using remote reader");
         let remote_source = RemoteReader::new(&config.input);
-        let archive = ArchiveReader::new(remote_source);
-        unpack_input(archive, config, pool);
+        let archive = ArchiveReader::new(remote_source)?;
+        unpack_input(archive, config, pool)?;
     } else {
         println!("Using file reader");
         let local_file =
-            File::open(&config.input).expect(&format!("failed to open file ({})", config.input));
-        let archive = ArchiveReader::new(local_file);
-        unpack_input(archive, config, pool);
+            File::open(&config.input).chain_err(|| format!("unable to open {}", config.input))?;
+        let archive = ArchiveReader::new(local_file)?;
+        unpack_input(archive, config, pool)?;
     }
+
+    Ok(())
 }

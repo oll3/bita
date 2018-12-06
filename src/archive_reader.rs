@@ -2,13 +2,13 @@ use blake2::{Blake2b, Digest};
 use chunker_utils::HashBuf;
 use lzma::LzmaWriter;
 use std::collections::{HashMap, HashSet};
-use std::io;
 use std::io::prelude::*;
 use std::time::{Duration, Instant};
 use string_utils::*;
 
 use archive;
 use chunker;
+use errors::*;
 
 pub struct ArchiveReader<T> {
     input: T,
@@ -40,45 +40,45 @@ pub trait ArchiveBackend {
     // Read from archive into the given buffer.
     // Should read the exact number of bytes of the given buffer and start read at
     // given offset.
-    fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> io::Result<()>;
+    fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> Result<()>;
 
     // Read and return chunked data
-    fn read_in_chunks<F: FnMut(Vec<u8>)>(
+    fn read_in_chunks<F: FnMut(Vec<u8>) -> Result<()>>(
         &mut self,
         start_offset: u64,
         chunk_sizes: &Vec<u64>,
         chunk_callback: F,
-    ) -> io::Result<()>;
+    ) -> Result<()>;
 }
 
 impl<T> ArchiveReader<T>
 where
     T: ArchiveBackend,
 {
-    pub fn verify_pre_header(pre_header: &[u8]) -> Result<usize, &'static str> {
+    pub fn verify_pre_header(pre_header: &[u8]) -> Result<usize> {
         if pre_header.len() < 12 {
-            return Err("Failed to read header of archive");
+            bail!("Failed to read header of archive")
         }
         if &pre_header[0..4] != "bita".as_bytes() {
-            return Err("Not an archive");
+            bail!("Not an archive")
         }
 
         let header_size = archive::vec_to_size(&pre_header[4..12]) as usize;
-        return Ok(header_size);
+
+        Ok(header_size)
     }
 
-    pub fn new(mut input: T) -> Self {
+    pub fn new(mut input: T) -> Result<Self> {
         // Read the pre-header (file magic, version and size)
         let mut input_offset: u64 = 0;
         let mut header_buf = vec![0; 12];
         input
             .read_at(0, &mut header_buf)
-            .expect("read archive pre-header");
+            .chain_err(|| "unable to read archive")?;
 
         input_offset += 12;
 
-        let header_size =
-            Self::verify_pre_header(&header_buf[0..12]).expect("verify archive header");
+        let header_size = Self::verify_pre_header(&header_buf[0..12])?;
 
         println!("archive header size: {}", header_size);
 
@@ -86,11 +86,12 @@ where
         header_buf.resize(header_size, 0);
         input
             .read_at(input_offset, &mut header_buf)
-            .expect("read archive header");
+            .chain_err(|| "unable to read archive")?;
         input_offset += header_size as u64;
 
         // ...and deserialize it
-        let header: archive::Header = bincode::deserialize(&header_buf).expect("unpack header");
+        let header: archive::Header =
+            bincode::deserialize(&header_buf).chain_err(|| "unable to unpack archive header")?;
 
         // Verify the header against the header hash
         let mut hasher = Blake2b::new();
@@ -99,11 +100,11 @@ where
         header_buf.resize(64, 0);
         input
             .read_at(input_offset, &mut header_buf)
-            .expect("read header hash");
+            .chain_err(|| "unable to read archive")?;
         input_offset += 64;
 
         if header_buf != hasher.result().to_vec() {
-            panic!("Corrupt archive header");
+            bail!("Corrupt archive header")
         }
 
         println!("{}", header);
@@ -131,7 +132,7 @@ where
             }
         }
 
-        return ArchiveReader {
+        return Ok(ArchiveReader {
             input: input,
             chunk_map: chunk_map,
             chunks: chunk_order,
@@ -143,7 +144,7 @@ where
             hash_window_size: hash_window_size,
             hash_length: hash_length,
             total_read: 0,
-        };
+        });
     }
 
     // Get a set of all chunks present in archive
@@ -188,9 +189,9 @@ where
     }
 
     // Get chunk data for all listed chunks if present in archive
-    pub fn read_chunk_data<F>(&mut self, chunks: &HashSet<HashBuf>, mut result: F)
+    pub fn read_chunk_data<F>(&mut self, chunks: &HashSet<HashBuf>, mut result: F) -> Result<()>
     where
-        F: FnMut(&chunker::Chunk),
+        F: FnMut(&chunker::Chunk) -> Result<()>,
     {
         // Create list of chunks which are in archive. The order of the list should
         // be the same otder as the chunk data in archive.
@@ -276,10 +277,12 @@ where
                     // For each offset where this chunk was found in source
                     for offset in &cd.source_offsets {
                         chunk_buf.offset = *offset as usize;
-                        result(&chunk_buf);
+                        result(&chunk_buf)?;
                     }
 
                     chunk_index += 1;
+
+                    Ok(())
                 }).expect("read chunks");
         }
         println!(
@@ -290,6 +293,7 @@ where
             verify_time.subsec_millis()
         );
         self.total_read = total_read;
-        return;
+
+        Ok(())
     }
 }

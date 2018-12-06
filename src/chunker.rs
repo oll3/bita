@@ -38,6 +38,7 @@ pub struct Chunker {
     last_val: u8,
     repeated_count: usize,
     read_buf_size: usize,
+    source_buf: Vec<u8>,
     pub scan_time: Duration,
     pub read_time: Duration,
 }
@@ -58,9 +59,15 @@ impl Chunker {
             max_chunk_size: max_chunk_size,
             repeated_count: 0,
             last_val: 0,
+            source_buf: Vec::new(),
             scan_time: Duration::new(0, 0),
             read_time: Duration::new(0, 0),
         }
+    }
+
+    // Can be called before scan to preload scan buffer
+    pub fn preload(&mut self, data: &[u8]) {
+        self.source_buf.extend(data);
     }
 
     pub fn scan<T, F>(&mut self, source: &mut T, mut result: F) -> io::Result<()>
@@ -69,7 +76,6 @@ impl Chunker {
         F: FnMut(usize, &[u8]),
     {
         let mut source_index: usize = 0;
-        let mut buf = Vec::new();
         let mut buf_index = 0;
         let mut chunk_start = 0;
 
@@ -79,26 +85,26 @@ impl Chunker {
         loop {
             // Fill buffer from source input
             let read_start_time = Instant::now();
-            let rc = append_to_buf(source, &mut buf, self.read_buf_size)?;
+            let rc = append_to_buf(source, &mut self.source_buf, self.read_buf_size)?;
             self.read_time += read_start_time.elapsed();
             if rc == 0 {
                 // EOF
-                if buf.len() > 0 {
-                    result(chunk_start, &buf[..]);
+                if self.source_buf.len() > 0 {
+                    result(chunk_start, &self.source_buf[..]);
                 }
                 return Ok(());
             }
 
-            while !self.buzhash.valid() && buf_index < buf.len() {
+            while !self.buzhash.valid() && buf_index < self.source_buf.len() {
                 // Initialize the buzhash
-                self.buzhash.init(buf[buf_index]);
+                self.buzhash.init(self.source_buf[buf_index]);
                 buf_index += 1;
                 source_index += 1;
             }
 
             let mut start_scan_time = Instant::now();
-            while buf_index < buf.len() {
-                let val = buf[buf_index];
+            while buf_index < self.source_buf.len() {
+                let val = self.source_buf[buf_index];
                 let chunk_end = source_index + 1;
                 let chunk_length = chunk_end - chunk_start;
 
@@ -121,9 +127,9 @@ impl Chunker {
                         // Match or big chunk - Report it
                         //let chunk_data = buf.drain(..chunk_length).collect();
                         self.scan_time += start_scan_time.elapsed();
-                        result(chunk_start, &buf[..chunk_length]);
+                        result(chunk_start, &self.source_buf[..chunk_length]);
                         start_scan_time = Instant::now();
-                        buf.drain(..chunk_length);
+                        self.source_buf.drain(..chunk_length);
                         buf_index = 0;
                         chunk_start = chunk_end;
                     }

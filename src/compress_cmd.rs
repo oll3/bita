@@ -13,17 +13,18 @@ use buzhash::BuzHash;
 use chunker::*;
 use chunker_utils::*;
 use config::*;
+use errors::*;
 
 fn chunks_to_file(
     config: &CompressConfig,
     pool: ThreadPool,
     chunk_file: &mut File,
-) -> (
+) -> Result<(
     usize,
     Vec<u8>,
     Vec<ChunkDesc>,
     Vec<archive::ChunkDescriptor>,
-) {
+)> {
     // Setup the chunker
     let mut chunker = Chunker::new(
         1024 * 1024,
@@ -110,7 +111,7 @@ fn chunks_to_file(
         if config.input.len() > 0 {
             // Read source from file
             let mut src_file = File::open(&config.input)
-                .expect(&format!("failed to open file ({})", config.input));
+                .chain_err(|| format!("unable to open input file ({})", config.input))?;
 
             let (tmp_file_size, tmp_file_hash, tmp_chunks) = unique_compressed_chunks(
                 &mut src_file,
@@ -120,7 +121,7 @@ fn chunks_to_file(
                 &pool,
                 true,
                 process_chunk,
-            ).expect("compress chunks");
+            ).chain_err(|| "unable to compress chunk")?;
             file_size = tmp_file_size;
             file_hash = tmp_file_hash;
             chunks = tmp_chunks;
@@ -136,12 +137,12 @@ fn chunks_to_file(
                 &pool,
                 true,
                 process_chunk,
-            ).expect("compress chunks");
+            ).chain_err(|| "unable to compress chunk")?;
             file_size = tmp_file_size;
             file_hash = tmp_file_hash;
             chunks = tmp_chunks;
         } else {
-            panic!("Missing input file");
+            bail!("Missing input file")
         }
     }
     pool.join();
@@ -155,19 +156,17 @@ fn chunks_to_file(
         size_to_str(total_compressed_size)
     );
 
-    return (file_size, file_hash, chunks, chunk_descriptors);
+    return Ok((file_size, file_hash, chunks, chunk_descriptors));
 }
 
-pub fn run(config: CompressConfig, pool: ThreadPool) {
+pub fn run(config: CompressConfig, pool: ThreadPool) -> Result<()> {
     let mut output_file = OpenOptions::new()
         .write(true)
         .create(config.base.force_create)
         .truncate(config.base.force_create)
         .create_new(!config.base.force_create)
         .open(&config.output)
-        .expect(&format!("failed to create file ({})", config.output));
-
-    println!("config.temp_file={}", config.temp_file);
+        .chain_err(|| format!("unable to create output file ({})", config.output))?;
 
     let mut tmp_chunk_file = OpenOptions::new()
         .write(true)
@@ -175,11 +174,11 @@ pub fn run(config: CompressConfig, pool: ThreadPool) {
         .truncate(true)
         .create(true)
         .open(&config.temp_file)
-        .expect("create temp file");
+        .chain_err(|| "unable to create temporary chunk file")?;
 
     // Generate chunks and store to a temp file
     let (file_size, file_hash, chunks, mut chunk_descriptors) =
-        chunks_to_file(&config, pool, &mut tmp_chunk_file);
+        chunks_to_file(&config, pool, &mut tmp_chunk_file)?;
 
     println!("Source hash: {}", HexSlice::new(&file_hash));
 
@@ -208,9 +207,14 @@ pub fn run(config: CompressConfig, pool: ThreadPool) {
     // Copy chunks from temporary chunk tile to the output one
     output_file
         .write(&archive::build_header(&file_header))
-        .expect("write header");
-    tmp_chunk_file.seek(SeekFrom::Start(0)).expect("seek");
-    io::copy(&mut tmp_chunk_file, &mut output_file).expect("copy temp file");
+        .chain_err(|| "failed to write header")?;
+    tmp_chunk_file
+        .seek(SeekFrom::Start(0))
+        .chain_err(|| "failed to seek")?;
+    io::copy(&mut tmp_chunk_file, &mut output_file)
+        .chain_err(|| "failed to write chunk data to output file")?;
     drop(tmp_chunk_file);
-    fs::remove_file(&config.temp_file).expect("remove temp file");
+    fs::remove_file(&config.temp_file).chain_err(|| "unable to remove temporary file")?;
+
+    Ok(())
 }
