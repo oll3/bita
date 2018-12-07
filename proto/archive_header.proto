@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package archive_header;
+
+message ChunkDescriptor
+{
+    // Hash of (uncompressed) chunk
+    bytes checksum = 1;
+
+    // Archive chunk data compression type.
+    // No compression if not set.
+    oneof compression {
+        // LZMA and compression level (0-9)
+        uint32 LZMA = 2;
+    }
+
+    // Chunk data placement in archive.
+    uint64 archive_size = 10;
+    uint64 archive_offset = 11;
+
+    // Size and offsets of where chunk data was found
+    uint64 source_size = 12;
+    repeated uint64 source_offsets = 13;
+}
+
+message ChunkerParameters {
+    uint32 chunk_filter_bits = 1;
+    uint64 min_chunk_size = 2;
+    uint64 max_chunk_size = 3;
+    uint32 hash_window_size = 4;
+    uint32 chunk_hash_length = 5;
+}
+
+message Header {
+    // Hash of the source file
+    bytes source_checksum = 1;
+
+    // Total size of the source file
+    uint64 source_total_size = 2;
+
+    // Array of chunk descriptors. In order of (first) occurrence in source file.
+    repeated ChunkDescriptor chunk_descriptors = 3;
+
+    // Where chunk data lives. Inside this archive if values is not set.
+    oneof chunk_data_location {
+        string external = 4;
+        string per_chunk = 5;
+    }
+
+    // Chunker parameters used when building archive
+    ChunkerParameters chunker_params = 10;
+}
+

@@ -9,6 +9,7 @@ use string_utils::*;
 use threadpool::ThreadPool;
 
 use archive;
+use archive_header;
 use buzhash::BuzHash;
 use chunker::*;
 use chunker_utils::*;
@@ -23,7 +24,7 @@ fn chunks_to_file(
     usize,
     Vec<u8>,
     Vec<ChunkDesc>,
-    Vec<archive::ChunkDescriptor>,
+    Vec<archive_header::ChunkDescriptor>,
 )> {
     // Setup the chunker
     let mut chunker = Chunker::new(
@@ -34,7 +35,8 @@ fn chunks_to_file(
         BuzHash::new(config.hash_window_size as usize, 0x10324195),
     );
 
-    let compression = archive::Compression::LZMA(config.compression_level);
+    let compression =
+        archive_header::ChunkDescriptor_oneof_compression::LZMA(config.compression_level);
 
     // Compress a chunk
     let compression_level = config.compression_level;
@@ -73,10 +75,10 @@ fn chunks_to_file(
             let chunk_data;
             let hash = &comp_chunk.hash[0..config.hash_length as usize];
             let use_compression = match comp_chunk.cdata.len() < comp_chunk.data.len() {
-                false => archive::Compression::None,
-                true => compression.clone(),
+                false => None,
+                true => Some(compression.clone()),
             };
-            if use_compression != archive::Compression::None {
+            if use_compression != None {
                 // Use the compressed data
                 chunk_data = &comp_chunk.cdata;
             } else {
@@ -85,13 +87,16 @@ fn chunks_to_file(
             }
 
             println!(
-                "Chunk {}, '{}', offset: {}, size: {}, compressed to: {}, compression: {:?}",
+                "Chunk {}, '{}', offset: {}, size: {}, compressed to: {}, compression: {}",
                 total_unique_chunks,
                 HexSlice::new(&hash),
                 comp_chunk.offset,
                 size_to_str(comp_chunk.data.len()),
                 size_to_str(comp_chunk.cdata.len()),
-                use_compression,
+                match use_compression {
+                    None => "none".to_owned(),
+                    Some(ref v) => format!("{}", v),
+                },
             );
 
             total_unique_chunks += 1;
@@ -99,13 +104,15 @@ fn chunks_to_file(
             total_compressed_size += chunk_data.len();
 
             // Store a chunk descriptor which referes to the compressed data
-            chunk_descriptors.push(archive::ChunkDescriptor {
-                hash: hash.to_vec(),
+            chunk_descriptors.push(archive_header::ChunkDescriptor {
+                checksum: hash.to_vec(),
                 source_offsets: vec![], // will be filled after chunking is done
                 source_size: comp_chunk.data.len() as u64,
                 archive_offset: archive_offset,
                 archive_size: chunk_data.len() as u64,
                 compression: use_compression,
+                unknown_fields: std::default::Default::default(),
+                cached_size: std::default::Default::default(),
             });
 
             chunk_file.write(chunk_data).expect("write chunk");
@@ -186,7 +193,7 @@ pub fn run(config: CompressConfig, pool: ThreadPool) -> Result<()> {
 
     println!("Source hash: {}", HexSlice::new(&file_hash));
 
-    // Fill out the destination offset of each chunk descriptor
+    // Fill out the source offset of each chunk descriptor
     for chunk in chunks {
         chunk_descriptors[chunk.unique_chunk_index]
             .source_offsets
@@ -194,23 +201,29 @@ pub fn run(config: CompressConfig, pool: ThreadPool) -> Result<()> {
     }
 
     // Store header to output file
-    let file_header = archive::Header {
-        version: archive::Version::V1(archive::HeaderV1 {
-            chunk_descriptors: chunk_descriptors,
-            source_hash: file_hash,
-            chunk_data_location: archive::ChunkDataLocation::Internal,
-            source_total_size: file_size as u64,
+    let file_header = archive_header::Header {
+        chunk_descriptors: protobuf::RepeatedField::from_vec(chunk_descriptors),
+        source_checksum: file_hash,
+        chunk_data_location: None,
+        source_total_size: file_size as u64,
+        chunker_params: protobuf::SingularPtrField::some(archive_header::ChunkerParameters {
             chunk_filter_bits: config.chunk_filter_bits,
-            min_chunk_size: config.min_chunk_size,
-            max_chunk_size: config.max_chunk_size,
-            hash_window_size: config.hash_window_size,
-            hash_length: config.hash_length,
+            min_chunk_size: config.min_chunk_size as u64,
+            max_chunk_size: config.max_chunk_size as u64,
+            hash_window_size: config.hash_window_size as u32,
+            chunk_hash_length: config.hash_length as u32,
+            unknown_fields: std::default::Default::default(),
+            cached_size: std::default::Default::default(),
         }),
+        unknown_fields: std::default::Default::default(),
+        cached_size: std::default::Default::default(),
     };
 
     // Copy chunks from temporary chunk tile to the output one
+    let header_buf = archive::build_header(&file_header)?;
+    println!("Header size: {}", header_buf.len());
     output_file
-        .write(&archive::build_header(&file_header))
+        .write(&header_buf)
         .chain_err(|| "failed to write header")?;
     tmp_chunk_file
         .seek(SeekFrom::Start(0))

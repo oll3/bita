@@ -1,7 +1,11 @@
-use bincode::serialize_into;
+use protobuf::Message;
+
 use blake2::{Blake2b, Digest};
 use chunker_utils::HashBuf;
 use std::fmt;
+
+use archive_header;
+use errors::*;
 use string_utils::*;
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
@@ -72,17 +76,15 @@ pub struct Header {
     pub version: Version,
 }
 
-impl fmt::Display for Header {
+impl fmt::Display for archive_header::Header {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.version {
-            Version::V1(ref v1) => write!(
-                f,
-                "chunks: {}, source hash: {}, source size: {}",
-                v1.chunk_descriptors.len(),
-                HexSlice::new(&v1.source_hash),
-                size_to_str(v1.source_total_size)
-            ),
-        }
+        write!(
+            f,
+            "chunks: {}, source hash: {}, source size: {}",
+            self.chunk_descriptors.len(),
+            HexSlice::new(&self.source_checksum),
+            size_to_str(self.source_total_size)
+        )
     }
 }
 
@@ -110,20 +112,34 @@ pub fn vec_to_size(sv: &[u8]) -> u64 {
         | ((sv[7] as u64) << 0)
 }
 
-pub fn build_header(header: &Header) -> Vec<u8> {
+impl fmt::Display for archive_header::ChunkDescriptor_oneof_compression {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            archive_header::ChunkDescriptor_oneof_compression::LZMA(lvl) => {
+                write!(f, "LZMA({})", lvl)
+            }
+        }
+    }
+}
+
+pub fn build_header(header: &archive_header::Header) -> Result<Vec<u8>> {
     // header magic
     let magic = "bita".as_bytes();
+
     let mut file_buf: Vec<u8> = vec![];
     let mut hasher = Blake2b::new();
     let mut header_buf: Vec<u8> = Vec::new();
-    serialize_into(&mut header_buf, header).expect("serialize");
+
+    header
+        .write_to_vec(&mut header_buf)
+        .chain_err(|| "failed to serialize header")?;
     hasher.input(&header_buf);
-    println!("Header size: {}", header_buf.len());
 
     file_buf.extend(magic);
+    file_buf.push(0); // major version field
     file_buf.extend(&size_vec(header_buf.len() as u64));
     file_buf.extend(header_buf);
     file_buf.extend(hasher.result().to_vec());
 
-    file_buf
+    Ok(file_buf)
 }

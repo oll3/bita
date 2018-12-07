@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use string_utils::*;
 
 use archive;
+use archive_header;
 use chunker;
 use errors::*;
 
@@ -17,7 +18,7 @@ pub struct ArchiveReader<T> {
     chunk_map: HashMap<HashBuf, usize>,
 
     // List of chunk descriptors
-    chunks: Vec<archive::ChunkDescriptor>,
+    chunks: Vec<archive_header::ChunkDescriptor>,
 
     pub archive_chunks_offset: u64,
 
@@ -56,14 +57,17 @@ where
     T: ArchiveBackend,
 {
     pub fn verify_pre_header(pre_header: &[u8]) -> Result<usize> {
-        if pre_header.len() < 12 {
-            bail!("Failed to read header of archive")
+        if pre_header.len() < 13 {
+            bail!("failed to read header of archive")
         }
         if &pre_header[0..4] != "bita".as_bytes() {
-            bail!("Not an archive")
+            bail!("not an archive")
+        }
+        if pre_header[4] != 0 {
+            bail!("unknown archive version");
         }
 
-        let header_size = archive::vec_to_size(&pre_header[4..12]) as usize;
+        let header_size = archive::vec_to_size(&pre_header[5..13]) as usize;
 
         Ok(header_size)
     }
@@ -71,14 +75,14 @@ where
     pub fn new(mut input: T) -> Result<Self> {
         // Read the pre-header (file magic, version and size)
         let mut input_offset: u64 = 0;
-        let mut header_buf = vec![0; 12];
+        let mut header_buf = vec![0; 13];
         input
             .read_at(0, &mut header_buf)
             .chain_err(|| "unable to read archive")?;
 
-        input_offset += 12;
+        input_offset += 13;
 
-        let header_size = Self::verify_pre_header(&header_buf[0..12])?;
+        let header_size = Self::verify_pre_header(&header_buf[0..13])?;
 
         println!("archive header size: {}", header_size);
 
@@ -89,13 +93,14 @@ where
             .chain_err(|| "unable to read archive")?;
         input_offset += header_size as u64;
 
-        // ...and deserialize it
-        let header: archive::Header =
-            bincode::deserialize(&header_buf).chain_err(|| "unable to unpack archive header")?;
-
         // Verify the header against the header hash
         let mut hasher = Blake2b::new();
         hasher.input(&header_buf);
+
+        // ...and deserialize it
+        let header: archive_header::Header = protobuf::parse_from_bytes(&header_buf)
+            .chain_err(|| "unable to unpack archive header")?;
+        //bincode::deserialize(&header_buf).chain_err(|| "unable to unpack archive header")?;
 
         header_buf.resize(64, 0);
         input
@@ -109,24 +114,21 @@ where
 
         println!("{}", header);
 
-        let header_v1 = match header.version {
-            archive::Version::V1(v1) => v1,
-        };
-
         // Extract and store parameters from file header
-        let source_total_size = header_v1.source_total_size;
-        let chunk_filter_bits = header_v1.chunk_filter_bits;
-        let min_chunk_size = header_v1.min_chunk_size;
-        let max_chunk_size = header_v1.max_chunk_size;
-        let hash_window_size = header_v1.hash_window_size;
-        let hash_length = header_v1.hash_length;
+        let chunker_params = header.chunker_params.unwrap();
+        let source_total_size = header.source_total_size;
+        let chunk_filter_bits = chunker_params.chunk_filter_bits;
+        let min_chunk_size = chunker_params.min_chunk_size;
+        let max_chunk_size = chunker_params.max_chunk_size;
+        let hash_window_size = chunker_params.hash_window_size;
+        let hash_length = chunker_params.chunk_hash_length;
 
-        let mut chunk_order: Vec<archive::ChunkDescriptor> = Vec::new();
+        let mut chunk_order: Vec<archive_header::ChunkDescriptor> = Vec::new();
         let mut chunk_map: HashMap<HashBuf, usize> = HashMap::new();
         {
             let mut index = 0;
-            for desc in header_v1.chunk_descriptors {
-                chunk_map.insert(desc.hash.clone(), index);
+            for desc in header.chunk_descriptors.into_iter() {
+                chunk_map.insert(desc.checksum.clone(), index);
                 chunk_order.push(desc);
                 index += 1;
             }
@@ -139,10 +141,10 @@ where
             source_total_size: source_total_size,
             archive_chunks_offset: input_offset,
             chunk_filter_bits: chunk_filter_bits,
-            min_chunk_size: min_chunk_size,
-            max_chunk_size: max_chunk_size,
-            hash_window_size: hash_window_size,
-            hash_length: hash_length,
+            min_chunk_size: min_chunk_size as usize,
+            max_chunk_size: max_chunk_size as usize,
+            hash_window_size: hash_window_size as usize,
+            hash_length: hash_length as usize,
             total_read: 0,
         });
     }
@@ -163,8 +165,8 @@ where
 
     // Group chunks which are placed in sequence inside archive
     fn group_chunks_in_sequence(
-        mut chunks: Vec<&archive::ChunkDescriptor>,
-    ) -> Vec<Vec<&archive::ChunkDescriptor>> {
+        mut chunks: Vec<&archive_header::ChunkDescriptor>,
+    ) -> Vec<Vec<&archive_header::ChunkDescriptor>> {
         let mut group_list = vec![];
         if chunks.len() == 0 {
             return group_list;
@@ -195,10 +197,10 @@ where
     {
         // Create list of chunks which are in archive. The order of the list should
         // be the same otder as the chunk data in archive.
-        let descriptors: Vec<&archive::ChunkDescriptor> = self
+        let descriptors: Vec<&archive_header::ChunkDescriptor> = self
             .chunks
             .iter()
-            .filter(|chunk| chunks.contains(&chunk.hash))
+            .filter(|chunk| chunks.contains(&chunk.checksum))
             .collect();
 
         // Create groups of chunks so that we can make a single request for all chunks
@@ -226,7 +228,7 @@ where
                 .read_in_chunks(start_offset, &chunk_sizes, |archive_data| {
                     let cd = &group[chunk_index];
                     match cd.compression {
-                        archive::Compression::LZMA(_level) => {
+                        Some(archive_header::ChunkDescriptor_oneof_compression::LZMA(_level)) => {
                             // Archived chunk is compressed
                             chunk_buf.data.resize(0, 0);
                             {
@@ -244,19 +246,19 @@ where
                             }
                             println!(
                                 "Chunk '{}', size {}, decompressed to {}, insert at {:?}",
-                                HexSlice::new(&cd.hash),
+                                HexSlice::new(&cd.checksum),
                                 size_to_str(cd.archive_size),
                                 size_to_str(chunk_buf.data.len()),
                                 cd.source_offsets
                             );
                             total_read += cd.archive_size;
                         }
-                        archive::Compression::None => {
+                        None => {
                             // Archived chunk is NOT compressed
                             chunk_buf.data = archive_data;
                             println!(
                                 "Chunk '{}', size {}, uncompressed, insert at {:?}",
-                                HexSlice::new(&cd.hash),
+                                HexSlice::new(&cd.checksum),
                                 size_to_str(chunk_buf.data.len()),
                                 cd.source_offsets
                             );
@@ -267,12 +269,12 @@ where
                     // Verify data by hash
                     let verify_start_time = Instant::now();
                     hasher.input(&chunk_buf.data);
-                    let hash = hasher.result_reset().to_vec();
-                    if hash[..hash_length] != cd.hash[..hash_length] {
+                    let checksum = hasher.result_reset().to_vec();
+                    if checksum[..hash_length] != cd.checksum[..hash_length] {
                         panic!(
                             "Chunk hash mismatch (expected: {}, got: {})",
-                            HexSlice::new(&cd.hash[0..hash_length]),
-                            HexSlice::new(&hash[0..hash_length])
+                            HexSlice::new(&cd.checksum[0..hash_length]),
+                            HexSlice::new(&checksum[0..hash_length])
                         );
                     }
                     verify_time += verify_start_time.elapsed();

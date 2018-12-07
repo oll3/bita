@@ -1,6 +1,5 @@
 #[macro_use]
 extern crate error_chain;
-extern crate bincode;
 extern crate clap;
 extern crate serde;
 #[macro_use]
@@ -10,9 +9,11 @@ extern crate blake2;
 extern crate curl;
 extern crate lzma;
 extern crate num_cpus;
+extern crate protobuf;
 extern crate threadpool;
 
 mod archive;
+mod archive_header;
 mod archive_reader;
 mod buzhash;
 mod chunker;
