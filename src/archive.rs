@@ -5,12 +5,18 @@ use std::fmt;
 use string_utils::*;
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+pub enum Compression {
+    None,
+    LZMA(u32),
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct ChunkDescriptor {
     // Hash of (uncompressed) chunk
     pub hash: HashBuf,
 
-    // Is chunk compressed
-    pub compressed: bool,
+    // Chunk data compression
+    pub compression: Compression,
 
     // Offset in archive
     pub archive_offset: u64,
@@ -21,9 +27,17 @@ pub struct ChunkDescriptor {
     pub source_offsets: Vec<u64>,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
-pub enum Compression {
-    LZMA,
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+pub enum ChunkDataLocation {
+    // Chunk data is located inside the archive
+    Internal,
+    // TODO: Chunk data is located in a separate file (at path)
+    // External(string),
+
+    // TODO: Chunk data is separated per chunk and named according to the
+    // chunk hash (casync style).
+    // The strings is a path to where chunks are located.
+    //PerChunk(string),
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
@@ -37,8 +51,8 @@ pub struct HeaderV1 {
     // Array of chunk descriptors. In order of (first) occurrence in source file.
     pub chunk_descriptors: Vec<ChunkDescriptor>,
 
-    // Compression used for compressed chunks in archive
-    pub compression: Compression,
+    // Where does archive chunk data live
+    pub chunk_data_location: ChunkDataLocation,
 
     // Chunker parameters used to create the archive
     pub chunk_filter_bits: u32,
@@ -63,11 +77,10 @@ impl fmt::Display for Header {
         match self.version {
             Version::V1(ref v1) => write!(
                 f,
-                "chunks: {}, compression: {:?}, source hash: {}, source size: {}",
+                "chunks: {}, source hash: {}, source size: {}",
                 v1.chunk_descriptors.len(),
-                v1.compression,
                 HexSlice::new(&v1.source_hash),
-                v1.source_total_size
+                size_to_str(v1.source_total_size)
             ),
         }
     }

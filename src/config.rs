@@ -16,6 +16,7 @@ pub struct CompressConfig {
     pub min_chunk_size: usize,
     pub max_chunk_size: usize,
     pub hash_window_size: usize,
+    pub compression_level: u32,
 }
 #[derive(Debug)]
 pub struct UnpackConfig {

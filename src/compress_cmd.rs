@@ -34,11 +34,15 @@ fn chunks_to_file(
         BuzHash::new(config.hash_window_size as usize, 0x10324195),
     );
 
+    let compression = archive::Compression::LZMA(config.compression_level);
+
     // Compress a chunk
-    fn chunk_compressor(data: &[u8]) -> Vec<u8> {
+    let compression_level = config.compression_level;
+    let chunk_compressor = move |data: &[u8]| -> Vec<u8> {
         let mut result = vec![];
         {
-            let mut f = LzmaWriter::new_compressor(&mut result, 6).expect("new compressor");
+            let mut f =
+                LzmaWriter::new_compressor(&mut result, compression_level).expect("new compressor");
             let mut wc = 0;
             while wc < data.len() {
                 wc += f.write(&data[wc..]).expect("write compressor");
@@ -68,8 +72,11 @@ fn chunks_to_file(
             // For each unique and compressed chunk
             let chunk_data;
             let hash = &comp_chunk.hash[0..config.hash_length as usize];
-            let use_compressed = comp_chunk.cdata.len() < comp_chunk.data.len();
-            if use_compressed {
+            let use_compression = match comp_chunk.cdata.len() < comp_chunk.data.len() {
+                false => archive::Compression::None,
+                true => compression.clone(),
+            };
+            if use_compression != archive::Compression::None {
                 // Use the compressed data
                 chunk_data = &comp_chunk.cdata;
             } else {
@@ -78,16 +85,13 @@ fn chunks_to_file(
             }
 
             println!(
-                "Chunk {}, '{}', offset: {}, size: {}, compressed to: {}, archive: {}",
+                "Chunk {}, '{}', offset: {}, size: {}, compressed to: {}, compression: {:?}",
                 total_unique_chunks,
                 HexSlice::new(&hash),
                 comp_chunk.offset,
                 size_to_str(comp_chunk.data.len()),
                 size_to_str(comp_chunk.cdata.len()),
-                match use_compressed {
-                    true => "compressed",
-                    false => "raw",
-                }
+                use_compression,
             );
 
             total_unique_chunks += 1;
@@ -101,7 +105,7 @@ fn chunks_to_file(
                 source_size: comp_chunk.data.len() as u64,
                 archive_offset: archive_offset,
                 archive_size: chunk_data.len() as u64,
-                compressed: use_compressed,
+                compression: use_compression,
             });
 
             chunk_file.write(chunk_data).expect("write chunk");
@@ -192,9 +196,9 @@ pub fn run(config: CompressConfig, pool: ThreadPool) -> Result<()> {
     // Store header to output file
     let file_header = archive::Header {
         version: archive::Version::V1(archive::HeaderV1 {
-            compression: archive::Compression::LZMA,
             chunk_descriptors: chunk_descriptors,
             source_hash: file_hash,
+            chunk_data_location: archive::ChunkDataLocation::Internal,
             source_total_size: file_size as u64,
             chunk_filter_bits: config.chunk_filter_bits,
             min_chunk_size: config.min_chunk_size,

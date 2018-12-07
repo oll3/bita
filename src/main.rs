@@ -29,6 +29,7 @@ use threadpool::ThreadPool;
 
 use clap::{App, Arg, SubCommand};
 use config::*;
+use errors::*;
 
 mod errors {
     // Create the Error, ErrorKind, ResultExt, and Result types
@@ -55,7 +56,7 @@ fn parse_size(size_str: &str) -> usize {
     }
 }
 
-fn parse_opts() -> Config {
+fn parse_opts() -> Result<Config> {
     let matches = App::new(PKG_NAME)
         .version(PKG_VERSION)
         .arg(
@@ -104,6 +105,11 @@ fn parse_opts() -> Config {
                         .long("hash-length")
                         .value_name("LENGTH")
                         .help("Truncate the length of the stored strong hash [default: 64]."),
+                ).arg(
+                    Arg::with_name("compression-level")
+                        .long("compression-level")
+                        .value_name("LEVEL")
+                        .help("Set the chunk data compression level (0-9) [default: 6]."),
                 ),
         ).subcommand(
             SubCommand::with_name("unpack")
@@ -141,26 +147,37 @@ fn parse_opts() -> Config {
         let max_chunk_size = parse_size(matches.value_of("max-chunk-size").unwrap_or("16MiB"));
         let hash_window_size = parse_size(matches.value_of("buzhash-window").unwrap_or("16B"));
         let hash_length = matches.value_of("hash-length").unwrap_or("64");
+        let compression_level = matches
+            .value_of("compression-level")
+            .unwrap_or("6")
+            .parse()
+            .chain_err(|| "invalid compression level value")?;
 
         let chunk_filter_bits = avg_chunk_size.leading_zeros();
         if min_chunk_size > avg_chunk_size {
-            panic!("min-chunk-size > avg-chunk-size");
+            bail!("min-chunk-size > avg-chunk-size");
         }
         if max_chunk_size < avg_chunk_size {
-            panic!("max-chunk-size < avg-chunk-size");
+            bail!("max-chunk-size < avg-chunk-size");
+        }
+        if compression_level > 9 {
+            bail!("compression level not within range");
         }
 
-        Config::Compress(CompressConfig {
+        Ok(Config::Compress(CompressConfig {
             base: base_config,
             input: input.to_string(),
             output: output.to_string(),
-            hash_length: hash_length.parse().expect("LENGTH"),
+            hash_length: hash_length
+                .parse()
+                .chain_err(|| "invalid hash length value")?,
             temp_file: temp_file,
             chunk_filter_bits: chunk_filter_bits,
             min_chunk_size: min_chunk_size,
             max_chunk_size: max_chunk_size,
             hash_window_size: hash_window_size,
-        })
+            compression_level: compression_level,
+        }))
     } else if let Some(matches) = matches.subcommand_matches("unpack") {
         let input = matches.value_of("INPUT").unwrap();
         let output = matches.value_of("OUTPUT").unwrap_or("");
@@ -169,29 +186,18 @@ fn parse_opts() -> Config {
             .unwrap_or_default()
             .map(|s| s.to_string())
             .collect();
-        Config::Unpack(UnpackConfig {
+        Ok(Config::Unpack(UnpackConfig {
             base: base_config,
             input: input.to_string(),
             output: output.to_string(),
             seed_files: seed_files,
             seed_stdin: false,
-        })
+        }))
     } else {
         println!("Unknown command");
         process::exit(1);
     }
 }
-
-//use errors::*;
-
-/*fn test_err() -> Result<()> {
-    use std::fs::File;
-
-    // This operation will fail
-    File::open("contacts").chain_err(|| "unable to open contacts file")?;
-
-    Ok(())
-}*/
 
 fn main() {
     let num_threads = num_cpus::get();
@@ -201,8 +207,9 @@ fn main() {
     }*/
 
     let result = match parse_opts() {
-        Config::Compress(config) => compress_cmd::run(config, pool),
-        Config::Unpack(config) => unpack_cmd::run(config, pool),
+        Ok(Config::Compress(config)) => compress_cmd::run(config, pool),
+        Ok(Config::Unpack(config)) => unpack_cmd::run(config, pool),
+        Err(e) => Err(e),
     };
     if let Err(ref e) = result {
         println!("error: {}", e);

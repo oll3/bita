@@ -225,40 +225,43 @@ where
             self.input
                 .read_in_chunks(start_offset, &chunk_sizes, |archive_data| {
                     let cd = &group[chunk_index];
-                    if cd.compressed {
-                        // Archived chunk is compressed
-                        chunk_buf.data.resize(0, 0);
-                        {
-                            // Decompress archive data
-                            //let decomp_start_time = Instant::now();
-                            let mut f = LzmaWriter::new_decompressor(&mut chunk_buf.data)
-                                .expect("new decompressor");
-                            let mut wc = 0;
-                            while wc < archive_data.len() {
-                                let decomp_start_time = Instant::now();
-                                wc += f.write(&archive_data[wc..]).expect("write decompressor");
-                                decompress_time += decomp_start_time.elapsed();
+                    match cd.compression {
+                        archive::Compression::LZMA(_level) => {
+                            // Archived chunk is compressed
+                            chunk_buf.data.resize(0, 0);
+                            {
+                                // Decompress archive data
+                                //let decomp_start_time = Instant::now();
+                                let mut f = LzmaWriter::new_decompressor(&mut chunk_buf.data)
+                                    .expect("new decompressor");
+                                let mut wc = 0;
+                                while wc < archive_data.len() {
+                                    let decomp_start_time = Instant::now();
+                                    wc += f.write(&archive_data[wc..]).expect("write decompressor");
+                                    decompress_time += decomp_start_time.elapsed();
+                                }
+                                f.finish().expect("finish decompressor");
                             }
-                            f.finish().expect("finish decompressor");
+                            println!(
+                                "Chunk '{}', size {}, decompressed to {}, insert at {:?}",
+                                HexSlice::new(&cd.hash),
+                                size_to_str(cd.archive_size),
+                                size_to_str(chunk_buf.data.len()),
+                                cd.source_offsets
+                            );
+                            total_read += cd.archive_size;
                         }
-                        println!(
-                            "Chunk '{}', size {}, decompressed to {}, insert at {:?}",
-                            HexSlice::new(&cd.hash),
-                            size_to_str(cd.archive_size),
-                            size_to_str(chunk_buf.data.len()),
-                            cd.source_offsets
-                        );
-                        total_read += cd.archive_size;
-                    } else {
-                        // Archived chunk is NOT compressed
-                        chunk_buf.data = archive_data;
-                        println!(
-                            "Chunk '{}', size {}, uncompressed, insert at {:?}",
-                            HexSlice::new(&cd.hash),
-                            size_to_str(chunk_buf.data.len()),
-                            cd.source_offsets
-                        );
-                        total_read += cd.archive_size;
+                        archive::Compression::None => {
+                            // Archived chunk is NOT compressed
+                            chunk_buf.data = archive_data;
+                            println!(
+                                "Chunk '{}', size {}, uncompressed, insert at {:?}",
+                                HexSlice::new(&cd.hash),
+                                size_to_str(chunk_buf.data.len()),
+                                cd.source_offsets
+                            );
+                            total_read += cd.archive_size;
+                        }
                     }
 
                     // Verify data by hash
