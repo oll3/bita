@@ -20,8 +20,9 @@ mod chunker;
 mod chunker_utils;
 mod compress_cmd;
 mod config;
+mod file_archive_backend;
 mod ordered_mpsc;
-mod remote_reader;
+mod remote_archive_backend;
 mod string_utils;
 mod unpack_cmd;
 

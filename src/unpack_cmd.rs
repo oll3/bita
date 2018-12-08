@@ -13,36 +13,10 @@ use chunker::Chunker;
 use chunker_utils::*;
 use config::*;
 use errors::*;
-use remote_reader::RemoteReader;
+use remote_archive_backend::RemoteReader;
 use std::io::BufWriter;
 use std::os::linux::fs::MetadataExt;
 use string_utils::*;
-
-impl ArchiveBackend for File {
-    fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> Result<()> {
-        self.seek(SeekFrom::Start(offset))
-            .chain_err(|| "failed to seek archive file")?;
-        self.read_exact(buf)
-            .chain_err(|| "failed to read archive file")?;
-        Ok(())
-    }
-    fn read_in_chunks<F: FnMut(Vec<u8>) -> Result<()>>(
-        &mut self,
-        start_offset: u64,
-        chunk_sizes: &Vec<u64>,
-        mut chunk_callback: F,
-    ) -> Result<()> {
-        self.seek(SeekFrom::Start(start_offset))
-            .chain_err(|| "failed to seek archive file")?;
-        for chunk_size in chunk_sizes {
-            let mut buf: Vec<u8> = vec![0; *chunk_size as usize];
-            self.read_exact(&mut buf[..])
-                .chain_err(|| "failed to read archive file")?;
-            chunk_callback(buf)?;
-        }
-        Ok(())
-    }
-}
 
 fn chunk_seed<T, F>(
     mut seed_input: T,
@@ -66,6 +40,7 @@ where
         hasher.input(data);
         hasher.result().to_vec()
     };
+    let mut total_contained = 0;
     unique_chunks(
         &mut seed_input,
         &mut chunker,
@@ -75,11 +50,13 @@ where
         |hashed_chunk| {
             let hash = &hashed_chunk.hash[0..hash_length].to_vec();
             if chunk_hash_set.contains(hash) {
+                total_contained += hashed_chunk.data.len();
                 result(hash, &hashed_chunk.data);
                 chunk_hash_set.remove(hash);
             }
         },
-    ).chain_err(|| "failed to get unique chunks")?;
+    )
+    .chain_err(|| "failed to get unique chunks")?;
 
     println!(
         "Chunker - scan time: {}.{:03} s, read time: {}.{:03} s",
@@ -152,77 +129,62 @@ where
     let mut total_read_from_seed = 0;
     let mut total_from_archive = 0;
 
-    // Run input seed files through chunker and use chunks which are in the target file.
-    // Start with scanning stdin, if not a tty.
-    if !atty::is(Stream::Stdin) {
-        let stdin = io::stdin();
-        let seed_file = stdin.lock();
-        println!("Scanning stdin for chunks...");
-        chunk_seed(
-            seed_file,
-            chunker.clone(),
-            archive.hash_length,
-            &mut chunks_left,
-            |hash, chunk_data| {
-                // Got chunk
-                println!(
-                    "Chunk '{}', size {} read from seed stdin",
-                    HexSlice::new(hash),
-                    size_to_str(chunk_data.len()),
-                );
+    {
+        // Closure for writing chunks to output
+        let mut chunk_output = |hash: &HashBuf, chunk_data: &Vec<u8>| {
+            println!(
+                "Chunk '{}', size {} read from seed stdin",
+                HexSlice::new(hash),
+                size_to_str(chunk_data.len()),
+            );
+            total_read_from_seed += chunk_data.len();
+            for offset in archive.chunk_source_offsets(hash) {
+                output_file
+                    .seek(SeekFrom::Start(offset as u64))
+                    .expect("seek output");
+                output_file.write_all(&chunk_data).expect("write output");
+            }
+        };
 
-                total_read_from_seed += chunk_data.len();
-
-                for offset in archive.chunk_source_offsets(hash) {
-                    output_file
-                        .seek(SeekFrom::Start(offset as u64))
-                        .expect("seek output");
-                    output_file.write_all(&chunk_data).expect("write output");
-                }
-            },
-            &pool,
-        )?;
-        println!(
-            "Reached end of stdin ({} chunks missing)",
-            chunks_left.len()
-        );
-    }
-    // Now scan through all given seed files
-    for seed in config.seed_files {
-        if chunks_left.len() > 0 {
-            let seed_file =
-                File::open(&seed).chain_err(|| format!("failed to open seed file ({})", seed))?;
-            println!("Scanning {} for chunks...", seed);
+        // Run input seed files through chunker and use chunks which are in the target file.
+        // Start with scanning stdin, if not a tty.
+        if !atty::is(Stream::Stdin) {
+            let stdin = io::stdin();
+            let seed_file = stdin.lock();
+            println!("Scanning stdin for chunks...");
             chunk_seed(
                 seed_file,
                 chunker.clone(),
                 archive.hash_length,
                 &mut chunks_left,
-                |hash, chunk_data| {
-                    // Got chunk
-                    println!(
-                        "Chunk '{}', size {} read from seed {}",
-                        HexSlice::new(hash),
-                        size_to_str(chunk_data.len()),
-                        seed,
-                    );
-
-                    total_read_from_seed += chunk_data.len();
-
-                    for offset in archive.chunk_source_offsets(hash) {
-                        output_file
-                            .seek(SeekFrom::Start(offset as u64))
-                            .expect("seek output");
-                        output_file.write_all(&chunk_data).expect("write output");
-                    }
-                },
+                &mut chunk_output,
                 &pool,
             )?;
             println!(
-                "Reached end of {} ({} chunks missing)",
-                seed,
+                "Reached end of stdin ({} chunks missing)",
                 chunks_left.len()
             );
+        }
+        // Now scan through all given seed files
+        for seed in config.seed_files {
+            if chunks_left.len() > 0 {
+                let seed_file = File::open(&seed)
+                    .chain_err(|| format!("failed to open seed file ({})", seed))?;
+                println!("Scanning {} for chunks...", seed);
+                chunk_seed(
+                    seed_file,
+                    chunker.clone(),
+                    archive.hash_length,
+                    &mut chunks_left,
+                    &mut chunk_output,
+                    &pool,
+                )?;
+                println!(
+                    "Reached end of {} ({} chunks missing)",
+                    seed,
+                    chunks_left.len()
+                );
+            }
         }
     }
 
@@ -249,15 +211,11 @@ where
 }
 
 pub fn run(config: UnpackConfig, pool: ThreadPool) -> Result<()> {
-    println!("Do unpack ({:?})", config);
-
     if &config.input[0..7] == "http://" || &config.input[0..8] == "https://" {
-        println!("Using remote reader");
         let remote_source = RemoteReader::new(&config.input);
         let archive = ArchiveReader::new(remote_source)?;
         unpack_input(archive, config, pool)?;
     } else {
-        println!("Using file reader");
         let local_file =
             File::open(&config.input).chain_err(|| format!("unable to open {}", config.input))?;
         let archive = ArchiveReader::new(local_file)?;
