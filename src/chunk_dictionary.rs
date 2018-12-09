@@ -685,31 +685,58 @@ impl ::protobuf::reflect::ProtobufValue for ChunkerParameters {
 }
 
 #[derive(PartialEq,Clone,Default)]
-pub struct Header {
+pub struct ChunkDictionary {
     // message fields
+    pub application_version: ::std::string::String,
     pub source_checksum: ::std::vec::Vec<u8>,
     pub source_total_size: u64,
-    pub chunk_descriptors: ::protobuf::RepeatedField<ChunkDescriptor>,
     pub chunker_params: ::protobuf::SingularPtrField<ChunkerParameters>,
+    pub chunk_descriptors: ::protobuf::RepeatedField<ChunkDescriptor>,
     // message oneof groups
-    pub chunk_data_location: ::std::option::Option<Header_oneof_chunk_data_location>,
+    pub chunk_data_location: ::std::option::Option<ChunkDictionary_oneof_chunk_data_location>,
     // special fields
     pub unknown_fields: ::protobuf::UnknownFields,
     pub cached_size: ::protobuf::CachedSize,
 }
 
 #[derive(Clone,PartialEq)]
-pub enum Header_oneof_chunk_data_location {
+pub enum ChunkDictionary_oneof_chunk_data_location {
     external(::std::string::String),
     per_chunk(::std::string::String),
 }
 
-impl Header {
-    pub fn new() -> Header {
+impl ChunkDictionary {
+    pub fn new() -> ChunkDictionary {
         ::std::default::Default::default()
     }
 
-    // bytes source_checksum = 1;
+    // string application_version = 1;
+
+    pub fn clear_application_version(&mut self) {
+        self.application_version.clear();
+    }
+
+    // Param is passed by value, moved
+    pub fn set_application_version(&mut self, v: ::std::string::String) {
+        self.application_version = v;
+    }
+
+    // Mutable pointer to the field.
+    // If field is not initialized, it is initialized with default value first.
+    pub fn mut_application_version(&mut self) -> &mut ::std::string::String {
+        &mut self.application_version
+    }
+
+    // Take field
+    pub fn take_application_version(&mut self) -> ::std::string::String {
+        ::std::mem::replace(&mut self.application_version, ::std::string::String::new())
+    }
+
+    pub fn get_application_version(&self) -> &str {
+        &self.application_version
+    }
+
+    // bytes source_checksum = 2;
 
     pub fn clear_source_checksum(&mut self) {
         self.source_checksum.clear();
@@ -735,7 +762,7 @@ impl Header {
         &self.source_checksum
     }
 
-    // uint64 source_total_size = 2;
+    // uint64 source_total_size = 3;
 
     pub fn clear_source_total_size(&mut self) {
         self.source_total_size = 0;
@@ -750,31 +777,6 @@ impl Header {
         self.source_total_size
     }
 
-    // repeated .archive_header.ChunkDescriptor chunk_descriptors = 3;
-
-    pub fn clear_chunk_descriptors(&mut self) {
-        self.chunk_descriptors.clear();
-    }
-
-    // Param is passed by value, moved
-    pub fn set_chunk_descriptors(&mut self, v: ::protobuf::RepeatedField<ChunkDescriptor>) {
-        self.chunk_descriptors = v;
-    }
-
-    // Mutable pointer to the field.
-    pub fn mut_chunk_descriptors(&mut self) -> &mut ::protobuf::RepeatedField<ChunkDescriptor> {
-        &mut self.chunk_descriptors
-    }
-
-    // Take field
-    pub fn take_chunk_descriptors(&mut self) -> ::protobuf::RepeatedField<ChunkDescriptor> {
-        ::std::mem::replace(&mut self.chunk_descriptors, ::protobuf::RepeatedField::new())
-    }
-
-    pub fn get_chunk_descriptors(&self) -> &[ChunkDescriptor] {
-        &self.chunk_descriptors
-    }
-
     // string external = 4;
 
     pub fn clear_external(&mut self) {
@@ -783,24 +785,24 @@ impl Header {
 
     pub fn has_external(&self) -> bool {
         match self.chunk_data_location {
-            ::std::option::Option::Some(Header_oneof_chunk_data_location::external(..)) => true,
+            ::std::option::Option::Some(ChunkDictionary_oneof_chunk_data_location::external(..)) => true,
             _ => false,
         }
     }
 
     // Param is passed by value, moved
     pub fn set_external(&mut self, v: ::std::string::String) {
-        self.chunk_data_location = ::std::option::Option::Some(Header_oneof_chunk_data_location::external(v))
+        self.chunk_data_location = ::std::option::Option::Some(ChunkDictionary_oneof_chunk_data_location::external(v))
     }
 
     // Mutable pointer to the field.
     pub fn mut_external(&mut self) -> &mut ::std::string::String {
-        if let ::std::option::Option::Some(Header_oneof_chunk_data_location::external(_)) = self.chunk_data_location {
+        if let ::std::option::Option::Some(ChunkDictionary_oneof_chunk_data_location::external(_)) = self.chunk_data_location {
         } else {
-            self.chunk_data_location = ::std::option::Option::Some(Header_oneof_chunk_data_location::external(::std::string::String::new()));
+            self.chunk_data_location = ::std::option::Option::Some(ChunkDictionary_oneof_chunk_data_location::external(::std::string::String::new()));
         }
         match self.chunk_data_location {
-            ::std::option::Option::Some(Header_oneof_chunk_data_location::external(ref mut v)) => v,
+            ::std::option::Option::Some(ChunkDictionary_oneof_chunk_data_location::external(ref mut v)) => v,
             _ => panic!(),
         }
     }
@@ -809,7 +811,7 @@ impl Header {
     pub fn take_external(&mut self) -> ::std::string::String {
         if self.has_external() {
             match self.chunk_data_location.take() {
-                ::std::option::Option::Some(Header_oneof_chunk_data_location::external(v)) => v,
+                ::std::option::Option::Some(ChunkDictionary_oneof_chunk_data_location::external(v)) => v,
                 _ => panic!(),
             }
         } else {
@@ -819,7 +821,7 @@ impl Header {
 
     pub fn get_external(&self) -> &str {
         match self.chunk_data_location {
-            ::std::option::Option::Some(Header_oneof_chunk_data_location::external(ref v)) => v,
+            ::std::option::Option::Some(ChunkDictionary_oneof_chunk_data_location::external(ref v)) => v,
             _ => "",
         }
     }
@@ -832,24 +834,24 @@ impl Header {
 
     pub fn has_per_chunk(&self) -> bool {
         match self.chunk_data_location {
-            ::std::option::Option::Some(Header_oneof_chunk_data_location::per_chunk(..)) => true,
+            ::std::option::Option::Some(ChunkDictionary_oneof_chunk_data_location::per_chunk(..)) => true,
             _ => false,
         }
     }
 
     // Param is passed by value, moved
     pub fn set_per_chunk(&mut self, v: ::std::string::String) {
-        self.chunk_data_location = ::std::option::Option::Some(Header_oneof_chunk_data_location::per_chunk(v))
+        self.chunk_data_location = ::std::option::Option::Some(ChunkDictionary_oneof_chunk_data_location::per_chunk(v))
     }
 
     // Mutable pointer to the field.
     pub fn mut_per_chunk(&mut self) -> &mut ::std::string::String {
-        if let ::std::option::Option::Some(Header_oneof_chunk_data_location::per_chunk(_)) = self.chunk_data_location {
+        if let ::std::option::Option::Some(ChunkDictionary_oneof_chunk_data_location::per_chunk(_)) = self.chunk_data_location {
         } else {
-            self.chunk_data_location = ::std::option::Option::Some(Header_oneof_chunk_data_location::per_chunk(::std::string::String::new()));
+            self.chunk_data_location = ::std::option::Option::Some(ChunkDictionary_oneof_chunk_data_location::per_chunk(::std::string::String::new()));
         }
         match self.chunk_data_location {
-            ::std::option::Option::Some(Header_oneof_chunk_data_location::per_chunk(ref mut v)) => v,
+            ::std::option::Option::Some(ChunkDictionary_oneof_chunk_data_location::per_chunk(ref mut v)) => v,
             _ => panic!(),
         }
     }
@@ -858,7 +860,7 @@ impl Header {
     pub fn take_per_chunk(&mut self) -> ::std::string::String {
         if self.has_per_chunk() {
             match self.chunk_data_location.take() {
-                ::std::option::Option::Some(Header_oneof_chunk_data_location::per_chunk(v)) => v,
+                ::std::option::Option::Some(ChunkDictionary_oneof_chunk_data_location::per_chunk(v)) => v,
                 _ => panic!(),
             }
         } else {
@@ -868,12 +870,12 @@ impl Header {
 
     pub fn get_per_chunk(&self) -> &str {
         match self.chunk_data_location {
-            ::std::option::Option::Some(Header_oneof_chunk_data_location::per_chunk(ref v)) => v,
+            ::std::option::Option::Some(ChunkDictionary_oneof_chunk_data_location::per_chunk(ref v)) => v,
             _ => "",
         }
     }
 
-    // .archive_header.ChunkerParameters chunker_params = 10;
+    // .chunk_dictionary.ChunkerParameters chunker_params = 6;
 
     pub fn clear_chunker_params(&mut self) {
         self.chunker_params.clear();
@@ -905,16 +907,41 @@ impl Header {
     pub fn get_chunker_params(&self) -> &ChunkerParameters {
         self.chunker_params.as_ref().unwrap_or_else(|| ChunkerParameters::default_instance())
     }
+
+    // repeated .chunk_dictionary.ChunkDescriptor chunk_descriptors = 10;
+
+    pub fn clear_chunk_descriptors(&mut self) {
+        self.chunk_descriptors.clear();
+    }
+
+    // Param is passed by value, moved
+    pub fn set_chunk_descriptors(&mut self, v: ::protobuf::RepeatedField<ChunkDescriptor>) {
+        self.chunk_descriptors = v;
+    }
+
+    // Mutable pointer to the field.
+    pub fn mut_chunk_descriptors(&mut self) -> &mut ::protobuf::RepeatedField<ChunkDescriptor> {
+        &mut self.chunk_descriptors
+    }
+
+    // Take field
+    pub fn take_chunk_descriptors(&mut self) -> ::protobuf::RepeatedField<ChunkDescriptor> {
+        ::std::mem::replace(&mut self.chunk_descriptors, ::protobuf::RepeatedField::new())
+    }
+
+    pub fn get_chunk_descriptors(&self) -> &[ChunkDescriptor] {
+        &self.chunk_descriptors
+    }
 }
 
-impl ::protobuf::Message for Header {
+impl ::protobuf::Message for ChunkDictionary {
     fn is_initialized(&self) -> bool {
-        for v in &self.chunk_descriptors {
+        for v in &self.chunker_params {
             if !v.is_initialized() {
                 return false;
             }
         };
-        for v in &self.chunker_params {
+        for v in &self.chunk_descriptors {
             if !v.is_initialized() {
                 return false;
             }
@@ -927,32 +954,35 @@ impl ::protobuf::Message for Header {
             let (field_number, wire_type) = is.read_tag_unpack()?;
             match field_number {
                 1 => {
-                    ::protobuf::rt::read_singular_proto3_bytes_into(wire_type, is, &mut self.source_checksum)?;
+                    ::protobuf::rt::read_singular_proto3_string_into(wire_type, is, &mut self.application_version)?;
                 },
                 2 => {
+                    ::protobuf::rt::read_singular_proto3_bytes_into(wire_type, is, &mut self.source_checksum)?;
+                },
+                3 => {
                     if wire_type != ::protobuf::wire_format::WireTypeVarint {
                         return ::std::result::Result::Err(::protobuf::rt::unexpected_wire_type(wire_type));
                     }
                     let tmp = is.read_uint64()?;
                     self.source_total_size = tmp;
                 },
-                3 => {
-                    ::protobuf::rt::read_repeated_message_into(wire_type, is, &mut self.chunk_descriptors)?;
-                },
                 4 => {
                     if wire_type != ::protobuf::wire_format::WireTypeLengthDelimited {
                         return ::std::result::Result::Err(::protobuf::rt::unexpected_wire_type(wire_type));
                     }
-                    self.chunk_data_location = ::std::option::Option::Some(Header_oneof_chunk_data_location::external(is.read_string()?));
+                    self.chunk_data_location = ::std::option::Option::Some(ChunkDictionary_oneof_chunk_data_location::external(is.read_string()?));
                 },
                 5 => {
                     if wire_type != ::protobuf::wire_format::WireTypeLengthDelimited {
                         return ::std::result::Result::Err(::protobuf::rt::unexpected_wire_type(wire_type));
                     }
-                    self.chunk_data_location = ::std::option::Option::Some(Header_oneof_chunk_data_location::per_chunk(is.read_string()?));
+                    self.chunk_data_location = ::std::option::Option::Some(ChunkDictionary_oneof_chunk_data_location::per_chunk(is.read_string()?));
+                },
+                6 => {
+                    ::protobuf::rt::read_singular_message_into(wire_type, is, &mut self.chunker_params)?;
                 },
                 10 => {
-                    ::protobuf::rt::read_singular_message_into(wire_type, is, &mut self.chunker_params)?;
+                    ::protobuf::rt::read_repeated_message_into(wire_type, is, &mut self.chunk_descriptors)?;
                 },
                 _ => {
                     ::protobuf::rt::read_unknown_or_skip_group(field_number, wire_type, is, self.mut_unknown_fields())?;
@@ -966,26 +996,29 @@ impl ::protobuf::Message for Header {
     #[allow(unused_variables)]
     fn compute_size(&self) -> u32 {
         let mut my_size = 0;
+        if !self.application_version.is_empty() {
+            my_size += ::protobuf::rt::string_size(1, &self.application_version);
+        }
         if !self.source_checksum.is_empty() {
-            my_size += ::protobuf::rt::bytes_size(1, &self.source_checksum);
+            my_size += ::protobuf::rt::bytes_size(2, &self.source_checksum);
         }
         if self.source_total_size != 0 {
-            my_size += ::protobuf::rt::value_size(2, self.source_total_size, ::protobuf::wire_format::WireTypeVarint);
+            my_size += ::protobuf::rt::value_size(3, self.source_total_size, ::protobuf::wire_format::WireTypeVarint);
+        }
+        if let Some(ref v) = self.chunker_params.as_ref() {
+            let len = v.compute_size();
+            my_size += 1 + ::protobuf::rt::compute_raw_varint32_size(len) + len;
         }
         for value in &self.chunk_descriptors {
             let len = value.compute_size();
             my_size += 1 + ::protobuf::rt::compute_raw_varint32_size(len) + len;
         };
-        if let Some(ref v) = self.chunker_params.as_ref() {
-            let len = v.compute_size();
-            my_size += 1 + ::protobuf::rt::compute_raw_varint32_size(len) + len;
-        }
         if let ::std::option::Option::Some(ref v) = self.chunk_data_location {
             match v {
-                &Header_oneof_chunk_data_location::external(ref v) => {
+                &ChunkDictionary_oneof_chunk_data_location::external(ref v) => {
                     my_size += ::protobuf::rt::string_size(4, &v);
                 },
-                &Header_oneof_chunk_data_location::per_chunk(ref v) => {
+                &ChunkDictionary_oneof_chunk_data_location::per_chunk(ref v) => {
                     my_size += ::protobuf::rt::string_size(5, &v);
                 },
             };
@@ -996,28 +1029,31 @@ impl ::protobuf::Message for Header {
     }
 
     fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream) -> ::protobuf::ProtobufResult<()> {
+        if !self.application_version.is_empty() {
+            os.write_string(1, &self.application_version)?;
+        }
         if !self.source_checksum.is_empty() {
-            os.write_bytes(1, &self.source_checksum)?;
+            os.write_bytes(2, &self.source_checksum)?;
         }
         if self.source_total_size != 0 {
-            os.write_uint64(2, self.source_total_size)?;
+            os.write_uint64(3, self.source_total_size)?;
         }
-        for v in &self.chunk_descriptors {
-            os.write_tag(3, ::protobuf::wire_format::WireTypeLengthDelimited)?;
+        if let Some(ref v) = self.chunker_params.as_ref() {
+            os.write_tag(6, ::protobuf::wire_format::WireTypeLengthDelimited)?;
             os.write_raw_varint32(v.get_cached_size())?;
             v.write_to_with_cached_sizes(os)?;
-        };
-        if let Some(ref v) = self.chunker_params.as_ref() {
+        }
+        for v in &self.chunk_descriptors {
             os.write_tag(10, ::protobuf::wire_format::WireTypeLengthDelimited)?;
             os.write_raw_varint32(v.get_cached_size())?;
             v.write_to_with_cached_sizes(os)?;
-        }
+        };
         if let ::std::option::Option::Some(ref v) = self.chunk_data_location {
             match v {
-                &Header_oneof_chunk_data_location::external(ref v) => {
+                &ChunkDictionary_oneof_chunk_data_location::external(ref v) => {
                     os.write_string(4, v)?;
                 },
-                &Header_oneof_chunk_data_location::per_chunk(ref v) => {
+                &ChunkDictionary_oneof_chunk_data_location::per_chunk(ref v) => {
                     os.write_string(5, v)?;
                 },
             };
@@ -1052,8 +1088,8 @@ impl ::protobuf::Message for Header {
         Self::descriptor_static()
     }
 
-    fn new() -> Header {
-        Header::new()
+    fn new() -> ChunkDictionary {
+        ChunkDictionary::new()
     }
 
     fn descriptor_static() -> &'static ::protobuf::reflect::MessageDescriptor {
@@ -1064,38 +1100,43 @@ impl ::protobuf::Message for Header {
         unsafe {
             descriptor.get(|| {
                 let mut fields = ::std::vec::Vec::new();
+                fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeString>(
+                    "application_version",
+                    |m: &ChunkDictionary| { &m.application_version },
+                    |m: &mut ChunkDictionary| { &mut m.application_version },
+                ));
                 fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeBytes>(
                     "source_checksum",
-                    |m: &Header| { &m.source_checksum },
-                    |m: &mut Header| { &mut m.source_checksum },
+                    |m: &ChunkDictionary| { &m.source_checksum },
+                    |m: &mut ChunkDictionary| { &mut m.source_checksum },
                 ));
                 fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeUint64>(
                     "source_total_size",
-                    |m: &Header| { &m.source_total_size },
-                    |m: &mut Header| { &mut m.source_total_size },
-                ));
-                fields.push(::protobuf::reflect::accessor::make_repeated_field_accessor::<_, ::protobuf::types::ProtobufTypeMessage<ChunkDescriptor>>(
-                    "chunk_descriptors",
-                    |m: &Header| { &m.chunk_descriptors },
-                    |m: &mut Header| { &mut m.chunk_descriptors },
+                    |m: &ChunkDictionary| { &m.source_total_size },
+                    |m: &mut ChunkDictionary| { &mut m.source_total_size },
                 ));
                 fields.push(::protobuf::reflect::accessor::make_singular_string_accessor::<_>(
                     "external",
-                    Header::has_external,
-                    Header::get_external,
+                    ChunkDictionary::has_external,
+                    ChunkDictionary::get_external,
                 ));
                 fields.push(::protobuf::reflect::accessor::make_singular_string_accessor::<_>(
                     "per_chunk",
-                    Header::has_per_chunk,
-                    Header::get_per_chunk,
+                    ChunkDictionary::has_per_chunk,
+                    ChunkDictionary::get_per_chunk,
                 ));
                 fields.push(::protobuf::reflect::accessor::make_singular_ptr_field_accessor::<_, ::protobuf::types::ProtobufTypeMessage<ChunkerParameters>>(
                     "chunker_params",
-                    |m: &Header| { &m.chunker_params },
-                    |m: &mut Header| { &mut m.chunker_params },
+                    |m: &ChunkDictionary| { &m.chunker_params },
+                    |m: &mut ChunkDictionary| { &mut m.chunker_params },
                 ));
-                ::protobuf::reflect::MessageDescriptor::new::<Header>(
-                    "Header",
+                fields.push(::protobuf::reflect::accessor::make_repeated_field_accessor::<_, ::protobuf::types::ProtobufTypeMessage<ChunkDescriptor>>(
+                    "chunk_descriptors",
+                    |m: &ChunkDictionary| { &m.chunk_descriptors },
+                    |m: &mut ChunkDictionary| { &mut m.chunk_descriptors },
+                ));
+                ::protobuf::reflect::MessageDescriptor::new::<ChunkDictionary>(
+                    "ChunkDictionary",
                     fields,
                     file_descriptor_proto()
                 )
@@ -1103,134 +1144,145 @@ impl ::protobuf::Message for Header {
         }
     }
 
-    fn default_instance() -> &'static Header {
-        static mut instance: ::protobuf::lazy::Lazy<Header> = ::protobuf::lazy::Lazy {
+    fn default_instance() -> &'static ChunkDictionary {
+        static mut instance: ::protobuf::lazy::Lazy<ChunkDictionary> = ::protobuf::lazy::Lazy {
             lock: ::protobuf::lazy::ONCE_INIT,
-            ptr: 0 as *const Header,
+            ptr: 0 as *const ChunkDictionary,
         };
         unsafe {
-            instance.get(Header::new)
+            instance.get(ChunkDictionary::new)
         }
     }
 }
 
-impl ::protobuf::Clear for Header {
+impl ::protobuf::Clear for ChunkDictionary {
     fn clear(&mut self) {
+        self.clear_application_version();
         self.clear_source_checksum();
         self.clear_source_total_size();
-        self.clear_chunk_descriptors();
         self.clear_external();
         self.clear_per_chunk();
         self.clear_chunker_params();
+        self.clear_chunk_descriptors();
         self.unknown_fields.clear();
     }
 }
 
-impl ::std::fmt::Debug for Header {
+impl ::std::fmt::Debug for ChunkDictionary {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         ::protobuf::text_format::fmt(self, f)
     }
 }
 
-impl ::protobuf::reflect::ProtobufValue for Header {
+impl ::protobuf::reflect::ProtobufValue for ChunkDictionary {
     fn as_ref(&self) -> ::protobuf::reflect::ProtobufValueRef {
         ::protobuf::reflect::ProtobufValueRef::Message(self)
     }
 }
 
 static file_descriptor_proto_data: &'static [u8] = b"\
-    \n\x1aproto/archive_header.proto\x12\x0earchive_header\"\xe4\x01\n\x0fCh\
-    unkDescriptor\x12\x1a\n\x08checksum\x18\x01\x20\x01(\x0cR\x08checksum\
-    \x12\x14\n\x04LZMA\x18\x02\x20\x01(\rH\0R\x04LZMA\x12!\n\x0carchive_size\
-    \x18\n\x20\x01(\x04R\x0barchiveSize\x12%\n\x0earchive_offset\x18\x0b\x20\
-    \x01(\x04R\rarchiveOffset\x12\x1f\n\x0bsource_size\x18\x0c\x20\x01(\x04R\
-    \nsourceSize\x12%\n\x0esource_offsets\x18\r\x20\x03(\x04R\rsourceOffsets\
-    B\r\n\x0bcompression\"\xe1\x01\n\x11ChunkerParameters\x12*\n\x11chunk_fi\
-    lter_bits\x18\x01\x20\x01(\rR\x0fchunkFilterBits\x12$\n\x0emin_chunk_siz\
-    e\x18\x02\x20\x01(\x04R\x0cminChunkSize\x12$\n\x0emax_chunk_size\x18\x03\
-    \x20\x01(\x04R\x0cmaxChunkSize\x12(\n\x10hash_window_size\x18\x04\x20\
-    \x01(\rR\x0ehashWindowSize\x12*\n\x11chunk_hash_length\x18\x05\x20\x01(\
-    \rR\x0fchunkHashLength\"\xc9\x02\n\x06Header\x12'\n\x0fsource_checksum\
-    \x18\x01\x20\x01(\x0cR\x0esourceChecksum\x12*\n\x11source_total_size\x18\
-    \x02\x20\x01(\x04R\x0fsourceTotalSize\x12L\n\x11chunk_descriptors\x18\
-    \x03\x20\x03(\x0b2\x1f.archive_header.ChunkDescriptorR\x10chunkDescripto\
-    rs\x12\x1c\n\x08external\x18\x04\x20\x01(\tH\0R\x08external\x12\x1d\n\tp\
-    er_chunk\x18\x05\x20\x01(\tH\0R\x08perChunk\x12H\n\x0echunker_params\x18\
-    \n\x20\x01(\x0b2!.archive_header.ChunkerParametersR\rchunkerParamsB\x15\
-    \n\x13chunk_data_locationJ\xfa\r\n\x06\x12\x04\0\03\x01\n\x08\n\x01\x0c\
-    \x12\x03\0\0\x12\n\x08\n\x01\x02\x12\x03\x02\x08\x16\n\n\n\x02\x04\0\x12\
-    \x04\x04\0\x17\x01\n\n\n\x03\x04\0\x01\x12\x03\x04\x08\x17\n4\n\x04\x04\
-    \0\x02\0\x12\x03\x07\x04\x17\x1a'\x20Hash\x20checksum\x20of\x20(uncompre\
-    ssed)\x20chunk\n\n\r\n\x05\x04\0\x02\0\x04\x12\x04\x07\x04\x05\x01\n\x0c\
-    \n\x05\x04\0\x02\0\x05\x12\x03\x07\x04\t\n\x0c\n\x05\x04\0\x02\0\x01\x12\
-    \x03\x07\n\x12\n\x0c\n\x05\x04\0\x02\0\x03\x12\x03\x07\x15\x16\nP\n\x04\
-    \x04\0\x08\0\x12\x04\x0b\x04\x0e\x05\x1aB\x20Archive\x20chunk\x20data\
-    \x20compression\x20type.\n\x20No\x20compression\x20if\x20not\x20set.\n\n\
-    \x0c\n\x05\x04\0\x08\0\x01\x12\x03\x0b\n\x15\n/\n\x04\x04\0\x02\x01\x12\
-    \x03\r\x08\x18\x1a\"\x20LZMA\x20and\x20compression\x20level\x20(0-9)\n\n\
-    \x0c\n\x05\x04\0\x02\x01\x05\x12\x03\r\x08\x0e\n\x0c\n\x05\x04\0\x02\x01\
-    \x01\x12\x03\r\x0f\x13\n\x0c\n\x05\x04\0\x02\x01\x03\x12\x03\r\x16\x17\n\
-    /\n\x04\x04\0\x02\x02\x12\x03\x11\x04\x1d\x1a\"\x20Chunk\x20data\x20plac\
-    ement\x20in\x20archive.\n\n\r\n\x05\x04\0\x02\x02\x04\x12\x04\x11\x04\
-    \x0e\x05\n\x0c\n\x05\x04\0\x02\x02\x05\x12\x03\x11\x04\n\n\x0c\n\x05\x04\
-    \0\x02\x02\x01\x12\x03\x11\x0b\x17\n\x0c\n\x05\x04\0\x02\x02\x03\x12\x03\
-    \x11\x1a\x1c\n\x0b\n\x04\x04\0\x02\x03\x12\x03\x12\x04\x1f\n\r\n\x05\x04\
-    \0\x02\x03\x04\x12\x04\x12\x04\x11\x1d\n\x0c\n\x05\x04\0\x02\x03\x05\x12\
-    \x03\x12\x04\n\n\x0c\n\x05\x04\0\x02\x03\x01\x12\x03\x12\x0b\x19\n\x0c\n\
-    \x05\x04\0\x02\x03\x03\x12\x03\x12\x1c\x1e\n=\n\x04\x04\0\x02\x04\x12\
-    \x03\x15\x04\x1c\x1a0\x20Size\x20and\x20offsets\x20of\x20where\x20chunk\
-    \x20data\x20was\x20found\n\n\r\n\x05\x04\0\x02\x04\x04\x12\x04\x15\x04\
-    \x12\x1f\n\x0c\n\x05\x04\0\x02\x04\x05\x12\x03\x15\x04\n\n\x0c\n\x05\x04\
-    \0\x02\x04\x01\x12\x03\x15\x0b\x16\n\x0c\n\x05\x04\0\x02\x04\x03\x12\x03\
-    \x15\x19\x1b\n\x0b\n\x04\x04\0\x02\x05\x12\x03\x16\x04(\n\x0c\n\x05\x04\
-    \0\x02\x05\x04\x12\x03\x16\x04\x0c\n\x0c\n\x05\x04\0\x02\x05\x05\x12\x03\
-    \x16\r\x13\n\x0c\n\x05\x04\0\x02\x05\x01\x12\x03\x16\x14\"\n\x0c\n\x05\
-    \x04\0\x02\x05\x03\x12\x03\x16%'\n\n\n\x02\x04\x01\x12\x04\x19\0\x1f\x01\
-    \n\n\n\x03\x04\x01\x01\x12\x03\x19\x08\x19\n\x0b\n\x04\x04\x01\x02\0\x12\
-    \x03\x1a\x04!\n\r\n\x05\x04\x01\x02\0\x04\x12\x04\x1a\x04\x19\x1b\n\x0c\
-    \n\x05\x04\x01\x02\0\x05\x12\x03\x1a\x04\n\n\x0c\n\x05\x04\x01\x02\0\x01\
-    \x12\x03\x1a\x0b\x1c\n\x0c\n\x05\x04\x01\x02\0\x03\x12\x03\x1a\x1f\x20\n\
-    \x0b\n\x04\x04\x01\x02\x01\x12\x03\x1b\x04\x1e\n\r\n\x05\x04\x01\x02\x01\
-    \x04\x12\x04\x1b\x04\x1a!\n\x0c\n\x05\x04\x01\x02\x01\x05\x12\x03\x1b\
-    \x04\n\n\x0c\n\x05\x04\x01\x02\x01\x01\x12\x03\x1b\x0b\x19\n\x0c\n\x05\
-    \x04\x01\x02\x01\x03\x12\x03\x1b\x1c\x1d\n\x0b\n\x04\x04\x01\x02\x02\x12\
-    \x03\x1c\x04\x1e\n\r\n\x05\x04\x01\x02\x02\x04\x12\x04\x1c\x04\x1b\x1e\n\
-    \x0c\n\x05\x04\x01\x02\x02\x05\x12\x03\x1c\x04\n\n\x0c\n\x05\x04\x01\x02\
-    \x02\x01\x12\x03\x1c\x0b\x19\n\x0c\n\x05\x04\x01\x02\x02\x03\x12\x03\x1c\
-    \x1c\x1d\n\x0b\n\x04\x04\x01\x02\x03\x12\x03\x1d\x04\x20\n\r\n\x05\x04\
-    \x01\x02\x03\x04\x12\x04\x1d\x04\x1c\x1e\n\x0c\n\x05\x04\x01\x02\x03\x05\
-    \x12\x03\x1d\x04\n\n\x0c\n\x05\x04\x01\x02\x03\x01\x12\x03\x1d\x0b\x1b\n\
-    \x0c\n\x05\x04\x01\x02\x03\x03\x12\x03\x1d\x1e\x1f\n\x0b\n\x04\x04\x01\
-    \x02\x04\x12\x03\x1e\x04!\n\r\n\x05\x04\x01\x02\x04\x04\x12\x04\x1e\x04\
-    \x1d\x20\n\x0c\n\x05\x04\x01\x02\x04\x05\x12\x03\x1e\x04\n\n\x0c\n\x05\
-    \x04\x01\x02\x04\x01\x12\x03\x1e\x0b\x1c\n\x0c\n\x05\x04\x01\x02\x04\x03\
-    \x12\x03\x1e\x1f\x20\n\n\n\x02\x04\x02\x12\x04!\03\x01\n\n\n\x03\x04\x02\
-    \x01\x12\x03!\x08\x0e\n&\n\x04\x04\x02\x02\0\x12\x03#\x04\x1e\x1a\x19\
-    \x20Hash\x20of\x20the\x20source\x20file\n\n\r\n\x05\x04\x02\x02\0\x04\
-    \x12\x04#\x04!\x10\n\x0c\n\x05\x04\x02\x02\0\x05\x12\x03#\x04\t\n\x0c\n\
-    \x05\x04\x02\x02\0\x01\x12\x03#\n\x19\n\x0c\n\x05\x04\x02\x02\0\x03\x12\
-    \x03#\x1c\x1d\n,\n\x04\x04\x02\x02\x01\x12\x03&\x04!\x1a\x1f\x20Total\
-    \x20size\x20of\x20the\x20source\x20file\n\n\r\n\x05\x04\x02\x02\x01\x04\
-    \x12\x04&\x04#\x1e\n\x0c\n\x05\x04\x02\x02\x01\x05\x12\x03&\x04\n\n\x0c\
-    \n\x05\x04\x02\x02\x01\x01\x12\x03&\x0b\x1c\n\x0c\n\x05\x04\x02\x02\x01\
-    \x03\x12\x03&\x1f\x20\nY\n\x04\x04\x02\x02\x02\x12\x03)\x043\x1aL\x20Arr\
-    ay\x20of\x20chunk\x20descriptors.\x20In\x20order\x20of\x20(first)\x20occ\
-    urrence\x20in\x20source\x20file.\n\n\x0c\n\x05\x04\x02\x02\x02\x04\x12\
-    \x03)\x04\x0c\n\x0c\n\x05\x04\x02\x02\x02\x06\x12\x03)\r\x1c\n\x0c\n\x05\
-    \x04\x02\x02\x02\x01\x12\x03)\x1d.\n\x0c\n\x05\x04\x02\x02\x02\x03\x12\
-    \x03)12\nQ\n\x04\x04\x02\x08\0\x12\x04,\x04/\x05\x1aC\x20Where\x20chunk\
-    \x20data\x20lives.\x20Inside\x20this\x20archive\x20if\x20values\x20is\
-    \x20not\x20set.\n\n\x0c\n\x05\x04\x02\x08\0\x01\x12\x03,\n\x1d\n\x0b\n\
-    \x04\x04\x02\x02\x03\x12\x03-\x08\x1c\n\x0c\n\x05\x04\x02\x02\x03\x05\
-    \x12\x03-\x08\x0e\n\x0c\n\x05\x04\x02\x02\x03\x01\x12\x03-\x0f\x17\n\x0c\
-    \n\x05\x04\x02\x02\x03\x03\x12\x03-\x1a\x1b\n\x0b\n\x04\x04\x02\x02\x04\
-    \x12\x03.\x08\x1d\n\x0c\n\x05\x04\x02\x02\x04\x05\x12\x03.\x08\x0e\n\x0c\
-    \n\x05\x04\x02\x02\x04\x01\x12\x03.\x0f\x18\n\x0c\n\x05\x04\x02\x02\x04\
-    \x03\x12\x03.\x1b\x1c\n<\n\x04\x04\x02\x02\x05\x12\x032\x04*\x1a/\x20Chu\
-    nker\x20parameters\x20used\x20when\x20building\x20archive\n\n\r\n\x05\
-    \x04\x02\x02\x05\x04\x12\x042\x04/\x05\n\x0c\n\x05\x04\x02\x02\x05\x06\
-    \x12\x032\x04\x15\n\x0c\n\x05\x04\x02\x02\x05\x01\x12\x032\x16$\n\x0c\n\
-    \x05\x04\x02\x02\x05\x03\x12\x032')b\x06proto3\
+    \n\x1cproto/chunk_dictionary.proto\x12\x10chunk_dictionary\"\xe4\x01\n\
+    \x0fChunkDescriptor\x12\x1a\n\x08checksum\x18\x01\x20\x01(\x0cR\x08check\
+    sum\x12\x14\n\x04LZMA\x18\x02\x20\x01(\rH\0R\x04lZMA\x12!\n\x0carchive_s\
+    ize\x18\n\x20\x01(\x04R\x0barchiveSize\x12%\n\x0earchive_offset\x18\x0b\
+    \x20\x01(\x04R\rarchiveOffset\x12\x1f\n\x0bsource_size\x18\x0c\x20\x01(\
+    \x04R\nsourceSize\x12%\n\x0esource_offsets\x18\r\x20\x03(\x04R\rsourceOf\
+    fsetsB\r\n\x0bcompression\"\xe1\x01\n\x11ChunkerParameters\x12*\n\x11chu\
+    nk_filter_bits\x18\x01\x20\x01(\rR\x0fchunkFilterBits\x12$\n\x0emin_chun\
+    k_size\x18\x02\x20\x01(\x04R\x0cminChunkSize\x12$\n\x0emax_chunk_size\
+    \x18\x03\x20\x01(\x04R\x0cmaxChunkSize\x12(\n\x10hash_window_size\x18\
+    \x04\x20\x01(\rR\x0ehashWindowSize\x12*\n\x11chunk_hash_length\x18\x05\
+    \x20\x01(\rR\x0fchunkHashLength\"\x87\x03\n\x0fChunkDictionary\x12/\n\
+    \x13application_version\x18\x01\x20\x01(\tR\x12applicationVersion\x12'\n\
+    \x0fsource_checksum\x18\x02\x20\x01(\x0cR\x0esourceChecksum\x12*\n\x11so\
+    urce_total_size\x18\x03\x20\x01(\x04R\x0fsourceTotalSize\x12\x1c\n\x08ex\
+    ternal\x18\x04\x20\x01(\tH\0R\x08external\x12\x1d\n\tper_chunk\x18\x05\
+    \x20\x01(\tH\0R\x08perChunk\x12J\n\x0echunker_params\x18\x06\x20\x01(\
+    \x0b2#.chunk_dictionary.ChunkerParametersR\rchunkerParams\x12N\n\x11chun\
+    k_descriptors\x18\n\x20\x03(\x0b2!.chunk_dictionary.ChunkDescriptorR\x10\
+    chunkDescriptorsB\x15\n\x13chunk_data_locationJ\x95\x10\n\x06\x12\x04\0\
+    \0?\x01\n\x08\n\x01\x0c\x12\x03\0\0\x12\n\x08\n\x01\x02\x12\x03\x02\x08\
+    \x18\n\n\n\x02\x04\0\x12\x04\x04\0\x18\x01\n\n\n\x03\x04\0\x01\x12\x03\
+    \x04\x08\x17\n+\n\x04\x04\0\x02\0\x12\x03\x07\x04\x17\x1a\x1e\x20Hash\
+    \x20of\x20(uncompressed)\x20chunk\n\n\r\n\x05\x04\0\x02\0\x04\x12\x04\
+    \x07\x04\x05\x01\n\x0c\n\x05\x04\0\x02\0\x05\x12\x03\x07\x04\t\n\x0c\n\
+    \x05\x04\0\x02\0\x01\x12\x03\x07\n\x12\n\x0c\n\x05\x04\0\x02\0\x03\x12\
+    \x03\x07\x15\x16\nP\n\x04\x04\0\x08\0\x12\x04\x0b\x04\x0f\x05\x1aB\x20Ar\
+    chive\x20chunk\x20data\x20compression\x20type.\n\x20No\x20compression\
+    \x20if\x20not\x20set.\n\n\x0c\n\x05\x04\0\x08\0\x01\x12\x03\x0b\n\x15\n/\
+    \n\x04\x04\0\x02\x01\x12\x03\x0e\x08\x18\x1a\"\x20LZMA\x20and\x20compres\
+    sion\x20level\x20(0-9)\n\n\x0c\n\x05\x04\0\x02\x01\x05\x12\x03\x0e\x08\
+    \x0e\n\x0c\n\x05\x04\0\x02\x01\x01\x12\x03\x0e\x0f\x13\n\x0c\n\x05\x04\0\
+    \x02\x01\x03\x12\x03\x0e\x16\x17\n/\n\x04\x04\0\x02\x02\x12\x03\x12\x04\
+    \x1d\x1a\"\x20Chunk\x20data\x20placement\x20in\x20archive.\n\n\r\n\x05\
+    \x04\0\x02\x02\x04\x12\x04\x12\x04\x0f\x05\n\x0c\n\x05\x04\0\x02\x02\x05\
+    \x12\x03\x12\x04\n\n\x0c\n\x05\x04\0\x02\x02\x01\x12\x03\x12\x0b\x17\n\
+    \x0c\n\x05\x04\0\x02\x02\x03\x12\x03\x12\x1a\x1c\n\x0b\n\x04\x04\0\x02\
+    \x03\x12\x03\x13\x04\x1f\n\r\n\x05\x04\0\x02\x03\x04\x12\x04\x13\x04\x12\
+    \x1d\n\x0c\n\x05\x04\0\x02\x03\x05\x12\x03\x13\x04\n\n\x0c\n\x05\x04\0\
+    \x02\x03\x01\x12\x03\x13\x0b\x19\n\x0c\n\x05\x04\0\x02\x03\x03\x12\x03\
+    \x13\x1c\x1e\n=\n\x04\x04\0\x02\x04\x12\x03\x16\x04\x1c\x1a0\x20Size\x20\
+    and\x20offsets\x20of\x20where\x20chunk\x20data\x20was\x20found\n\n\r\n\
+    \x05\x04\0\x02\x04\x04\x12\x04\x16\x04\x13\x1f\n\x0c\n\x05\x04\0\x02\x04\
+    \x05\x12\x03\x16\x04\n\n\x0c\n\x05\x04\0\x02\x04\x01\x12\x03\x16\x0b\x16\
+    \n\x0c\n\x05\x04\0\x02\x04\x03\x12\x03\x16\x19\x1b\n\x0b\n\x04\x04\0\x02\
+    \x05\x12\x03\x17\x04(\n\x0c\n\x05\x04\0\x02\x05\x04\x12\x03\x17\x04\x0c\
+    \n\x0c\n\x05\x04\0\x02\x05\x05\x12\x03\x17\r\x13\n\x0c\n\x05\x04\0\x02\
+    \x05\x01\x12\x03\x17\x14\"\n\x0c\n\x05\x04\0\x02\x05\x03\x12\x03\x17%'\n\
+    \n\n\x02\x04\x01\x12\x04\x1a\0!\x01\n\n\n\x03\x04\x01\x01\x12\x03\x1a\
+    \x08\x19\n\x0b\n\x04\x04\x01\x02\0\x12\x03\x1c\x04!\n\r\n\x05\x04\x01\
+    \x02\0\x04\x12\x04\x1c\x04\x1b\x01\n\x0c\n\x05\x04\x01\x02\0\x05\x12\x03\
+    \x1c\x04\n\n\x0c\n\x05\x04\x01\x02\0\x01\x12\x03\x1c\x0b\x1c\n\x0c\n\x05\
+    \x04\x01\x02\0\x03\x12\x03\x1c\x1f\x20\n\x0b\n\x04\x04\x01\x02\x01\x12\
+    \x03\x1d\x04\x1e\n\r\n\x05\x04\x01\x02\x01\x04\x12\x04\x1d\x04\x1c!\n\
+    \x0c\n\x05\x04\x01\x02\x01\x05\x12\x03\x1d\x04\n\n\x0c\n\x05\x04\x01\x02\
+    \x01\x01\x12\x03\x1d\x0b\x19\n\x0c\n\x05\x04\x01\x02\x01\x03\x12\x03\x1d\
+    \x1c\x1d\n\x0b\n\x04\x04\x01\x02\x02\x12\x03\x1e\x04\x1e\n\r\n\x05\x04\
+    \x01\x02\x02\x04\x12\x04\x1e\x04\x1d\x1e\n\x0c\n\x05\x04\x01\x02\x02\x05\
+    \x12\x03\x1e\x04\n\n\x0c\n\x05\x04\x01\x02\x02\x01\x12\x03\x1e\x0b\x19\n\
+    \x0c\n\x05\x04\x01\x02\x02\x03\x12\x03\x1e\x1c\x1d\n\x0b\n\x04\x04\x01\
+    \x02\x03\x12\x03\x1f\x04\x20\n\r\n\x05\x04\x01\x02\x03\x04\x12\x04\x1f\
+    \x04\x1e\x1e\n\x0c\n\x05\x04\x01\x02\x03\x05\x12\x03\x1f\x04\n\n\x0c\n\
+    \x05\x04\x01\x02\x03\x01\x12\x03\x1f\x0b\x1b\n\x0c\n\x05\x04\x01\x02\x03\
+    \x03\x12\x03\x1f\x1e\x1f\n\x0b\n\x04\x04\x01\x02\x04\x12\x03\x20\x04!\n\
+    \r\n\x05\x04\x01\x02\x04\x04\x12\x04\x20\x04\x1f\x20\n\x0c\n\x05\x04\x01\
+    \x02\x04\x05\x12\x03\x20\x04\n\n\x0c\n\x05\x04\x01\x02\x04\x01\x12\x03\
+    \x20\x0b\x1c\n\x0c\n\x05\x04\x01\x02\x04\x03\x12\x03\x20\x1f\x20\n\n\n\
+    \x02\x04\x02\x12\x04#\0?\x01\n\n\n\x03\x04\x02\x01\x12\x03#\x08\x17\n7\n\
+    \x04\x04\x02\x02\0\x12\x03&\x04#\x1a*\x20Dictionary\x20was\x20created\
+    \x20with\x20this\x20version\n\n\r\n\x05\x04\x02\x02\0\x04\x12\x04&\x04$\
+    \x01\n\x0c\n\x05\x04\x02\x02\0\x05\x12\x03&\x04\n\n\x0c\n\x05\x04\x02\
+    \x02\0\x01\x12\x03&\x0b\x1e\n\x0c\n\x05\x04\x02\x02\0\x03\x12\x03&!\"\n&\
+    \n\x04\x04\x02\x02\x01\x12\x03)\x04\x1e\x1a\x19\x20Hash\x20of\x20the\x20\
+    source\x20file\n\n\r\n\x05\x04\x02\x02\x01\x04\x12\x04)\x04&#\n\x0c\n\
+    \x05\x04\x02\x02\x01\x05\x12\x03)\x04\t\n\x0c\n\x05\x04\x02\x02\x01\x01\
+    \x12\x03)\n\x19\n\x0c\n\x05\x04\x02\x02\x01\x03\x12\x03)\x1c\x1d\n,\n\
+    \x04\x04\x02\x02\x02\x12\x03,\x04!\x1a\x1f\x20Total\x20size\x20of\x20the\
+    \x20source\x20file\n\n\r\n\x05\x04\x02\x02\x02\x04\x12\x04,\x04)\x1e\n\
+    \x0c\n\x05\x04\x02\x02\x02\x05\x12\x03,\x04\n\n\x0c\n\x05\x04\x02\x02\
+    \x02\x01\x12\x03,\x0b\x1c\n\x0c\n\x05\x04\x02\x02\x02\x03\x12\x03,\x1f\
+    \x20\nQ\n\x04\x04\x02\x08\0\x12\x04/\x047\x05\x1aC\x20Where\x20chunk\x20\
+    data\x20lives.\x20Inside\x20this\x20archive\x20if\x20values\x20is\x20not\
+    \x20set.\n\n\x0c\n\x05\x04\x02\x08\0\x01\x12\x03/\n\x1d\nR\n\x04\x04\x02\
+    \x02\x03\x12\x032\x08\x1c\x1aE\x20Chunk\x20data\x20lives\x20in\x20extern\
+    al\x20file,\x20where\x20'external'\x20is\x20a\x20file\x20path.\n\n\x0c\n\
+    \x05\x04\x02\x02\x03\x05\x12\x032\x08\x0e\n\x0c\n\x05\x04\x02\x02\x03\
+    \x01\x12\x032\x0f\x17\n\x0c\n\x05\x04\x02\x02\x03\x03\x12\x032\x1a\x1b\n\
+    u\n\x04\x04\x02\x02\x04\x12\x036\x08\x1d\x1ah\x20Each\x20chunk\x20is\x20\
+    in\x20a\x20separate\x20file\x20with\x20file\x20name\x20based\x20on\x20ch\
+    unk\x20hash.\n\x20'per_chunk'\x20is\x20a\x20directory\x20path.\n\n\x0c\n\
+    \x05\x04\x02\x02\x04\x05\x12\x036\x08\x0e\n\x0c\n\x05\x04\x02\x02\x04\
+    \x01\x12\x036\x0f\x18\n\x0c\n\x05\x04\x02\x02\x04\x03\x12\x036\x1b\x1c\n\
+    <\n\x04\x04\x02\x02\x05\x12\x03:\x04)\x1a/\x20Chunker\x20parameters\x20u\
+    sed\x20when\x20building\x20archive\n\n\r\n\x05\x04\x02\x02\x05\x04\x12\
+    \x04:\x047\x05\n\x0c\n\x05\x04\x02\x02\x05\x06\x12\x03:\x04\x15\n\x0c\n\
+    \x05\x04\x02\x02\x05\x01\x12\x03:\x16$\n\x0c\n\x05\x04\x02\x02\x05\x03\
+    \x12\x03:'(\nZ\n\x04\x04\x02\x02\x06\x12\x03>\x044\x1aM\x20Array\x20of\
+    \x20chunk\x20descriptors.\x20In\x20order\x20of\x20(first)\x20occurrence\
+    \x20in\x20source\n\x20file.\n\n\x0c\n\x05\x04\x02\x02\x06\x04\x12\x03>\
+    \x04\x0c\n\x0c\n\x05\x04\x02\x02\x06\x06\x12\x03>\r\x1c\n\x0c\n\x05\x04\
+    \x02\x02\x06\x01\x12\x03>\x1d.\n\x0c\n\x05\x04\x02\x02\x06\x03\x12\x03>1\
+    3b\x06proto3\
 ";
 
 static mut file_descriptor_proto_lazy: ::protobuf::lazy::Lazy<::protobuf::descriptor::FileDescriptorProto> = ::protobuf::lazy::Lazy {

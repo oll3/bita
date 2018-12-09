@@ -13,9 +13,9 @@ extern crate protobuf;
 extern crate threadpool;
 
 mod archive;
-mod archive_header;
 mod archive_reader;
 mod buzhash;
+mod chunk_dictionary;
 mod chunker;
 mod chunker_utils;
 mod compress_cmd;
@@ -35,11 +35,11 @@ use errors::*;
 
 mod errors {
     // Create the Error, ErrorKind, ResultExt, and Result types
-    error_chain!{}
+    error_chain! {}
 }
 
-const PKG_VERSION: &'static str = env!("CARGO_PKG_VERSION");
-const PKG_NAME: &'static str = env!("CARGO_PKG_NAME");
+pub const PKG_VERSION: &'static str = env!("CARGO_PKG_VERSION");
+pub const PKG_NAME: &'static str = env!("CARGO_PKG_NAME");
 
 fn parse_size(size_str: &str) -> usize {
     let size_val: String = size_str.chars().filter(|a| a.is_numeric()).collect();
@@ -67,7 +67,8 @@ fn parse_opts() -> Result<Config> {
                 .long("force-create")
                 .help("Overwrite output files if they exist.")
                 .global(true),
-        ).subcommand(
+        )
+        .subcommand(
             SubCommand::with_name("compress")
                 .about("Compress a file or stream.")
                 .arg(
@@ -77,43 +78,51 @@ fn parse_opts() -> Result<Config> {
                         .value_name("FILE")
                         .help("Input file. If none is given the stdin will be used.")
                         .required(false),
-                ).arg(
+                )
+                .arg(
                     Arg::with_name("OUTPUT")
                         .value_name("OUTPUT")
                         .help("Output file.")
                         .required(true),
-                ).arg(
+                )
+                .arg(
                     Arg::with_name("avg-chunk-size")
                         .long("avg-chunk-size")
                         .value_name("SIZE")
                         .help("Indication of target chunk size [default: 64KiB]."),
-                ).arg(
+                )
+                .arg(
                     Arg::with_name("min-chunk-size")
                         .long("min-chunk-size")
                         .value_name("SIZE")
                         .help("Minimal size of chunks [default: 16KiB]."),
-                ).arg(
+                )
+                .arg(
                     Arg::with_name("max-chunk-size")
                         .long("max-chunk-size")
                         .value_name("SIZE")
                         .help("Maximal size of chunks [default: 16MiB]."),
-                ).arg(
+                )
+                .arg(
                     Arg::with_name("buzhash-window")
                         .long("buzhash-window")
                         .value_name("SIZE")
                         .help("Size of the buzhash window [default: 16B]."),
-                ).arg(
+                )
+                .arg(
                     Arg::with_name("hash-length")
                         .long("hash-length")
                         .value_name("LENGTH")
                         .help("Truncate the length of the stored strong hash [default: 64]."),
-                ).arg(
+                )
+                .arg(
                     Arg::with_name("compression-level")
                         .long("compression-level")
                         .value_name("LEVEL")
                         .help("Set the chunk data compression level (0-9) [default: 6]."),
                 ),
-        ).subcommand(
+        )
+        .subcommand(
             SubCommand::with_name("unpack")
                 .about("Unpack a file.")
                 .arg(
@@ -121,19 +130,22 @@ fn parse_opts() -> Result<Config> {
                         .value_name("INPUT")
                         .help("Input file. Can be a local cba file or a URL.")
                         .required(true),
-                ).arg(
+                )
+                .arg(
                     Arg::with_name("OUTPUT")
                         .value_name("OUTPUT")
                         .help("Output file.")
                         .required(true),
-                ).arg(
+                )
+                .arg(
                     Arg::with_name("seed")
                         .value_name("FILE")
                         .long("seed")
                         .help("File(s) to use as seed while unpacking.")
                         .multiple(true),
                 ),
-        ).get_matches();
+        )
+        .get_matches();
 
     let base_config = BaseConfig {
         force_create: matches.is_present("force-create"),

@@ -4,7 +4,7 @@ use blake2::{Blake2b, Digest};
 use chunker_utils::HashBuf;
 use std::fmt;
 
-use archive_header;
+use chunk_dictionary;
 use errors::*;
 use string_utils::*;
 
@@ -37,10 +37,9 @@ pub enum ChunkDataLocation {
     Internal,
     // TODO: Chunk data is located in a separate file (at path)
     // External(string),
-
     // TODO: Chunk data is separated per chunk and named according to the
     // chunk hash (casync style).
-    // The strings is a path to where chunks are located.
+    // The string is a path to where chunks are located.
     //PerChunk(string),
 }
 
@@ -76,11 +75,12 @@ pub struct Header {
     pub version: Version,
 }
 
-impl fmt::Display for archive_header::Header {
+impl fmt::Display for chunk_dictionary::ChunkDictionary {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "chunks: {}, source hash: {}, source size: {}",
+            "app version: {}, chunks: {}, source hash: {}, source size: {}",
+            self.application_version,
             self.chunk_descriptors.len(),
             HexSlice::new(&self.source_checksum),
             size_to_str(self.source_total_size)
@@ -112,34 +112,51 @@ pub fn vec_to_size(sv: &[u8]) -> u64 {
         | ((sv[7] as u64) << 0)
 }
 
-impl fmt::Display for archive_header::ChunkDescriptor_oneof_compression {
+impl fmt::Display for chunk_dictionary::ChunkDescriptor_oneof_compression {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            archive_header::ChunkDescriptor_oneof_compression::LZMA(lvl) => {
+            chunk_dictionary::ChunkDescriptor_oneof_compression::LZMA(lvl) => {
                 write!(f, "LZMA({})", lvl)
             }
         }
     }
 }
 
-pub fn build_header(header: &archive_header::Header) -> Result<Vec<u8>> {
-    // header magic
-    let magic = "bita".as_bytes();
-
-    let mut file_buf: Vec<u8> = vec![];
+pub fn build_header(dictionary: &chunk_dictionary::ChunkDictionary) -> Result<Vec<u8>> {
+    let mut header: Vec<u8> = vec![];
     let mut hasher = Blake2b::new();
-    let mut header_buf: Vec<u8> = Vec::new();
+    let mut dictionary_buf: Vec<u8> = Vec::new();
 
-    header
-        .write_to_vec(&mut header_buf)
+    dictionary
+        .write_to_vec(&mut dictionary_buf)
         .chain_err(|| "failed to serialize header")?;
-    hasher.input(&header_buf);
 
-    file_buf.extend(magic);
-    file_buf.push(0); // major version field
-    file_buf.extend(&size_vec(header_buf.len() as u64));
-    file_buf.extend(header_buf);
-    file_buf.extend(hasher.result().to_vec());
+    // header magic
+    header.extend("bita".as_bytes());
 
-    Ok(file_buf)
+    // Major archive version
+    header.push(0);
+
+    // Chunk dictionary size
+    header.extend(&size_vec(dictionary_buf.len() as u64));
+
+    // The chunk dictionary
+    header.extend(dictionary_buf);
+
+    // Chunk data offset. 0 if not used.
+    // For now it will always start where the header hash ends, that is current size
+    // of header buffer + 8 for this size value + 64 for header hash value
+    {
+        let offset = header.len() + 8 + 64;
+        println!("Chunk data offset: {}", offset);
+        header.extend(&size_vec(offset as u64));
+    }
+
+    // Create and set hash of full header
+    hasher.input(&header);
+    let hash = hasher.result().to_vec();
+    println!("Header hash: {}", HexSlice::new(&hash));
+    header.extend(hash);
+
+    Ok(header)
 }

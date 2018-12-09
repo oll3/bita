@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use string_utils::*;
 
 use archive;
-use archive_header;
+use chunk_dictionary;
 use chunker;
 use errors::*;
 
@@ -18,7 +18,7 @@ pub struct ArchiveReader<T> {
     chunk_map: HashMap<HashBuf, usize>,
 
     // List of chunk descriptors
-    chunks: Vec<archive_header::ChunkDescriptor>,
+    chunks: Vec<chunk_dictionary::ChunkDescriptor>,
 
     pub archive_chunks_offset: u64,
 
@@ -56,8 +56,8 @@ impl<T> ArchiveReader<T>
 where
     T: ArchiveBackend,
 {
-    pub fn verify_pre_header(pre_header: &[u8]) -> Result<usize> {
-        if pre_header.len() < 13 {
+    pub fn verify_pre_header(pre_header: &[u8]) -> Result<()> {
+        if pre_header.len() < 5 {
             bail!("failed to read header of archive")
         }
         if &pre_header[0..4] != "bita".as_bytes() {
@@ -66,68 +66,61 @@ where
         if pre_header[4] != 0 {
             bail!("unknown archive version");
         }
-
-        let header_size = archive::vec_to_size(&pre_header[5..13]) as usize;
-
-        Ok(header_size)
+        Ok(())
     }
 
     pub fn new(mut input: T) -> Result<Self> {
         // Read the pre-header (file magic, version and size)
-        let mut input_offset: u64 = 0;
         let mut header_buf = vec![0; 13];
         input
             .read_at(0, &mut header_buf)
             .chain_err(|| "unable to read archive")?;
 
-        input_offset += 13;
+        Self::verify_pre_header(&header_buf[0..13])?;
 
-        let header_size = Self::verify_pre_header(&header_buf[0..13])?;
+        let dictionary_size = archive::vec_to_size(&header_buf[5..13]) as usize;
+        println!("Dictionary size: {}", size_to_str(dictionary_size));
 
-        println!("archive header size: {}", header_size);
-
-        // Read the header
-        header_buf.resize(header_size, 0);
+        // Read the dictionary, chunk data offset and header hash
+        header_buf.resize(13 + dictionary_size + 8 + 64, 0);
         input
-            .read_at(input_offset, &mut header_buf)
+            .read_at(13, &mut header_buf[13..])
             .chain_err(|| "unable to read archive")?;
-        input_offset += header_size as u64;
 
         // Verify the header against the header hash
         let mut hasher = Blake2b::new();
-        hasher.input(&header_buf);
-
-        // ...and deserialize it
-        let header: archive_header::Header = protobuf::parse_from_bytes(&header_buf)
-            .chain_err(|| "unable to unpack archive header")?;
-        //bincode::deserialize(&header_buf).chain_err(|| "unable to unpack archive header")?;
-
-        header_buf.resize(64, 0);
-        input
-            .read_at(input_offset, &mut header_buf)
-            .chain_err(|| "unable to read archive")?;
-        input_offset += 64;
-
-        if header_buf != hasher.result().to_vec() {
+        let offs = 13 + dictionary_size + 8;
+        hasher.input(&header_buf[..offs]);
+        if header_buf[offs..(offs + 64)] != hasher.result().to_vec()[..] {
             bail!("Corrupt archive header")
         }
 
-        println!("{}", header);
+        // Deserialize the chunk dictionary
+        let offs = 13;
+        let dictionary: chunk_dictionary::ChunkDictionary =
+            protobuf::parse_from_bytes(&header_buf[offs..(offs + dictionary_size)])
+                .chain_err(|| "unable to unpack archive header")?;
+
+        // Get chunk data offset
+        let offs = 13 + dictionary_size;
+        let chunk_data_offset = archive::vec_to_size(&header_buf[offs..(offs + 8)]) as usize;
+
+        println!("{}", dictionary);
 
         // Extract and store parameters from file header
-        let chunker_params = header.chunker_params.unwrap();
-        let source_total_size = header.source_total_size;
+        let chunker_params = dictionary.chunker_params.unwrap();
+        let source_total_size = dictionary.source_total_size;
         let chunk_filter_bits = chunker_params.chunk_filter_bits;
         let min_chunk_size = chunker_params.min_chunk_size;
         let max_chunk_size = chunker_params.max_chunk_size;
         let hash_window_size = chunker_params.hash_window_size;
         let hash_length = chunker_params.chunk_hash_length;
 
-        let mut chunk_order: Vec<archive_header::ChunkDescriptor> = Vec::new();
+        let mut chunk_order: Vec<chunk_dictionary::ChunkDescriptor> = Vec::new();
         let mut chunk_map: HashMap<HashBuf, usize> = HashMap::new();
         {
             let mut index = 0;
-            for desc in header.chunk_descriptors.into_iter() {
+            for desc in dictionary.chunk_descriptors.into_iter() {
                 chunk_map.insert(desc.checksum.clone(), index);
                 chunk_order.push(desc);
                 index += 1;
@@ -139,7 +132,7 @@ where
             chunk_map: chunk_map,
             chunks: chunk_order,
             source_total_size: source_total_size,
-            archive_chunks_offset: input_offset,
+            archive_chunks_offset: chunk_data_offset as u64,
             chunk_filter_bits: chunk_filter_bits,
             min_chunk_size: min_chunk_size as usize,
             max_chunk_size: max_chunk_size as usize,
@@ -165,8 +158,8 @@ where
 
     // Group chunks which are placed in sequence inside archive
     fn group_chunks_in_sequence(
-        mut chunks: Vec<&archive_header::ChunkDescriptor>,
-    ) -> Vec<Vec<&archive_header::ChunkDescriptor>> {
+        mut chunks: Vec<&chunk_dictionary::ChunkDescriptor>,
+    ) -> Vec<Vec<&chunk_dictionary::ChunkDescriptor>> {
         let mut group_list = vec![];
         if chunks.len() == 0 {
             return group_list;
@@ -197,7 +190,7 @@ where
     {
         // Create list of chunks which are in archive. The order of the list should
         // be the same otder as the chunk data in archive.
-        let descriptors: Vec<&archive_header::ChunkDescriptor> = self
+        let descriptors: Vec<&chunk_dictionary::ChunkDescriptor> = self
             .chunks
             .iter()
             .filter(|chunk| chunks.contains(&chunk.checksum))
@@ -228,7 +221,7 @@ where
                 .read_in_chunks(start_offset, &chunk_sizes, |archive_data| {
                     let cd = &group[chunk_index];
                     match cd.compression {
-                        Some(archive_header::ChunkDescriptor_oneof_compression::LZMA(_level)) => {
+                        Some(chunk_dictionary::ChunkDescriptor_oneof_compression::LZMA(_level)) => {
                             // Archived chunk is compressed
                             chunk_buf.data.resize(0, 0);
                             {
@@ -288,7 +281,8 @@ where
                     chunk_index += 1;
 
                     Ok(())
-                }).expect("read chunks");
+                })
+                .expect("read chunks");
         }
         println!(
             "Decompression time: {}.{:03} s, verify time: {}.{:03} s",

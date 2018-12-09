@@ -9,8 +9,8 @@ use string_utils::*;
 use threadpool::ThreadPool;
 
 use archive;
-use archive_header;
 use buzhash::BuzHash;
+use chunk_dictionary;
 use chunker::*;
 use chunker_utils::*;
 use config::*;
@@ -24,7 +24,7 @@ fn chunks_to_file(
     usize,
     Vec<u8>,
     Vec<ChunkDesc>,
-    Vec<archive_header::ChunkDescriptor>,
+    Vec<chunk_dictionary::ChunkDescriptor>,
 )> {
     // Setup the chunker
     let mut chunker = Chunker::new(
@@ -36,7 +36,7 @@ fn chunks_to_file(
     );
 
     let compression =
-        archive_header::ChunkDescriptor_oneof_compression::LZMA(config.compression_level);
+        chunk_dictionary::ChunkDescriptor_oneof_compression::LZMA(config.compression_level);
 
     // Compress a chunk
     let compression_level = config.compression_level;
@@ -104,7 +104,7 @@ fn chunks_to_file(
             total_compressed_size += chunk_data.len();
 
             // Store a chunk descriptor which referes to the compressed data
-            chunk_descriptors.push(archive_header::ChunkDescriptor {
+            chunk_descriptors.push(chunk_dictionary::ChunkDescriptor {
                 checksum: hash.to_vec(),
                 source_offsets: vec![], // will be filled after chunking is done
                 source_size: comp_chunk.data.len() as u64,
@@ -132,7 +132,8 @@ fn chunks_to_file(
                 &pool,
                 true,
                 process_chunk,
-            ).chain_err(|| "unable to compress chunk")?;
+            )
+            .chain_err(|| "unable to compress chunk")?;
             file_size = tmp_file_size;
             file_hash = tmp_file_hash;
             chunks = tmp_chunks;
@@ -148,7 +149,8 @@ fn chunks_to_file(
                 &pool,
                 true,
                 process_chunk,
-            ).chain_err(|| "unable to compress chunk")?;
+            )
+            .chain_err(|| "unable to compress chunk")?;
             file_size = tmp_file_size;
             file_hash = tmp_file_hash;
             chunks = tmp_chunks;
@@ -201,12 +203,13 @@ pub fn run(config: CompressConfig, pool: ThreadPool) -> Result<()> {
     }
 
     // Store header to output file
-    let file_header = archive_header::Header {
+    let file_header = chunk_dictionary::ChunkDictionary {
+        application_version: ::PKG_VERSION.to_string(),
         chunk_descriptors: protobuf::RepeatedField::from_vec(chunk_descriptors),
         source_checksum: file_hash,
         chunk_data_location: None,
         source_total_size: file_size as u64,
-        chunker_params: protobuf::SingularPtrField::some(archive_header::ChunkerParameters {
+        chunker_params: protobuf::SingularPtrField::some(chunk_dictionary::ChunkerParameters {
             chunk_filter_bits: config.chunk_filter_bits,
             min_chunk_size: config.min_chunk_size as u64,
             max_chunk_size: config.max_chunk_size as u64,

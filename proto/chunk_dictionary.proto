@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package archive_header;
+package chunk_dictionary;
 
 message ChunkDescriptor
 {
@@ -9,7 +9,8 @@ message ChunkDescriptor
 
     // Archive chunk data compression type.
     // No compression if not set.
-    oneof compression {
+    oneof compression
+    {
         // LZMA and compression level (0-9)
         uint32 LZMA = 2;
     }
@@ -23,7 +24,8 @@ message ChunkDescriptor
     repeated uint64 source_offsets = 13;
 }
 
-message ChunkerParameters {
+message ChunkerParameters
+{
     uint32 chunk_filter_bits = 1;
     uint64 min_chunk_size = 2;
     uint64 max_chunk_size = 3;
@@ -31,23 +33,32 @@ message ChunkerParameters {
     uint32 chunk_hash_length = 5;
 }
 
-message Header {
+message ChunkDictionary
+{
+    // Dictionary was created with this version
+    string application_version = 1;
+
     // Hash of the source file
-    bytes source_checksum = 1;
+    bytes source_checksum = 2;
 
     // Total size of the source file
-    uint64 source_total_size = 2;
-
-    // Array of chunk descriptors. In order of (first) occurrence in source file.
-    repeated ChunkDescriptor chunk_descriptors = 3;
+    uint64 source_total_size = 3;
 
     // Where chunk data lives. Inside this archive if values is not set.
-    oneof chunk_data_location {
+    oneof chunk_data_location
+    {
+        // Chunk data lives in external file, where 'external' is a file path.
         string external = 4;
+
+        // Each chunk is in a separate file with file name based on chunk hash.
+        // 'per_chunk' is a directory path.
         string per_chunk = 5;
     }
 
     // Chunker parameters used when building archive
-    ChunkerParameters chunker_params = 10;
-}
+    ChunkerParameters chunker_params = 6;
 
+    // Array of chunk descriptors. In order of (first) occurrence in source
+    // file.
+    repeated ChunkDescriptor chunk_descriptors = 10;
+}
