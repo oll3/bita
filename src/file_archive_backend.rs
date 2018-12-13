@@ -16,7 +16,7 @@ impl ArchiveBackend for File {
     fn read_in_chunks<F: FnMut(Vec<u8>) -> Result<()>>(
         &mut self,
         start_offset: u64,
-        chunk_sizes: &Vec<u64>,
+        chunk_sizes: &[u64],
         mut chunk_callback: F,
     ) -> Result<()> {
         self.seek(SeekFrom::Start(start_offset))

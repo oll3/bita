@@ -38,14 +38,15 @@ mod errors {
     error_chain! {}
 }
 
-pub const PKG_VERSION: &'static str = env!("CARGO_PKG_VERSION");
-pub const PKG_NAME: &'static str = env!("CARGO_PKG_NAME");
+pub const BUZHASH_SEED: u32 = 0x1032_4195;
+pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 
 fn parse_size(size_str: &str) -> usize {
     let size_val: String = size_str.chars().filter(|a| a.is_numeric()).collect();
     let size_val: usize = size_val.parse().expect("parse");
     let size_unit: String = size_str.chars().filter(|a| !a.is_numeric()).collect();
-    if size_unit.len() == 0 {
+    if size_unit.is_empty() {
         return size_val;
     }
     match size_unit.as_str() {
@@ -185,12 +186,12 @@ fn parse_opts() -> Result<Config> {
             hash_length: hash_length
                 .parse()
                 .chain_err(|| "invalid hash length value")?,
-            temp_file: temp_file,
-            chunk_filter_bits: chunk_filter_bits,
-            min_chunk_size: min_chunk_size,
-            max_chunk_size: max_chunk_size,
-            hash_window_size: hash_window_size,
-            compression_level: compression_level,
+            temp_file,
+            chunk_filter_bits,
+            min_chunk_size,
+            max_chunk_size,
+            hash_window_size,
+            compression_level,
         }))
     } else if let Some(matches) = matches.subcommand_matches("unpack") {
         let input = matches.value_of("INPUT").unwrap();
@@ -204,7 +205,7 @@ fn parse_opts() -> Result<Config> {
             base: base_config,
             input: input.to_string(),
             output: output.to_string(),
-            seed_files: seed_files,
+            seed_files,
             seed_stdin: false,
         }))
     } else {
@@ -221,8 +222,8 @@ fn main() {
     }*/
 
     let result = match parse_opts() {
-        Ok(Config::Compress(config)) => compress_cmd::run(config, pool),
-        Ok(Config::Unpack(config)) => unpack_cmd::run(config, pool),
+        Ok(Config::Compress(config)) => compress_cmd::run(&config, &pool),
+        Ok(Config::Unpack(config)) => unpack_cmd::run(&config, &pool),
         Err(e) => Err(e),
     };
     if let Err(ref e) = result {

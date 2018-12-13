@@ -47,7 +47,7 @@ pub trait ArchiveBackend {
     fn read_in_chunks<F: FnMut(Vec<u8>) -> Result<()>>(
         &mut self,
         start_offset: u64,
-        chunk_sizes: &Vec<u64>,
+        chunk_sizes: &[u64],
         chunk_callback: F,
     ) -> Result<()>;
 }
@@ -60,7 +60,7 @@ where
         if pre_header.len() < 5 {
             bail!("failed to read header of archive")
         }
-        if &pre_header[0..4] != "bita".as_bytes() {
+        if &pre_header[0..4] != b"bita" {
             bail!("not an archive")
         }
         if pre_header[4] != 0 {
@@ -69,7 +69,7 @@ where
         Ok(())
     }
 
-    pub fn new(mut input: T) -> Result<Self> {
+    pub fn init(mut input: T) -> Result<Self> {
         // Read the pre-header (file magic, version and size)
         let mut header_buf = vec![0; 13];
         input
@@ -118,28 +118,25 @@ where
 
         let mut chunk_order: Vec<chunk_dictionary::ChunkDescriptor> = Vec::new();
         let mut chunk_map: HashMap<HashBuf, usize> = HashMap::new();
-        {
-            let mut index = 0;
-            for desc in dictionary.chunk_descriptors.into_iter() {
-                chunk_map.insert(desc.checksum.clone(), index);
-                chunk_order.push(desc);
-                index += 1;
-            }
+
+        for (index, desc) in dictionary.chunk_descriptors.into_iter().enumerate() {
+            chunk_map.insert(desc.checksum.clone(), index);
+            chunk_order.push(desc);
         }
 
-        return Ok(ArchiveReader {
-            input: input,
-            chunk_map: chunk_map,
+        Ok(ArchiveReader {
+            input,
+            chunk_map,
             chunks: chunk_order,
-            source_total_size: source_total_size,
+            source_total_size,
             archive_chunks_offset: chunk_data_offset as u64,
-            chunk_filter_bits: chunk_filter_bits,
+            chunk_filter_bits,
             min_chunk_size: min_chunk_size as usize,
             max_chunk_size: max_chunk_size as usize,
             hash_window_size: hash_window_size as usize,
             hash_length: hash_length as usize,
             total_read: 0,
-        });
+        })
     }
 
     // Get a set of all chunks present in archive
@@ -148,9 +145,9 @@ where
     }
 
     // Get source offsets of a chunk
-    pub fn chunk_source_offsets(&self, hash: &HashBuf) -> Vec<u64> {
+    pub fn chunk_source_offsets(&self, hash: &[u8]) -> Vec<u64> {
         if let Some(index) = self.chunk_map.get(hash) {
-            return self.chunks[*index].source_offsets.clone();
+            self.chunks[*index].source_offsets.clone()
         } else {
             vec![]
         }
@@ -161,11 +158,11 @@ where
         mut chunks: Vec<&chunk_dictionary::ChunkDescriptor>,
     ) -> Vec<Vec<&chunk_dictionary::ChunkDescriptor>> {
         let mut group_list = vec![];
-        if chunks.len() == 0 {
+        if chunks.is_empty() {
             return group_list;
         }
         let mut group = vec![chunks.remove(0)];
-        while chunks.len() > 0 {
+        while !chunks.is_empty() {
             let chunk = chunks.remove(0);
 
             let prev_chunk_end =
@@ -180,7 +177,7 @@ where
             }
         }
         group_list.push(group);
-        return group_list;
+        group_list
     }
 
     // Get chunk data for all listed chunks if present in archive
@@ -214,7 +211,8 @@ where
 
         for group in grouped_chunks {
             let start_offset = self.archive_chunks_offset + group[0].archive_offset;
-            let chunk_sizes = group.iter().map(|c| c.archive_size).collect();
+
+            let chunk_sizes: Vec<u64> = group.iter().map(|c| c.archive_size).collect();
 
             let mut chunk_index = 0;
             self.input

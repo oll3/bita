@@ -39,11 +39,11 @@ impl<T> OrderedMPSC<T> {
     pub fn new_tx(&mut self) -> OrderedSender<T> {
         let (tx, rx) = channel();
         self.inner_rx.push(rx);
-        return OrderedSender { tx: tx };
+        OrderedSender { tx }
     }
 
     pub fn rx(&mut self) -> &Receiver<T> {
-        while self.inner_rx.len() > 0 {
+        while !self.inner_rx.is_empty() {
             let mut done = false;
             self.inner_rx[0].try_iter().for_each(|obj_opt| {
                 if let Some(obj) = obj_opt {

@@ -102,14 +102,14 @@ fn size_vec(s: u64) -> [u8; 8] {
 }
 
 pub fn vec_to_size(sv: &[u8]) -> u64 {
-    ((sv[0] as u64) << 56)
-        | ((sv[1] as u64) << 48)
-        | ((sv[2] as u64) << 40)
-        | ((sv[3] as u64) << 32)
-        | ((sv[4] as u64) << 24)
-        | ((sv[5] as u64) << 16)
-        | ((sv[6] as u64) << 8)
-        | ((sv[7] as u64) << 0)
+    (u64::from(sv[0]) << 56)
+        | (u64::from(sv[1]) << 48)
+        | (u64::from(sv[2]) << 40)
+        | (u64::from(sv[3]) << 32)
+        | (u64::from(sv[4]) << 24)
+        | (u64::from(sv[5]) << 16)
+        | (u64::from(sv[6]) << 8)
+        | u64::from(sv[7])
 }
 
 impl fmt::Display for chunk_dictionary::ChunkDescriptor_oneof_compression {
@@ -132,7 +132,7 @@ pub fn build_header(dictionary: &chunk_dictionary::ChunkDictionary) -> Result<Ve
         .chain_err(|| "failed to serialize header")?;
 
     // header magic
-    header.extend("bita".as_bytes());
+    header.extend(b"bita");
 
     // Major archive version
     header.push(0);

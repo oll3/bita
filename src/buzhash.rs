@@ -1,3 +1,4 @@
+#![cfg_attr(feature = "cargo-clippy", allow(clippy::unreadable_literal))]
 static BUZHASH_TABLE: &'static [u32] = &[
     0xa40cc360, 0xbb785af8, 0x32c790bc, 0x6c64cd34, 0x83b4aa73, 0x36b691a5, 0x4631ad79, 0x5e49d231,
     0xcab22600, 0x6d45bfdf, 0xcd26dfc8, 0xf2e63bec, 0x18cb0c69, 0x817876fd, 0xb8c88ca8, 0xfabcc7d3,
@@ -50,7 +51,7 @@ impl BuzHash {
         BuzHash {
             index: 0,
             buf: vec![0; window],
-            window: window,
+            window,
             hash_sum: 0,
             buzhash_table: Self::generate_seeded_table(seed),
             window_full: false,
@@ -135,14 +136,16 @@ mod tests {
             .map(|v| {
                 h.input(*v);
                 h.sum()
-            }).collect();
+            })
+            .collect();
 
         let sums2: Vec<u32> = data2
             .iter()
             .map(|v| {
                 h.input(*v);
                 h.sum()
-            }).collect();
+            })
+            .collect();
 
         assert_eq!(sums1[11..], sums2[11..]);
     }

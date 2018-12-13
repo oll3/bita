@@ -13,14 +13,14 @@ impl RemoteReader {
         let handle = Easy::new();
         RemoteReader {
             url: url.to_string(),
-            handle: handle,
+            handle,
         }
     }
 }
 
 impl ArchiveBackend for RemoteReader {
     fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> Result<()> {
-        if buf.len() == 0 {
+        if buf.is_empty() {
             return Ok(());
         }
 
@@ -41,24 +41,22 @@ impl ArchiveBackend for RemoteReader {
                 .write_function(|new_data| {
                     data.extend_from_slice(new_data);
                     Ok(new_data.len())
-                }).chain_err(|| "transfer write failed")?;
+                })
+                .chain_err(|| "transfer write failed")?;
 
             transfer
                 .perform()
                 .chain_err(|| "failed to execute transfer")?;
         }
 
-        for i in 0..data.len() {
-            buf[i] = data[i];
-        }
-
+        buf[..data.len()].clone_from_slice(&data[..]);
         Ok(())
     }
 
     fn read_in_chunks<F: FnMut(Vec<u8>) -> Result<()>>(
         &mut self,
         start_offset: u64,
-        chunk_sizes: &Vec<u64>,
+        chunk_sizes: &[u64],
         mut chunk_callback: F,
     ) -> Result<()> {
         let tot_size: u64 = chunk_sizes.iter().sum();
@@ -97,7 +95,8 @@ impl ArchiveBackend for RemoteReader {
                         chunk_index += 1;
                     }
                     Ok(new_data.len())
-                }).chain_err(|| "transfer write failed")?;
+                })
+                .chain_err(|| "transfer write failed")?;
             transfer
                 .perform()
                 .chain_err(|| "failed to execute transfer")?;

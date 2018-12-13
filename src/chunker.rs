@@ -20,7 +20,7 @@ where
         }
     }
     buf.resize(buf_size + read_size, 0);
-    return Ok(read_size);
+    Ok(read_size)
 }
 
 #[derive(Debug, Clone)]
@@ -52,11 +52,11 @@ impl Chunker {
         buzhash: BuzHash,
     ) -> Self {
         Chunker {
-            buzhash: buzhash,
-            read_buf_size: read_buf_size,
+            buzhash,
+            read_buf_size,
             filter_mask: !0 >> (32 - chunk_filter_bits),
-            min_chunk_size: min_chunk_size,
-            max_chunk_size: max_chunk_size,
+            min_chunk_size,
+            max_chunk_size,
             repeated_count: 0,
             last_val: 0,
             source_buf: Vec::new(),
@@ -89,7 +89,7 @@ impl Chunker {
             self.read_time += read_start_time.elapsed();
             if rc == 0 {
                 // EOF
-                if self.source_buf.len() > 0 {
+                if !self.source_buf.is_empty() {
                     result(chunk_start, &self.source_buf[..]);
                 }
                 return Ok(());

@@ -71,8 +71,8 @@ where
 
 fn unpack_input<T>(
     mut archive: ArchiveReader<T>,
-    config: UnpackConfig,
-    pool: ThreadPool,
+    config: &UnpackConfig,
+    pool: &ThreadPool,
 ) -> Result<()>
 where
     T: ArchiveBackend,
@@ -123,7 +123,7 @@ where
         archive.chunk_filter_bits,
         archive.min_chunk_size,
         archive.max_chunk_size,
-        BuzHash::new(archive.hash_window_size as usize, 0x10324195),
+        BuzHash::new(archive.hash_window_size as usize, ::BUZHASH_SEED),
     );
 
     let mut total_read_from_seed = 0;
@@ -166,8 +166,8 @@ where
             );
         }
         // Now scan through all given seed files
-        for seed in config.seed_files {
-            if chunks_left.len() > 0 {
+        for seed in &config.seed_files {
+            if !chunks_left.is_empty() {
                 let seed_file = File::open(&seed)
                     .chain_err(|| format!("failed to open seed file ({})", seed))?;
                 println!("Scanning {} for chunks...", seed);
@@ -210,15 +210,15 @@ where
     Ok(())
 }
 
-pub fn run(config: UnpackConfig, pool: ThreadPool) -> Result<()> {
+pub fn run(config: &UnpackConfig, pool: &ThreadPool) -> Result<()> {
     if &config.input[0..7] == "http://" || &config.input[0..8] == "https://" {
         let remote_source = RemoteReader::new(&config.input);
-        let archive = ArchiveReader::new(remote_source)?;
+        let archive = ArchiveReader::init(remote_source)?;
         unpack_input(archive, config, pool)?;
     } else {
         let local_file =
             File::open(&config.input).chain_err(|| format!("unable to open {}", config.input))?;
-        let archive = ArchiveReader::new(local_file)?;
+        let archive = ArchiveReader::init(local_file)?;
         unpack_input(archive, config, pool)?;
     }
 

@@ -25,7 +25,7 @@ pub struct CompressedChunk {
 }
 
 #[derive(Debug, Clone)]
-pub struct ChunkDesc {
+pub struct ChunkSourceDescriptor {
     pub unique_chunk_index: usize,
     pub offset: usize,
     pub size: usize,
@@ -41,13 +41,13 @@ pub fn unique_chunks<T, F, H>(
     pool: &ThreadPool,
     hash_input: bool,
     mut result: F,
-) -> io::Result<(usize, HashBuf, Vec<ChunkDesc>)>
+) -> io::Result<(usize, HashBuf, Vec<ChunkSourceDescriptor>)>
 where
     T: Read,
     F: FnMut(HashedChunk),
     H: Fn(&[u8]) -> Vec<u8> + Send + 'static + Copy,
 {
-    let mut chunks: Vec<ChunkDesc> = Vec::new();
+    let mut chunks: Vec<ChunkSourceDescriptor> = Vec::new();
     let mut chunk_channel = OrderedMPSC::new();
     let mut chunk_map: HashMap<Vec<u8>, usize> = HashMap::new();
     let mut unique_chunk_index = 0;
@@ -61,9 +61,8 @@ where
     chunker
         .scan(src, |chunk_offset, chunk_data| {
             // For each chunk in file
-            match input_hasher_opt {
-                Some(ref mut hasher) => hasher.input(chunk_data),
-                _ => {}
+            if let Some(ref mut hasher) = input_hasher_opt {
+                hasher.input(chunk_data)
             }
             //file_hash.input(chunk_data);
             let chunk_data = chunk_data.to_vec();
@@ -73,18 +72,19 @@ where
                 let hash = hash_chunk(&chunk_data);
                 chunk_tx
                     .send((
-                        ChunkDesc {
+                        ChunkSourceDescriptor {
                             unique_chunk_index: 0,
                             hash: hash.clone(),
                             offset: chunk_offset,
                             size: chunk_data.len(),
                         },
                         HashedChunk {
-                            hash: hash,
+                            hash,
                             offset: chunk_offset,
                             data: chunk_data.to_vec(),
                         },
-                    )).expect("chunk_tx");
+                    ))
+                    .expect("chunk_tx");
             });
 
             chunk_channel
@@ -105,7 +105,8 @@ where
                     }
                     chunks.push(chunk_desc);
                 });
-        }).expect("chunker");
+        })
+        .expect("chunker");
 
     // Wait for threads to be done
     pool.join();
@@ -146,7 +147,7 @@ pub fn unique_compressed_chunks<T, F, C, H>(
     pool: &ThreadPool,
     hash_input: bool,
     mut result: F,
-) -> io::Result<(usize, Vec<u8>, Vec<ChunkDesc>)>
+) -> io::Result<(usize, Vec<u8>, Vec<ChunkSourceDescriptor>)>
 where
     T: Read,
     F: FnMut(CompressedChunk),
@@ -171,8 +172,9 @@ where
                         hash: hashed_chunk.hash,
                         offset: hashed_chunk.offset,
                         data: hashed_chunk.data,
-                        cdata: cdata,
-                    }).expect("chunk_tx");
+                        cdata,
+                    })
+                    .expect("chunk_tx");
             });
 
             chunk_channel.rx().try_iter().for_each(|compressed_chunk| {
