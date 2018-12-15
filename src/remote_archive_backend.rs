@@ -1,4 +1,5 @@
 use curl::easy::Easy;
+use std::io;
 
 use archive_reader::ArchiveBackend;
 use errors::*;
@@ -6,6 +7,7 @@ use errors::*;
 pub struct RemoteReader {
     url: String,
     handle: curl::easy::Easy,
+    read_offset: u64,
 }
 
 impl RemoteReader {
@@ -14,9 +16,27 @@ impl RemoteReader {
         RemoteReader {
             url: url.to_string(),
             handle,
+            read_offset: 0,
         }
     }
 }
+
+impl From<Error> for io::Error {
+    fn from(error: Error) -> Self {
+        io::Error::new(io::ErrorKind::Other, format!("{}", error))
+    }
+}
+
+impl io::Read for RemoteReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::result::Result<usize, io::Error> {
+        let read_offset = self.read_offset;
+        self.read_at(read_offset, buf)?;
+        self.read_offset += buf.len() as u64;
+        Ok(buf.len())
+    }
+}
+
+
 
 impl ArchiveBackend for RemoteReader {
     fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> Result<()> {

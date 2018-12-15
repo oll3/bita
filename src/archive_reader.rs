@@ -11,9 +11,7 @@ use chunk_dictionary;
 use chunker;
 use errors::*;
 
-pub struct ArchiveReader<T> {
-    input: T,
-
+pub struct ArchiveReader {
     // Go from chunk hash to archive chunk index (chunks vector)
     chunk_map: HashMap<HashBuf, usize>,
 
@@ -36,8 +34,11 @@ pub struct ArchiveReader<T> {
     pub total_read: u64,
 }
 
-// Trait to implement for archive backends
-pub trait ArchiveBackend {
+// Trait to implement for archive backends.
+pub trait ArchiveBackend
+where
+    Self: Read,
+{
     // Read from archive into the given buffer.
     // Should read the exact number of bytes of the given buffer and start read at
     // given offset.
@@ -52,10 +53,7 @@ pub trait ArchiveBackend {
     ) -> Result<()>;
 }
 
-impl<T> ArchiveReader<T>
-where
-    T: ArchiveBackend,
-{
+impl ArchiveReader {
     pub fn verify_pre_header(pre_header: &[u8]) -> Result<()> {
         if pre_header.len() < 5 {
             bail!("failed to read header of archive")
@@ -69,11 +67,14 @@ where
         Ok(())
     }
 
-    pub fn init(mut input: T) -> Result<Self> {
+    pub fn try_init<R>(input: &mut R) -> Result<Self>
+    where
+        R: Read,
+    {
         // Read the pre-header (file magic, version and size)
         let mut header_buf = vec![0; 13];
         input
-            .read_at(0, &mut header_buf)
+            .read_exact(&mut header_buf)
             .chain_err(|| "unable to read archive")?;
 
         Self::verify_pre_header(&header_buf[0..13])?;
@@ -84,7 +85,7 @@ where
         // Read the dictionary, chunk data offset and header hash
         header_buf.resize(13 + dictionary_size + 8 + 64, 0);
         input
-            .read_at(13, &mut header_buf[13..])
+            .read_exact(&mut header_buf[13..])
             .chain_err(|| "unable to read archive")?;
 
         // Verify the header against the header hash
@@ -125,7 +126,6 @@ where
         }
 
         Ok(ArchiveReader {
-            input,
             chunk_map,
             chunks: chunk_order,
             source_total_size,
@@ -181,8 +181,14 @@ where
     }
 
     // Get chunk data for all listed chunks if present in archive
-    pub fn read_chunk_data<F>(&mut self, chunks: &HashSet<HashBuf>, mut result: F) -> Result<()>
+    pub fn read_chunk_data<T, F>(
+        &mut self,
+        mut input: T,
+        chunks: &HashSet<HashBuf>,
+        mut result: F,
+    ) -> Result<()>
     where
+        T: ArchiveBackend,
         F: FnMut(&chunker::Chunk) -> Result<()>,
     {
         // Create list of chunks which are in archive. The order of the list should
@@ -215,7 +221,7 @@ where
             let chunk_sizes: Vec<u64> = group.iter().map(|c| c.archive_size).collect();
 
             let mut chunk_index = 0;
-            self.input
+            input
                 .read_in_chunks(start_offset, &chunk_sizes, |archive_data| {
                     let cd = &group[chunk_index];
                     match cd.compression {

@@ -218,9 +218,6 @@ fn main() {
     let num_threads = num_cpus::get();
     let pool = ThreadPool::new(num_threads);
 
-    /*if let Err(ref e) = test_err() {
-    }*/
-
     let result = match parse_opts() {
         Ok(Config::Compress(config)) => compress_cmd::run(&config, &pool),
         Ok(Config::Unpack(config)) => unpack_cmd::run(&config, &pool),

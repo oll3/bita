@@ -70,13 +70,14 @@ where
 }
 
 fn unpack_input<T>(
-    mut archive: ArchiveReader<T>,
+    mut input: T,
     config: &UnpackConfig,
     pool: &ThreadPool,
 ) -> Result<()>
 where
     T: ArchiveBackend,
 {
+    let mut archive = ArchiveReader::try_init(&mut input)?;
     let mut chunks_left = archive.chunk_hash_set();
 
     // Create or open output file.
@@ -189,7 +190,7 @@ where
     }
 
     // Fetch rest of the chunks from archive
-    archive.read_chunk_data(&chunks_left, |chunk| {
+    archive.read_chunk_data(input, &chunks_left, |chunk| {
         total_from_archive += chunk.data.len();
         output_file
             .seek(SeekFrom::Start(chunk.offset as u64))
@@ -213,13 +214,11 @@ where
 pub fn run(config: &UnpackConfig, pool: &ThreadPool) -> Result<()> {
     if &config.input[0..7] == "http://" || &config.input[0..8] == "https://" {
         let remote_source = RemoteReader::new(&config.input);
-        let archive = ArchiveReader::init(remote_source)?;
-        unpack_input(archive, config, pool)?;
+        unpack_input(remote_source, config, pool)?;
     } else {
         let local_file =
             File::open(&config.input).chain_err(|| format!("unable to open {}", config.input))?;
-        let archive = ArchiveReader::init(local_file)?;
-        unpack_input(archive, config, pool)?;
+        unpack_input(local_file, config, pool)?;
     }
 
     Ok(())
