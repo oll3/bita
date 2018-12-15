@@ -25,6 +25,7 @@ mod ordered_mpsc;
 mod remote_archive_backend;
 mod string_utils;
 mod unpack_cmd;
+mod errors;
 
 use std::process;
 use threadpool::ThreadPool;
@@ -33,10 +34,6 @@ use clap::{App, Arg, SubCommand};
 use config::*;
 use errors::*;
 
-mod errors {
-    // Create the Error, ErrorKind, ResultExt, and Result types
-    error_chain! {}
-}
 
 pub const BUZHASH_SEED: u32 = 0x1032_4195;
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");

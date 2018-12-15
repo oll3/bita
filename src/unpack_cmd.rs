@@ -28,56 +28,76 @@ fn chunk_seed<T, F>(
 ) -> Result<()>
 where
     T: Read,
-    F: FnMut(&HashBuf, &Vec<u8>),
+    F: FnMut(&HashBuf, &[u8]),
 {
-    // Read chunks from seed file.
-    // TODO: Should first check if input might be a archive file and then use its chunks as is.
-    // If input is an archive also check if chunker parameter
-    // matches, otherwise error or warn user?
-    // Generate strong hash for a chunk
-    let hasher = |data: &[u8]| {
-        let mut hasher = Blake2b::new();
-        hasher.input(data);
-        hasher.result().to_vec()
-    };
-    let mut total_contained = 0;
-    unique_chunks(
-        &mut seed_input,
-        &mut chunker,
-        hasher,
-        &pool,
-        false,
-        |hashed_chunk| {
-            let hash = &hashed_chunk.hash[0..hash_length].to_vec();
-            if chunk_hash_set.contains(hash) {
-                total_contained += hashed_chunk.data.len();
-                result(hash, &hashed_chunk.data);
-                chunk_hash_set.remove(hash);
-            }
-        },
-    )
-    .chain_err(|| "failed to get unique chunks")?;
+    // Test if the given seed can be read as a bita archive.
+    let mut archive_header = Vec::new();
+    match ArchiveReader::try_init(&mut seed_input, &mut archive_header) {
+        Err(Error(ErrorKind::NotAnArchive(_), _)) => {
+            // As the input file was not an archive we feed the data read so
+            // far into the chunker.
+            chunker.preload(&archive_header);
 
-    println!(
-        "Chunker - scan time: {}.{:03} s, read time: {}.{:03} s",
-        chunker.scan_time.as_secs(),
-        chunker.scan_time.subsec_millis(),
-        chunker.read_time.as_secs(),
-        chunker.read_time.subsec_millis()
-    );
+            // If input is an archive also check if chunker parameter
+            // matches, otherwise error or warn user?
+            // Generate strong hash for a chunk
+            let hasher = |data: &[u8]| {
+                let mut hasher = Blake2b::new();
+                hasher.input(data);
+                hasher.result().to_vec()
+            };
+            unique_chunks(
+                &mut seed_input,
+                &mut chunker,
+                hasher,
+                &pool,
+                false,
+                |hashed_chunk| {
+                    let hash = &hashed_chunk.hash[0..hash_length].to_vec();
+                    if chunk_hash_set.contains(hash) {
+                        result(hash, &hashed_chunk.data);
+                        chunk_hash_set.remove(hash);
+                    }
+                },
+            )
+            .chain_err(|| "failed to get unique chunks")?;
 
-    Ok(())
+            println!(
+                "Chunker - scan time: {}.{:03} s, read time: {}.{:03} s",
+                chunker.scan_time.as_secs(),
+                chunker.scan_time.subsec_millis(),
+                chunker.read_time.as_secs(),
+                chunker.read_time.subsec_millis()
+            );
+            Ok(())
+        }
+        Err(err) => Err(err),
+        Ok(ref mut archive) => {
+            // Is an archive
+            let current_input_offset = archive_header.len();
+
+            archive.read_chunk_stream(
+                seed_input,
+                current_input_offset as u64,
+                &chunk_hash_set.clone(),
+                |chunk_descriptor, chunk_data| {
+                    // Got chunk data for a matching chunk
+                    result(&chunk_descriptor.checksum, &chunk_data);
+                    chunk_hash_set.remove(&chunk_descriptor.checksum);
+                    Ok(())
+                },
+            )?;
+
+            Ok(())
+        }
+    }
 }
 
-fn unpack_input<T>(
-    mut input: T,
-    config: &UnpackConfig,
-    pool: &ThreadPool,
-) -> Result<()>
+fn unpack_input<T>(mut input: T, config: &UnpackConfig, pool: &ThreadPool) -> Result<()>
 where
     T: ArchiveBackend,
 {
-    let mut archive = ArchiveReader::try_init(&mut input)?;
+    let mut archive = ArchiveReader::try_init(&mut input, &mut Vec::new())?;
     let mut chunks_left = archive.chunk_hash_set();
 
     // Create or open output file.
@@ -132,7 +152,7 @@ where
 
     {
         // Closure for writing chunks to output
-        let mut chunk_output = |hash: &HashBuf, chunk_data: &Vec<u8>| {
+        let mut chunk_output = |hash: &HashBuf, chunk_data: &[u8]| {
             println!(
                 "Chunk '{}', size {} read from seed stdin",
                 HexSlice::new(hash),
@@ -190,14 +210,33 @@ where
     }
 
     // Fetch rest of the chunks from archive
-    archive.read_chunk_data(input, &chunks_left, |chunk| {
-        total_from_archive += chunk.data.len();
-        output_file
-            .seek(SeekFrom::Start(chunk.offset as u64))
-            .chain_err(|| "failed to seek output file")?;
-        output_file
-            .write_all(&chunk.data)
-            .chain_err(|| "failed to write output file")?;
+    archive.read_chunk_data(input, &chunks_left, |chunk_descriptor, chunk_data| {
+        for offset in &chunk_descriptor.source_offsets {
+            total_from_archive += chunk_data.len();
+            output_file
+                .seek(SeekFrom::Start(*offset as u64))
+                .chain_err(|| "failed to seek output file")?;
+            output_file
+                .write_all(chunk_data)
+                .chain_err(|| "failed to write output file")?;
+        }
+
+        if chunk_descriptor.compression.is_some() {
+            println!(
+                "Chunk '{}', size {}, decompressed to {}, insert at {:?}",
+                HexSlice::new(&chunk_descriptor.checksum),
+                size_to_str(chunk_descriptor.archive_size),
+                size_to_str(chunk_data.len()),
+                chunk_descriptor.source_offsets
+            );
+        } else {
+            println!(
+                "Chunk '{}', size {}, uncompressed, insert at {:?}",
+                HexSlice::new(&chunk_descriptor.checksum),
+                size_to_str(chunk_data.len()),
+                chunk_descriptor.source_offsets
+            );
+        }
 
         Ok(())
     })?;
