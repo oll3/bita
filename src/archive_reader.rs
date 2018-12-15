@@ -2,6 +2,7 @@ use blake2::{Blake2b, Digest};
 use chunker_utils::HashBuf;
 use lzma::LzmaWriter;
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::io::prelude::*;
 use string_utils::*;
 
@@ -32,10 +33,12 @@ pub struct ArchiveReader {
     // List of chunk descriptors
     chunks: Vec<chunk_dictionary::ChunkDescriptor>,
 
+    pub created_by_app_version: String,
     pub archive_chunks_offset: u64,
 
     // Size of the original source file
     pub source_total_size: u64,
+    pub source_checksum: HashBuf,
 
     // Chunker parameters used when this archive was created
     pub chunk_filter_bits: u32,
@@ -46,6 +49,19 @@ pub struct ArchiveReader {
 
     // Statistics - Total bytes read from archive
     pub total_read: u64,
+}
+
+impl fmt::Display for ArchiveReader {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "build version: {}, chunks: {}, decompressed size: {}, source checksum: {}",
+            self.created_by_app_version,
+            self.chunks.len(),
+            size_to_str(self.source_total_size),
+            HexSlice::new(&self.source_checksum)
+        )
+    }
 }
 
 // Trait to implement for archive backends.
@@ -136,11 +152,8 @@ impl ArchiveReader {
         // Extract and store parameters from file header
         let chunker_params = dictionary.chunker_params.unwrap();
         let source_total_size = dictionary.source_total_size;
-        let chunk_filter_bits = chunker_params.chunk_filter_bits;
-        let min_chunk_size = chunker_params.min_chunk_size;
-        let max_chunk_size = chunker_params.max_chunk_size;
-        let hash_window_size = chunker_params.hash_window_size;
-        let hash_length = chunker_params.chunk_hash_length;
+        let source_checksum = dictionary.source_checksum;
+        let created_by_app_version = dictionary.application_version;
 
         let mut chunk_order: Vec<chunk_dictionary::ChunkDescriptor> = Vec::new();
         let mut chunk_map: HashMap<HashBuf, usize> = HashMap::new();
@@ -154,12 +167,14 @@ impl ArchiveReader {
             chunk_map,
             chunks: chunk_order,
             source_total_size,
+            source_checksum,
+            created_by_app_version,
             archive_chunks_offset: chunk_data_offset as u64,
-            chunk_filter_bits,
-            min_chunk_size: min_chunk_size as usize,
-            max_chunk_size: max_chunk_size as usize,
-            hash_window_size: hash_window_size as usize,
-            hash_length: hash_length as usize,
+            chunk_filter_bits: chunker_params.chunk_filter_bits,
+            min_chunk_size: chunker_params.min_chunk_size as usize,
+            max_chunk_size: chunker_params.max_chunk_size as usize,
+            hash_window_size: chunker_params.hash_window_size as usize,
+            hash_length: chunker_params.chunk_hash_length as usize,
             total_read: 0,
         })
     }

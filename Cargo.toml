@@ -6,8 +6,6 @@ license = "MIT"
 
 [dependencies]
 clap = "*"
-serde = "*"
-serde_derive = "*"
 rust-lzma = "*"
 threadpool = "*"
 num_cpus = "0.2"

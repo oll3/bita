@@ -100,6 +100,8 @@ where
     let mut archive = ArchiveReader::try_init(&mut input, &mut Vec::new())?;
     let mut chunks_left = archive.chunk_hash_set();
 
+    println!("Unpacking archive ({})", archive);
+
     // Create or open output file.
     let mut output_file = OpenOptions::new()
         .write(true)
@@ -154,7 +156,7 @@ where
         // Closure for writing chunks to output
         let mut chunk_output = |hash: &HashBuf, chunk_data: &[u8]| {
             println!(
-                "Chunk '{}', size {} read from seed stdin",
+                "Chunk '{}', size {} used from seed",
                 HexSlice::new(hash),
                 size_to_str(chunk_data.len()),
             );

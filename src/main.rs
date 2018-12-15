@@ -1,9 +1,6 @@
 #[macro_use]
 extern crate error_chain;
 extern crate clap;
-extern crate serde;
-#[macro_use]
-extern crate serde_derive;
 extern crate atty;
 extern crate blake2;
 extern crate curl;
