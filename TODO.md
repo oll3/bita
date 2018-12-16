@@ -2,17 +2,14 @@
 
  * Allow for fixed block size while chunking.
 
- * Allow to use archive files as seed, and understand that it is an archive.
-
 ### Probably
 
  * On unpack - Add optional flag to avoid writing destination if the unpacked chunk and the destination data is exactly the same. This as the write speed on some block devices is alot lower than the read speed. And to avoid unnecessary block wear when writing large devices/partitions.
 
+ * On unpack - Add option for generating an archive/chunk dictionary with chunk data located in the destination file.
+   This to allow for lookup of old chunks without scanning on next unpack.
 
 ### Maybe
-
- * Generate a chunk dictionary pointing into the destination file while unpacking.
-   This to allow to lookup old chunks without scanning on next unpack. For speed.
 
  * Add command 'fetch' which would download and rebuild the source archive locally.
 

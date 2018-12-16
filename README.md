@@ -28,7 +28,7 @@ In an update system with a A/B partition setup one could use bita to update the 
 `olle@host:~$ bita compress file.ext4 file.ext4.cba`
 
 #### Decompress using multiple seeds
-`olle@device:~$ gunzip -c old.tar.gz | bita unpack --seed another_old.tar http://host/file.cba file`
+`olle@device:~$ gunzip -c old.tar.gz | bita unpack --seed an_old.cba --seed another_old.tar http://host/file.cba file`
 
 #### Decompress using block device as seed and target
 `olle@device:~$ bita unpack --seed /dev/disk/by-partlabel/rootfs-A http://host/file.ext4.cba /dev/disk/by-partlabel/rootfs-B`
