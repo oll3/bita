@@ -1,13 +1,14 @@
 #[macro_use]
 extern crate error_chain;
-extern crate clap;
 extern crate atty;
 extern crate blake2;
+extern crate clap;
 extern crate curl;
 extern crate lzma;
 extern crate num_cpus;
 extern crate protobuf;
 extern crate threadpool;
+extern crate zstd;
 
 mod archive;
 mod archive_reader;
@@ -17,12 +18,12 @@ mod chunker;
 mod chunker_utils;
 mod compress_cmd;
 mod config;
+mod errors;
 mod file_archive_backend;
 mod ordered_mpsc;
 mod remote_archive_backend;
 mod string_utils;
 mod unpack_cmd;
-mod errors;
 
 use std::process;
 use threadpool::ThreadPool;
@@ -30,7 +31,6 @@ use threadpool::ThreadPool;
 use clap::{App, Arg, SubCommand};
 use config::*;
 use errors::*;
-
 
 pub const BUZHASH_SEED: u32 = 0x1032_4195;
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -115,6 +115,12 @@ fn parse_opts() -> Result<Config> {
                         .long("compression-level")
                         .value_name("LEVEL")
                         .help("Set the chunk data compression level (0-9) [default: 6]."),
+                )
+                .arg(
+                    Arg::with_name("compression")
+                        .long("compression")
+                        .value_name("TYPE")
+                        .help("Set the chunk data compression type (LZMA, ZSTD, NONE) [default: LZMA]."),
                 ),
         )
         .subcommand(
@@ -161,6 +167,12 @@ fn parse_opts() -> Result<Config> {
             .unwrap_or("6")
             .parse()
             .chain_err(|| "invalid compression level value")?;
+        let compression = match matches.value_of("compression").unwrap_or("LZMA") {
+            "LZMA" => chunk_dictionary::ChunkCompression_CompressionType::LZMA,
+            "ZSTD" => chunk_dictionary::ChunkCompression_CompressionType::ZSTD,
+            "NONE" => chunk_dictionary::ChunkCompression_CompressionType::NONE,
+            _ => bail!("invalid compression"),
+        };
 
         let chunk_filter_bits = avg_chunk_size.leading_zeros();
         if min_chunk_size > avg_chunk_size {
@@ -186,6 +198,7 @@ fn parse_opts() -> Result<Config> {
             max_chunk_size,
             hash_window_size,
             compression_level,
+            compression,
         }))
     } else if let Some(matches) = matches.subcommand_matches("unpack") {
         let input = matches.value_of("INPUT").unwrap();

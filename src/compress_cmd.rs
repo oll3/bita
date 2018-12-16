@@ -12,7 +12,6 @@ use threadpool::ThreadPool;
 use archive;
 use buzhash::BuzHash;
 use chunk_dictionary;
-use chunk_dictionary::ChunkCompression_CompressionType;
 use chunker::*;
 use chunker_utils::*;
 use config::*;
@@ -40,20 +39,33 @@ fn chunk_into_file(
     );
 
     let mut compression = chunk_dictionary::ChunkCompression::new();
-    compression.set_compression(ChunkCompression_CompressionType::LZMA);
+    compression.set_compression(config.compression);
     compression.set_compression_level(config.compression_level);
 
     // Compress a chunk
     let compression_level = config.compression_level;
+    let compression_type = config.compression;
     let chunk_compressor = move |data: &[u8]| -> Vec<u8> {
-        let mut result = vec![];
-        {
-            let mut f =
-                LzmaWriter::new_compressor(&mut result, compression_level).expect("new compressor");
-            f.write_all(data).expect("write compressor");
-            f.finish().expect("finish compressor");
+        match compression_type {
+            chunk_dictionary::ChunkCompression_CompressionType::LZMA => {
+                let mut result = vec![];
+                {
+                    let mut f = LzmaWriter::new_compressor(&mut result, compression_level)
+                        .expect("new lzma compressor");
+                    f.write_all(data).expect("write compressor");
+                    f.finish().expect("finish compressor");
+                }
+                result
+            }
+            chunk_dictionary::ChunkCompression_CompressionType::ZSTD => {
+                let mut result = vec![];
+                let mut data = data.to_vec();
+                zstd::stream::copy_encode(&data[..], &mut result, compression_level as i32)
+                    .expect("zstd compressor");
+                result
+            }
+            chunk_dictionary::ChunkCompression_CompressionType::NONE => data.to_vec(),
         }
-        result
     };
 
     // Generate strong hash for a chunk

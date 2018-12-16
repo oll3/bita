@@ -233,11 +233,18 @@ impl ArchiveReader {
     ) -> Result<()> {
         match compression {
             chunk_dictionary::ChunkCompression_CompressionType::LZMA => {
-                // Archived chunk is compressed
+                // Archived chunk is compressed with lzma
                 chunk_data.clear();
-                let mut f = LzmaWriter::new_decompressor(chunk_data).expect("new decompressor");
-                f.write_all(&archive_data).expect("write decompressor");
-                f.finish().expect("finish decompressor");
+                let mut f =
+                    LzmaWriter::new_decompressor(chunk_data).expect("new lzma decompressor");
+                f.write_all(&archive_data).expect("write lzma decompressor");
+                f.finish().expect("finish lzma decompressor");
+            }
+            chunk_dictionary::ChunkCompression_CompressionType::ZSTD => {
+                // Archived chunk is compressed with zstd
+                chunk_data.clear();
+                zstd::stream::copy_decode(&archive_data[..], chunk_data)
+                    .expect("zstd decompress");
             }
             chunk_dictionary::ChunkCompression_CompressionType::NONE => {
                 // Archived chunk is NOT compressed

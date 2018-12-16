@@ -8,6 +8,7 @@ The file to update could be any file where data is expected to only change parti
 
 In an update system with a A/B partition setup one could use bita to update the B partition while using the A partition as seed. This should result in a download only of the chunks that differ between partition A and the source file.
 
+As default bita compress chunk data using lzma at level 6. No compression and zstd compression is also supported.
 
 ### Similar Tools
 * [casync](https://github.com/systemd/casync)
@@ -21,8 +22,8 @@ In an update system with a A/B partition setup one could use bita to update the 
 
 ## Example usage
 
-#### Compress a stream
-`olle@host:~$ gunzip -c file.gz | bita compress file.cba`
+#### Compress stream from stdin
+`olle@host:~$ gunzip -c file.gz | bita compress --compression ZSTD --compression-level 9 file.cba`
 
 #### Compress a file
 `olle@host:~$ bita compress file.ext4 file.ext4.cba`

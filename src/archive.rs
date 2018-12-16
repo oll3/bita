@@ -56,23 +56,15 @@ pub fn vec_to_size(sv: &[u8]) -> u64 {
         | u64::from(sv[7])
 }
 
-/*impl fmt::Display for ChunkCompression_CompressionType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ChunkCompression_CompressionType::NONE => write!(f, "NONE"),
-            ChunkCompression_CompressionType::LZMA => {
-                write!(f, "LZMA({})", self.compression_level)
-            }
-        }
-    }
-}*/
-
 impl fmt::Display for chunk_dictionary::ChunkCompression {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.compression {
             chunk_dictionary::ChunkCompression_CompressionType::NONE => write!(f, "NONE"),
             chunk_dictionary::ChunkCompression_CompressionType::LZMA => {
                 write!(f, "LZMA({})", self.compression_level)
+            }
+            chunk_dictionary::ChunkCompression_CompressionType::ZSTD => {
+                write!(f, "ZSTD({})", self.compression_level)
             }
         }
     }

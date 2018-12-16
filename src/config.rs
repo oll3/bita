@@ -1,3 +1,5 @@
+use chunk_dictionary;
+
 #[derive(Debug)]
 pub struct BaseConfig {
     pub force_create: bool,
@@ -17,6 +19,7 @@ pub struct CompressConfig {
     pub max_chunk_size: usize,
     pub hash_window_size: usize,
     pub compression_level: u32,
+    pub compression: chunk_dictionary::ChunkCompression_CompressionType,
 }
 #[derive(Debug)]
 pub struct UnpackConfig {
