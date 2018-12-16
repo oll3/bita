@@ -33,6 +33,8 @@ pub struct ArchiveReader {
     // List of chunk descriptors
     chunks: Vec<chunk_dictionary::ChunkDescriptor>,
 
+    chunk_data_location: chunk_dictionary::ChunkDataLocation,
+
     pub created_by_app_version: String,
     pub archive_chunks_offset: u64,
 
@@ -55,11 +57,12 @@ impl fmt::Display for ArchiveReader {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "build version: {}, chunks: {}, decompressed size: {}, source checksum: {}",
+            "build version: {}, chunks: {}, data location: {}, decompressed size: {}, source checksum: {}",
             self.created_by_app_version,
             self.chunks.len(),
+            self.chunk_data_location,
             size_to_str(self.source_total_size),
-            HexSlice::new(&self.source_checksum)
+            HexSlice::new(&self.source_checksum),
         )
     }
 }
@@ -150,10 +153,11 @@ impl ArchiveReader {
         // println!("{}", dictionary);
 
         // Extract and store parameters from file header
-        let chunker_params = dictionary.chunker_params.unwrap();
+        let chunk_data_location = dictionary.get_chunk_data_location().clone();
         let source_total_size = dictionary.source_total_size;
         let source_checksum = dictionary.source_checksum;
         let created_by_app_version = dictionary.application_version;
+        let chunker_params = dictionary.chunker_params.unwrap();
 
         let mut chunk_order: Vec<chunk_dictionary::ChunkDescriptor> = Vec::new();
         let mut chunk_map: HashMap<HashBuf, usize> = HashMap::new();
@@ -169,6 +173,7 @@ impl ArchiveReader {
             source_total_size,
             source_checksum,
             created_by_app_version,
+            chunk_data_location,
             archive_chunks_offset: chunk_data_offset as u64,
             chunk_filter_bits: chunker_params.chunk_filter_bits,
             min_chunk_size: chunker_params.min_chunk_size as usize,
@@ -222,19 +227,19 @@ impl ArchiveReader {
 
     // Decompress chunk data, if compressed
     fn decompress_chunk(
-        compression: &Option<chunk_dictionary::ChunkDescriptor_oneof_compression>,
+        compression: chunk_dictionary::ChunkCompression_CompressionType,
         archive_data: Vec<u8>,
         chunk_data: &mut Vec<u8>,
     ) -> Result<()> {
         match compression {
-            Some(chunk_dictionary::ChunkDescriptor_oneof_compression::LZMA(_level)) => {
+            chunk_dictionary::ChunkCompression_CompressionType::LZMA => {
                 // Archived chunk is compressed
                 chunk_data.clear();
                 let mut f = LzmaWriter::new_decompressor(chunk_data).expect("new decompressor");
                 f.write_all(&archive_data).expect("write decompressor");
                 f.finish().expect("finish decompressor");
             }
-            None => {
+            chunk_dictionary::ChunkCompression_CompressionType::NONE => {
                 // Archived chunk is NOT compressed
                 *chunk_data = archive_data;
             }
@@ -281,7 +286,7 @@ impl ArchiveReader {
                     // For each chunk read from archive
                     let chunk_descriptor = &group[chunk_index];
                     Self::decompress_chunk(
-                        &chunk_descriptor.compression,
+                        chunk_descriptor.get_compression().compression,
                         archive_data,
                         &mut chunk_data,
                     )?;
@@ -351,7 +356,11 @@ impl ArchiveReader {
                 .read_exact(&mut archive_data)
                 .chain_err(|| "failed to read from archive")?;
 
-            Self::decompress_chunk(&chunk_descriptor.compression, archive_data, &mut chunk_data)?;
+            Self::decompress_chunk(
+                chunk_descriptor.get_compression().compression,
+                archive_data,
+                &mut chunk_data,
+            )?;
 
             // Verify data by hash
             hasher.input(&chunk_data);

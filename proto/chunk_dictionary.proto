@@ -2,26 +2,31 @@ syntax = "proto3";
 
 package chunk_dictionary;
 
+message ChunkCompression
+{
+    enum CompressionType {
+        NONE = 0;
+        LZMA = 1;
+    }
+    CompressionType compression = 2;
+    uint32 compression_level = 3;
+}
+
 message ChunkDescriptor
 {
     // Hash of (uncompressed) chunk
     bytes checksum = 1;
 
-    // Archive chunk data compression type.
-    // No compression if not set.
-    oneof compression
-    {
-        // LZMA and compression level (0-9)
-        uint32 LZMA = 2;
-    }
+    // Archive chunk data compression type and level.
+    ChunkCompression compression = 2;
 
     // Chunk data placement in archive.
-    uint64 archive_size = 10;
-    uint64 archive_offset = 11;
+    uint64 archive_size = 3;
+    uint64 archive_offset = 4;
 
     // Size and offsets of where chunk data was found
-    uint64 source_size = 12;
-    repeated uint64 source_offsets = 13;
+    uint64 source_size = 5;
+    repeated uint64 source_offsets = 6;
 }
 
 message ChunkerParameters
@@ -31,6 +36,23 @@ message ChunkerParameters
     uint64 max_chunk_size = 3;
     uint32 hash_window_size = 4;
     uint32 chunk_hash_length = 5;
+}
+
+message ChunkDataLocation {
+    enum Type {
+        // Chunk data is inside archive
+        INTERNAL = 0;
+
+        // Chunk data lives in external file
+        EXTERNAL = 1;
+
+        // Each chunk is in a separate file with file name based on chunk hash
+        PER_CHUNK = 2;
+    }
+    Type location_type = 1;
+
+    // Path to be used if chunks are external to archive
+    string location_path = 2;
 }
 
 message ChunkDictionary
@@ -44,21 +66,13 @@ message ChunkDictionary
     // Total size of the source file
     uint64 source_total_size = 3;
 
-    // Where chunk data lives. Inside this archive if values is not set.
-    oneof chunk_data_location
-    {
-        // Chunk data lives in external file, where 'external' is a file path.
-        string external = 4;
-
-        // Each chunk is in a separate file with file name based on chunk hash.
-        // 'per_chunk' is a directory path.
-        string per_chunk = 5;
-    }
+    // Where chunk data lives
+    ChunkDataLocation chunk_data_location = 4;
 
     // Chunker parameters used when building archive
-    ChunkerParameters chunker_params = 6;
+    ChunkerParameters chunker_params = 5;
 
     // Array of chunk descriptors. In order of (first) occurrence in source
     // file.
-    repeated ChunkDescriptor chunk_descriptors = 10;
+    repeated ChunkDescriptor chunk_descriptors = 6;
 }

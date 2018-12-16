@@ -4,18 +4,30 @@ use blake2::{Blake2b, Digest};
 use std::fmt;
 
 use chunk_dictionary;
+use chunk_dictionary::{ChunkDataLocation, ChunkDataLocation_Type};
 use errors::*;
 use string_utils::*;
+
+impl fmt::Display for ChunkDataLocation {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.location_type {
+            ChunkDataLocation_Type::INTERNAL => write!(f, "internal"),
+            ChunkDataLocation_Type::EXTERNAL => write!(f, "external ({})", self.location_path),
+            ChunkDataLocation_Type::PER_CHUNK => write!(f, "chunkvise"),
+        }
+    }
+}
 
 impl fmt::Display for chunk_dictionary::ChunkDictionary {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "version: {}, chunks: {}, source hash: {}, source size: {}",
+            "version: {}, chunks: {}, source hash: {}, source size: {}, data location: {}",
             self.application_version,
             self.chunk_descriptors.len(),
             HexSlice::new(&self.source_checksum),
-            size_to_str(self.source_total_size)
+            size_to_str(self.source_total_size),
+            self.get_chunk_data_location()
         )
     }
 }
@@ -44,11 +56,23 @@ pub fn vec_to_size(sv: &[u8]) -> u64 {
         | u64::from(sv[7])
 }
 
-impl fmt::Display for chunk_dictionary::ChunkDescriptor_oneof_compression {
+/*impl fmt::Display for ChunkCompression_CompressionType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            chunk_dictionary::ChunkDescriptor_oneof_compression::LZMA(lvl) => {
-                write!(f, "LZMA({})", lvl)
+            ChunkCompression_CompressionType::NONE => write!(f, "NONE"),
+            ChunkCompression_CompressionType::LZMA => {
+                write!(f, "LZMA({})", self.compression_level)
+            }
+        }
+    }
+}*/
+
+impl fmt::Display for chunk_dictionary::ChunkCompression {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.compression {
+            chunk_dictionary::ChunkCompression_CompressionType::NONE => write!(f, "NONE"),
+            chunk_dictionary::ChunkCompression_CompressionType::LZMA => {
+                write!(f, "LZMA({})", self.compression_level)
             }
         }
     }

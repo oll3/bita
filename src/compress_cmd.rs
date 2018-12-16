@@ -1,6 +1,7 @@
 use atty::Stream;
 use blake2::{Blake2b, Digest};
 use lzma::LzmaWriter;
+use protobuf::{RepeatedField, SingularPtrField};
 use std::fs;
 use std::fs::{File, OpenOptions};
 use std::io;
@@ -11,6 +12,7 @@ use threadpool::ThreadPool;
 use archive;
 use buzhash::BuzHash;
 use chunk_dictionary;
+use chunk_dictionary::ChunkCompression_CompressionType;
 use chunker::*;
 use chunker_utils::*;
 use config::*;
@@ -37,8 +39,9 @@ fn chunk_into_file(
         BuzHash::new(config.hash_window_size as usize, ::BUZHASH_SEED),
     );
 
-    let compression =
-        chunk_dictionary::ChunkDescriptor_oneof_compression::LZMA(config.compression_level);
+    let mut compression = chunk_dictionary::ChunkCompression::new();
+    compression.set_compression(ChunkCompression_CompressionType::LZMA);
+    compression.set_compression_level(config.compression_level);
 
     // Compress a chunk
     let compression_level = config.compression_level;
@@ -74,17 +77,14 @@ fn chunk_into_file(
             let chunk_data;
             let hash = &comp_chunk.hash[0..config.hash_length as usize];
             let use_compression = if comp_chunk.cdata.len() < comp_chunk.data.len() {
-                Some(compression.clone())
-            } else {
-                None
-            };
-            if use_compression != None {
                 // Use the compressed data
                 chunk_data = &comp_chunk.cdata;
+                Some(compression.clone())
             } else {
                 // Compressed chunk bigger than raw - Use raw
                 chunk_data = &comp_chunk.data;
-            }
+                None
+            };
 
             println!(
                 "Chunk {}, '{}', offset: {}, size: {}, compressed to: {}, compression: {}",
@@ -110,7 +110,7 @@ fn chunk_into_file(
                 source_size: comp_chunk.data.len() as u64,
                 archive_offset,
                 archive_size: chunk_data.len() as u64,
-                compression: use_compression,
+                compression: protobuf::SingularPtrField::from_option(use_compression),
                 unknown_fields: std::default::Default::default(),
                 cached_size: std::default::Default::default(),
             });
@@ -211,13 +211,11 @@ pub fn run(config: &CompressConfig, pool: &ThreadPool) -> Result<()> {
     // Store header to output file
     let file_header = chunk_dictionary::ChunkDictionary {
         application_version: ::PKG_VERSION.to_string(),
-        chunk_descriptors: protobuf::RepeatedField::from_vec(
-            chunk_file_descriptor.chunk_descriptors,
-        ),
+        chunk_descriptors: RepeatedField::from_vec(chunk_file_descriptor.chunk_descriptors),
         source_checksum: chunk_file_descriptor.file_hash,
-        chunk_data_location: None,
+        chunk_data_location: SingularPtrField::none(),
         source_total_size: chunk_file_descriptor.total_file_size as u64,
-        chunker_params: protobuf::SingularPtrField::some(chunk_dictionary::ChunkerParameters {
+        chunker_params: SingularPtrField::some(chunk_dictionary::ChunkerParameters {
             chunk_filter_bits: config.chunk_filter_bits,
             min_chunk_size: config.min_chunk_size as u64,
             max_chunk_size: config.max_chunk_size as u64,
