@@ -22,6 +22,7 @@ struct ChunkFileDescriptor {
     total_file_size: usize,
     file_hash: HashBuf,
     chunk_descriptors: Vec<chunk_dictionary::ChunkDescriptor>,
+    chunk_order: Vec<ChunkSourceDescriptor>,
 }
 
 fn chunk_into_file(
@@ -80,7 +81,7 @@ fn chunk_into_file(
     let mut total_unique_chunk_size = 0;
     let mut archive_offset: u64 = 0;
     let mut chunk_descriptors = Vec::new();
-    let chunks;
+    let chunk_order;
     let total_file_size;
     let file_hash;
     {
@@ -118,7 +119,6 @@ fn chunk_into_file(
             // Store a chunk descriptor which referes to the compressed data
             chunk_descriptors.push(chunk_dictionary::ChunkDescriptor {
                 checksum: hash.to_vec(),
-                source_offsets: vec![], // will be filled after chunking is done
                 source_size: comp_chunk.data.len() as u64,
                 archive_offset,
                 archive_size: chunk_data.len() as u64,
@@ -148,7 +148,7 @@ fn chunk_into_file(
             .chain_err(|| "unable to compress chunk")?;
             total_file_size = tmp_file_size;
             file_hash = tmp_file_hash;
-            chunks = tmp_chunks;
+            chunk_order = tmp_chunks;
         } else if !atty::is(Stream::Stdin) {
             // Read source from stdin
             let stdin = io::stdin();
@@ -165,7 +165,7 @@ fn chunk_into_file(
             .chain_err(|| "unable to compress chunk")?;
             total_file_size = tmp_file_size;
             file_hash = tmp_file_hash;
-            chunks = tmp_chunks;
+            chunk_order = tmp_chunks;
         } else {
             bail!("Missing input file")
         }
@@ -174,24 +174,18 @@ fn chunk_into_file(
 
     println!(
         "Total chunks: {}, unique: {}, size: {}, avg chunk size: {}, compressed into: {}",
-        chunks.len(),
+        chunk_order.len(),
         total_unique_chunks,
         size_to_str(total_unique_chunk_size),
         size_to_str(total_unique_chunk_size / total_unique_chunks),
         size_to_str(total_compressed_size)
     );
 
-    // Fill out the source offset of each chunk descriptor
-    for chunk in chunks {
-        chunk_descriptors[chunk.unique_chunk_index]
-            .source_offsets
-            .push(chunk.offset as u64);
-    }
-
     Ok(ChunkFileDescriptor {
         total_file_size,
         file_hash,
         chunk_descriptors,
+        chunk_order,
     })
 }
 
@@ -222,6 +216,11 @@ pub fn run(config: &CompressConfig, pool: &ThreadPool) -> Result<()> {
 
     // Store header to output file
     let file_header = chunk_dictionary::ChunkDictionary {
+        rebuild_order: chunk_file_descriptor
+            .chunk_order
+            .iter()
+            .map(|source_descriptor| source_descriptor.unique_chunk_index as u32)
+            .collect(),
         application_version: ::PKG_VERSION.to_string(),
         chunk_descriptors: RepeatedField::from_vec(chunk_file_descriptor.chunk_descriptors),
         source_checksum: chunk_file_descriptor.file_hash,

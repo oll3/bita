@@ -30,8 +30,14 @@ pub struct ArchiveReader {
     // Go from chunk hash to archive chunk index (chunks vector)
     chunk_map: HashMap<HashBuf, usize>,
 
-    // List of chunk descriptors
-    chunks: Vec<chunk_dictionary::ChunkDescriptor>,
+    // Array of chunk descriptors
+    chunk_descriptors: Vec<chunk_dictionary::ChunkDescriptor>,
+
+    // Go from archive chunk index to array of source offsets
+    chunk_offsets: Vec<Vec<u64>>,
+
+    // The order of chunks in source
+    rebuild_order: Vec<usize>,
 
     chunk_data_location: chunk_dictionary::ChunkDataLocation,
 
@@ -48,18 +54,16 @@ pub struct ArchiveReader {
     pub max_chunk_size: usize,
     pub hash_window_size: usize,
     pub hash_length: usize,
-
-    // Statistics - Total bytes read from archive
-    pub total_read: u64,
 }
 
 impl fmt::Display for ArchiveReader {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "build version: {}, chunks: {}, data location: {}, decompressed size: {}, source checksum: {}",
+            "build version: {}, chunks: {} (unique: {}), data location: {}, decompressed size: {}, source checksum: {}",
             self.created_by_app_version,
-            self.chunks.len(),
+            self.rebuild_order.len(),
+            self.chunk_descriptors.len(),
             self.chunk_data_location,
             size_to_str(self.source_total_size),
             HexSlice::new(&self.source_checksum),
@@ -159,28 +163,46 @@ impl ArchiveReader {
         let created_by_app_version = dictionary.application_version;
         let chunker_params = dictionary.chunker_params.unwrap();
 
-        let mut chunk_order: Vec<chunk_dictionary::ChunkDescriptor> = Vec::new();
+        let mut chunk_descriptors: Vec<chunk_dictionary::ChunkDescriptor> = Vec::new();
         let mut chunk_map: HashMap<HashBuf, usize> = HashMap::new();
 
-        for (index, desc) in dictionary.chunk_descriptors.into_iter().enumerate() {
+        // Create map to go from chunk hash to descriptor index
+        for (index, desc) in dictionary.chunk_descriptors.iter().enumerate() {
             chunk_map.insert(desc.checksum.clone(), index);
-            chunk_order.push(desc);
+            chunk_descriptors.push(desc.clone());
+        }
+
+        // Create chunk offset vector, to go from chunk index to source file offsets
+        let mut chunk_offsets = vec![vec![]; chunk_descriptors.len()];
+        {
+            let mut current_offset = 0;
+            for descriptor_index in dictionary.rebuild_order.iter() {
+                let descriptor_index = *descriptor_index as usize;
+                let chunk_size = chunk_descriptors[descriptor_index].source_size;
+                chunk_offsets[descriptor_index].push(current_offset);
+                current_offset += chunk_size;
+            }
         }
 
         Ok(ArchiveReader {
             chunk_map,
-            chunks: chunk_order,
+            chunk_descriptors,
+            chunk_offsets,
             source_total_size,
             source_checksum,
             created_by_app_version,
             chunk_data_location,
+            rebuild_order: dictionary
+                .rebuild_order
+                .into_iter()
+                .map(|s| s as usize)
+                .collect(),
             archive_chunks_offset: chunk_data_offset as u64,
             chunk_filter_bits: chunker_params.chunk_filter_bits,
             min_chunk_size: chunker_params.min_chunk_size as usize,
             max_chunk_size: chunker_params.max_chunk_size as usize,
             hash_window_size: chunker_params.hash_window_size as usize,
             hash_length: chunker_params.chunk_hash_length as usize,
-            total_read: 0,
         })
     }
 
@@ -192,7 +214,7 @@ impl ArchiveReader {
     // Get source offsets of a chunk
     pub fn chunk_source_offsets(&self, hash: &[u8]) -> Vec<u64> {
         if let Some(index) = self.chunk_map.get(hash) {
-            self.chunks[*index].source_offsets.clone()
+            self.chunk_offsets[*index].clone()
         } else {
             vec![]
         }
@@ -243,8 +265,7 @@ impl ArchiveReader {
             chunk_dictionary::ChunkCompression_CompressionType::ZSTD => {
                 // Archived chunk is compressed with zstd
                 chunk_data.clear();
-                zstd::stream::copy_decode(&archive_data[..], chunk_data)
-                    .expect("zstd decompress");
+                zstd::stream::copy_decode(&archive_data[..], chunk_data).expect("zstd decompress");
             }
             chunk_dictionary::ChunkCompression_CompressionType::NONE => {
                 // Archived chunk is NOT compressed
@@ -257,11 +278,11 @@ impl ArchiveReader {
 
     // Get chunk data for all listed chunks if present in archive
     pub fn read_chunk_data<T, F>(
-        &mut self,
+        &self,
         mut input: T,
         chunks: &HashSet<HashBuf>,
         mut result: F,
-    ) -> Result<()>
+    ) -> Result<u64>
     where
         T: ArchiveBackend,
         F: FnMut(&chunk_dictionary::ChunkDescriptor, &[u8]) -> Result<()>,
@@ -269,7 +290,7 @@ impl ArchiveReader {
         // Create list of chunks which are in archive. The order of the list should
         // be the same otder as the chunk data in archive.
         let descriptors: Vec<&chunk_dictionary::ChunkDescriptor> = self
-            .chunks
+            .chunk_descriptors
             .iter()
             .filter(|chunk| chunks.contains(&chunk.checksum))
             .collect();
@@ -321,9 +342,8 @@ impl ArchiveReader {
                 })
                 .expect("read chunks");
         }
-        self.total_read = total_read;
 
-        Ok(())
+        Ok(total_read)
     }
 
     // Get chunk data for all listed chunks if present in archive
@@ -333,7 +353,7 @@ impl ArchiveReader {
         mut current_input_offset: u64,
         chunks: &HashSet<HashBuf>,
         mut result: F,
-    ) -> Result<()>
+    ) -> Result<u64>
     where
         T: Read,
         F: FnMut(&chunk_dictionary::ChunkDescriptor, &[u8]) -> Result<()>,
@@ -341,10 +361,11 @@ impl ArchiveReader {
         let mut hasher = Blake2b::new();
         let mut skip_buffer = vec![0; 1024 * 1024];
         let mut chunk_data = vec![];
+        let mut total_read = 0;
 
         // Sort list of chunks to be read in order of occurence in stream.
         let descriptors = self
-            .chunks
+            .chunk_descriptors
             .iter()
             .filter(|chunk| chunks.contains(&chunk.checksum));
 
@@ -382,12 +403,12 @@ impl ArchiveReader {
 
             current_input_offset += skip;
             current_input_offset += chunk_descriptor.archive_size;
-            self.total_read += chunk_descriptor.archive_size;
+            total_read += chunk_descriptor.archive_size;
 
             // For each offset where this chunk was found in source
             result(chunk_descriptor, &chunk_data)?;
         }
 
-        Ok(())
+        Ok(total_read)
     }
 }

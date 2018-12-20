@@ -25,9 +25,8 @@ message ChunkDescriptor
     uint64 archive_size = 3;
     uint64 archive_offset = 4;
 
-    // Size and offsets of where chunk data was found
+    // Size of uncompressed chunk data
     uint64 source_size = 5;
-    repeated uint64 source_offsets = 6;
 }
 
 message ChunkerParameters
@@ -73,7 +72,9 @@ message ChunkDictionary
     // Chunker parameters used when building archive
     ChunkerParameters chunker_params = 5;
 
-    // Array of chunk descriptors. In order of (first) occurrence in source
-    // file.
-    repeated ChunkDescriptor chunk_descriptors = 6;
+    // Array of chunk descriptor indexes describing howto rebuild the source
+    repeated uint32 rebuild_order = 6;
+
+    // Chunk descriptors in order of first occurence in source file
+    repeated ChunkDescriptor chunk_descriptors = 7;
 }

@@ -97,7 +97,7 @@ fn unpack_input<T>(mut input: T, config: &UnpackConfig, pool: &ThreadPool) -> Re
 where
     T: ArchiveBackend,
 {
-    let mut archive = ArchiveReader::try_init(&mut input, &mut Vec::new())?;
+    let archive = ArchiveReader::try_init(&mut input, &mut Vec::new())?;
     let mut chunks_left = archive.chunk_hash_set();
 
     println!("Unpacking archive ({})", archive);
@@ -212,41 +212,43 @@ where
     }
 
     // Fetch rest of the chunks from archive
-    archive.read_chunk_data(input, &chunks_left, |chunk_descriptor, chunk_data| {
-        for offset in &chunk_descriptor.source_offsets {
-            total_from_archive += chunk_data.len();
-            output_file
-                .seek(SeekFrom::Start(*offset as u64))
-                .chain_err(|| "failed to seek output file")?;
-            output_file
-                .write_all(chunk_data)
-                .chain_err(|| "failed to write output file")?;
-        }
+    let archive_total_read =
+        archive.read_chunk_data(input, &chunks_left, |chunk_descriptor, chunk_data| {
+            let offsets = &archive.chunk_source_offsets(&chunk_descriptor.checksum);
+            for offset in offsets {
+                total_from_archive += chunk_data.len();
+                output_file
+                    .seek(SeekFrom::Start(*offset as u64))
+                    .chain_err(|| "failed to seek output file")?;
+                output_file
+                    .write_all(chunk_data)
+                    .chain_err(|| "failed to write output file")?;
+            }
 
-        if chunk_descriptor.compression.is_some() {
-            println!(
-                "Chunk '{}', size {}, decompressed to {}, insert at {:?}",
-                HexSlice::new(&chunk_descriptor.checksum),
-                size_to_str(chunk_descriptor.archive_size),
-                size_to_str(chunk_data.len()),
-                chunk_descriptor.source_offsets
-            );
-        } else {
-            println!(
-                "Chunk '{}', size {}, uncompressed, insert at {:?}",
-                HexSlice::new(&chunk_descriptor.checksum),
-                size_to_str(chunk_data.len()),
-                chunk_descriptor.source_offsets
-            );
-        }
+            if chunk_descriptor.compression.is_some() {
+                println!(
+                    "Chunk '{}', size {}, decompressed to {}, insert at {:?}",
+                    HexSlice::new(&chunk_descriptor.checksum),
+                    size_to_str(chunk_descriptor.archive_size),
+                    size_to_str(chunk_data.len()),
+                    offsets
+                );
+            } else {
+                println!(
+                    "Chunk '{}', size {}, uncompressed, insert at {:?}",
+                    HexSlice::new(&chunk_descriptor.checksum),
+                    size_to_str(chunk_data.len()),
+                    offsets
+                );
+            }
 
-        Ok(())
-    })?;
+            Ok(())
+        })?;
 
     println!(
         "Unpacked using {} from seed and {} from archive.",
         size_to_str(total_read_from_seed),
-        size_to_str(archive.total_read)
+        size_to_str(archive_total_read)
     );
 
     Ok(())
