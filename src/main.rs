@@ -31,6 +31,7 @@ use threadpool::ThreadPool;
 use clap::{App, Arg, SubCommand};
 use config::*;
 use errors::*;
+use std::path::Path;
 
 pub const BUZHASH_SEED: u32 = 0x1032_4195;
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -153,9 +154,13 @@ fn parse_opts() -> Result<Config> {
     };
 
     if let Some(matches) = matches.subcommand_matches("compress") {
-        let output = matches.value_of("OUTPUT").unwrap();
-        let input = matches.value_of("INPUT").unwrap_or("");
-        let temp_file = output.to_string() + ".tmp";
+        let output = Path::new(matches.value_of("OUTPUT").unwrap());
+        let input = if let Some(input) = matches.value_of("INPUT") {
+            Some(Path::new(input).to_path_buf())
+        } else {
+            None
+        };
+        let temp_file = Path::with_extension(output, ".tmp");
 
         let avg_chunk_size = parse_size(matches.value_of("avg-chunk-size").unwrap_or("64KiB"));
         let min_chunk_size = parse_size(matches.value_of("min-chunk-size").unwrap_or("16KiB"));
@@ -187,8 +192,8 @@ fn parse_opts() -> Result<Config> {
 
         Ok(Config::Compress(CompressConfig {
             base: base_config,
-            input: input.to_string(),
-            output: output.to_string(),
+            input: input,
+            output: output.to_path_buf(),
             hash_length: hash_length
                 .parse()
                 .chain_err(|| "invalid hash length value")?,

@@ -131,10 +131,10 @@ fn chunk_into_file(
             archive_offset += chunk_data.len() as u64;
         };
 
-        if !config.input.is_empty() {
+        if let Some(ref input_path) = config.input {
             // Read source from file
-            let mut src_file = File::open(&config.input)
-                .chain_err(|| format!("unable to open input file ({})", config.input))?;
+            let mut src_file = File::open(&input_path)
+                .chain_err(|| format!("unable to open input file ({})", input_path.display()))?;
 
             let (tmp_file_size, tmp_file_hash, tmp_chunks) = unique_compressed_chunks(
                 &mut src_file,
@@ -196,7 +196,7 @@ pub fn run(config: &CompressConfig, pool: &ThreadPool) -> Result<()> {
         .truncate(config.base.force_create)
         .create_new(!config.base.force_create)
         .open(&config.output)
-        .chain_err(|| format!("unable to create output file ({})", config.output))?;
+        .chain_err(|| format!("unable to create output file ({})", config.output.display()))?;
 
     let mut tmp_chunk_file = OpenOptions::new()
         .write(true)

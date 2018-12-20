@@ -1,4 +1,5 @@
 use chunk_dictionary;
+use std::path::PathBuf;
 
 #[derive(Debug)]
 pub struct BaseConfig {
@@ -10,9 +11,9 @@ pub struct CompressConfig {
     pub base: BaseConfig,
 
     // Use stdin if input not given
-    pub input: String,
-    pub output: String,
-    pub temp_file: String,
+    pub input: Option<PathBuf>,
+    pub output: PathBuf,
+    pub temp_file: PathBuf,
     pub hash_length: usize,
     pub chunk_filter_bits: u32,
     pub min_chunk_size: usize,
