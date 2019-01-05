@@ -36,8 +36,6 @@ impl io::Read for RemoteReader {
     }
 }
 
-
-
 impl ArchiveBackend for RemoteReader {
     fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> Result<()> {
         if buf.is_empty() {
@@ -50,7 +48,9 @@ impl ArchiveBackend for RemoteReader {
         self.handle
             .url(&self.url)
             .chain_err(|| "unable to set url")?;
-
+        self.handle
+            .fail_on_error(true)
+            .chain_err(|| "unable to set fail on error option")?;
         self.handle
             .range(&format!("{}-{}", offset, end_offset))
             .chain_err(|| "unable to set range")?;
@@ -90,6 +90,9 @@ impl ArchiveBackend for RemoteReader {
             .url(&self.url)
             .chain_err(|| "unable to set url")?;
 
+        self.handle
+            .fail_on_error(true)
+            .chain_err(|| "unable to set fail on error option")?;
         self.handle
             .range(&format!("{}-{}", start_offset, end_offset))
             .chain_err(|| "unable to set range")?;
