@@ -5,8 +5,31 @@ use std::fmt;
 
 use crate::chunk_dictionary;
 use crate::chunk_dictionary::{ChunkDataLocation, ChunkDataLocation_Type};
+use crate::chunker_utils::HashBuf;
+use crate::compression::Compression;
 use crate::errors::*;
 use crate::string_utils::*;
+
+pub struct ChunkDescriptor {
+    pub checksum: HashBuf,
+    pub compression: Compression,
+    pub archive_size: u64,
+    pub archive_offset: u64,
+    pub source_size: u64,
+}
+
+impl From<chunk_dictionary::ChunkDescriptor> for ChunkDescriptor {
+    fn from(dict: chunk_dictionary::ChunkDescriptor) -> Self {
+        let compression = dict.get_compression().clone();
+        ChunkDescriptor {
+            checksum: dict.checksum,
+            compression: compression.into(),
+            archive_size: dict.archive_size,
+            archive_offset: dict.archive_offset,
+            source_size: dict.source_size,
+        }
+    }
+}
 
 impl fmt::Display for ChunkDataLocation {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

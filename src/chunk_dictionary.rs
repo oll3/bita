@@ -279,6 +279,7 @@ pub struct ChunkDescriptor {
     pub cached_size: ::protobuf::CachedSize,
 }
 
+
 impl ChunkDescriptor {
     pub fn new() -> ChunkDescriptor {
         ::std::default::Default::default()

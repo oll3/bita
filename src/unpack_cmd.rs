@@ -1,6 +1,6 @@
+use crate::buzhash::BuzHash;
 use atty::Stream;
 use blake2::{Blake2b, Digest};
-use crate::buzhash::BuzHash;
 use std::collections::HashSet;
 use std::fs::{File, OpenOptions};
 use std::io;
@@ -14,9 +14,9 @@ use crate::chunker_utils::*;
 use crate::config::*;
 use crate::errors::*;
 use crate::remote_archive_backend::RemoteReader;
+use crate::string_utils::*;
 use std::io::BufWriter;
 use std::os::linux::fs::MetadataExt;
-use crate::string_utils::*;
 
 fn chunk_seed<T, F>(
     mut seed_input: T,
@@ -225,22 +225,13 @@ where
                     .chain_err(|| "failed to write output file")?;
             }
 
-            if chunk_descriptor.compression.is_some() {
-                println!(
-                    "Chunk '{}', size {}, decompressed to {}, insert at {:?}",
-                    HexSlice::new(&chunk_descriptor.checksum),
-                    size_to_str(chunk_descriptor.archive_size),
-                    size_to_str(chunk_data.len()),
-                    offsets
-                );
-            } else {
-                println!(
-                    "Chunk '{}', size {}, uncompressed, insert at {:?}",
-                    HexSlice::new(&chunk_descriptor.checksum),
-                    size_to_str(chunk_data.len()),
-                    offsets
-                );
-            }
+            println!(
+                "Chunk '{}', size {}, decompressed to {}, insert at {:?}",
+                HexSlice::new(&chunk_descriptor.checksum),
+                size_to_str(chunk_descriptor.archive_size),
+                size_to_str(chunk_data.len() * offsets.len()),
+                offsets
+            );
 
             Ok(())
         })?;

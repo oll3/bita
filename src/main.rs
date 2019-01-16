@@ -17,6 +17,7 @@ mod chunk_dictionary;
 mod chunker;
 mod chunker_utils;
 mod compress_cmd;
+mod compression;
 mod config;
 mod errors;
 mod file_archive_backend;
@@ -25,13 +26,14 @@ mod remote_archive_backend;
 mod string_utils;
 mod unpack_cmd;
 
+use clap::{App, Arg, SubCommand};
+use std::path::Path;
 use std::process;
 use threadpool::ThreadPool;
 
-use clap::{App, Arg, SubCommand};
+use crate::compression::Compression;
 use crate::config::*;
 use crate::errors::*;
-use std::path::Path;
 
 pub const BUZHASH_SEED: u32 = 0x1032_4195;
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -167,15 +169,21 @@ fn parse_opts() -> Result<Config> {
         let max_chunk_size = parse_size(matches.value_of("max-chunk-size").unwrap_or("16MiB"));
         let hash_window_size = parse_size(matches.value_of("buzhash-window").unwrap_or("16B"));
         let hash_length = matches.value_of("hash-length").unwrap_or("64");
+
         let compression_level = matches
             .value_of("compression-level")
             .unwrap_or("6")
             .parse()
             .chain_err(|| "invalid compression level value")?;
+
+        if compression_level < 1 || compression_level > 19 {
+            bail!("compression level not within range");
+        }
+
         let compression = match matches.value_of("compression").unwrap_or("LZMA") {
-            "LZMA" => chunk_dictionary::ChunkCompression_CompressionType::LZMA,
-            "ZSTD" => chunk_dictionary::ChunkCompression_CompressionType::ZSTD,
-            "NONE" => chunk_dictionary::ChunkCompression_CompressionType::NONE,
+            "LZMA" | "lzma" => Compression::LZMA(compression_level),
+            "ZSTD" | "zstd" => Compression::ZSTD(compression_level),
+            "NONE" | "none" => Compression::None,
             _ => bail!("invalid compression"),
         };
 
@@ -186,13 +194,10 @@ fn parse_opts() -> Result<Config> {
         if max_chunk_size < avg_chunk_size {
             bail!("max-chunk-size < avg-chunk-size");
         }
-        if compression_level > 9 {
-            bail!("compression level not within range");
-        }
 
         Ok(Config::Compress(CompressConfig {
             base: base_config,
-            input: input,
+            input,
             output: output.to_path_buf(),
             hash_length: hash_length
                 .parse()
@@ -213,6 +218,7 @@ fn parse_opts() -> Result<Config> {
             .unwrap_or_default()
             .map(|s| s.to_string())
             .collect();
+
         Ok(Config::Unpack(UnpackConfig {
             base: base_config,
             input: input.to_string(),

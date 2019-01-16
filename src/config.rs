@@ -1,5 +1,6 @@
-use crate::chunk_dictionary;
 use std::path::PathBuf;
+
+use crate::compression::Compression;
 
 #[derive(Debug)]
 pub struct BaseConfig {
@@ -20,8 +21,9 @@ pub struct CompressConfig {
     pub max_chunk_size: usize,
     pub hash_window_size: usize,
     pub compression_level: u32,
-    pub compression: chunk_dictionary::ChunkCompression_CompressionType,
+    pub compression: Compression,
 }
+
 #[derive(Debug)]
 pub struct UnpackConfig {
     pub base: BaseConfig,
