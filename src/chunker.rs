@@ -3,6 +3,8 @@ use std::io;
 use std::io::prelude::*;
 use std::time::{Duration, Instant};
 
+const CHUNKER_BUF_SIZE: usize = 1024 * 1024;
+
 fn append_to_buf<T>(source: &mut T, buf: &mut Vec<u8>, count: usize) -> io::Result<usize>
 where
     T: Read,
@@ -30,38 +32,57 @@ pub struct Chunk {
 }
 
 #[derive(Clone)]
-pub struct Chunker {
-    buzhash: BuzHash,
-    filter_mask: u32,
-    min_chunk_size: usize,
-    max_chunk_size: usize,
-    last_val: u8,
-    repeated_count: usize,
-    read_buf_size: usize,
-    source_buf: Vec<u8>,
-    pub scan_time: Duration,
-    pub read_time: Duration,
+pub struct ChunkerParams {
+    pub buzhash: BuzHash,
+    pub filter_mask: u32,
+    pub min_chunk_size: usize,
+    pub max_chunk_size: usize,
 }
 
-impl Chunker {
+impl ChunkerParams {
     pub fn new(
-        read_buf_size: usize,
         chunk_filter_bits: u32,
         min_chunk_size: usize,
         max_chunk_size: usize,
         buzhash: BuzHash,
     ) -> Self {
-        Chunker {
-            buzhash,
-            read_buf_size,
+        ChunkerParams {
             filter_mask: !0 >> (32 - chunk_filter_bits),
             min_chunk_size,
             max_chunk_size,
-            repeated_count: 0,
-            last_val: 0,
+            buzhash,
+        }
+    }
+}
+
+pub struct Chunker<'a, T>
+where
+    T: Read,
+{
+    buzhash: BuzHash,
+    filter_mask: u32,
+    min_chunk_size: usize,
+    max_chunk_size: usize,
+    source_buf: Vec<u8>,
+    pub scan_time: Duration,
+    pub read_time: Duration,
+    source: &'a mut T,
+}
+
+impl<'a, T> Chunker<'a, T>
+where
+    T: Read,
+{
+    pub fn new(params: ChunkerParams, source: &'a mut T) -> Self {
+        Chunker {
+            filter_mask: params.filter_mask,
+            min_chunk_size: params.min_chunk_size,
+            max_chunk_size: params.max_chunk_size,
+            buzhash: params.buzhash,
             source_buf: Vec::new(),
             scan_time: Duration::new(0, 0),
             read_time: Duration::new(0, 0),
+            source,
         }
     }
 
@@ -70,9 +91,8 @@ impl Chunker {
         self.source_buf.extend(data);
     }
 
-    pub fn scan<T, F>(&mut self, source: &mut T, mut result: F) -> io::Result<()>
+    pub fn scan<F>(&mut self, mut result: F) -> io::Result<()>
     where
-        T: Read,
         F: FnMut(usize, &[u8]),
     {
         let mut source_index: usize = 0;
@@ -85,7 +105,7 @@ impl Chunker {
         loop {
             // Fill buffer from source input
             let read_start_time = Instant::now();
-            let rc = append_to_buf(source, &mut self.source_buf, self.read_buf_size)?;
+            let rc = append_to_buf(self.source, &mut self.source_buf, CHUNKER_BUF_SIZE)?;
             self.read_time += read_start_time.elapsed();
             if rc == 0 {
                 // EOF

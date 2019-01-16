@@ -1,5 +1,5 @@
-use blake2::{Blake2b, Digest};
 use crate::ordered_mpsc::OrderedMPSC;
+use blake2::{Blake2b, Digest};
 use std::collections::{hash_map::Entry, HashMap};
 use std::io;
 use std::io::prelude::*;
@@ -35,8 +35,7 @@ pub struct ChunkSourceDescriptor {
 // Calculate a strong hash on every chunk and forward each chunk
 // Returns an array of chunk index.
 pub fn unique_chunks<T, F, H>(
-    src: &mut T,
-    chunker: &mut Chunker,
+    chunker: &mut Chunker<T>,
     hash_chunk: H,
     pool: &ThreadPool,
     hash_input: bool,
@@ -59,7 +58,7 @@ where
         None
     };
     chunker
-        .scan(src, |chunk_offset, chunk_data| {
+        .scan(|chunk_offset, chunk_data| {
             // For each chunk in file
             if let Some(ref mut hasher) = input_hasher_opt {
                 hasher.input(chunk_data)
@@ -140,8 +139,7 @@ where
 
 // Iterate unique and compressed chunks
 pub fn unique_compressed_chunks<T, F, C, H>(
-    src: &mut T,
-    chunker: &mut Chunker,
+    chunker: &mut Chunker<T>,
     hash_chunk: H,
     compress_chunk: C,
     pool: &ThreadPool,
@@ -155,13 +153,8 @@ where
     H: Fn(&[u8]) -> Vec<u8> + Send + 'static + Copy,
 {
     let mut chunk_channel = OrderedMPSC::new();
-    let (file_size, file_hash, chunks) = unique_chunks(
-        src,
-        chunker,
-        hash_chunk,
-        &pool,
-        hash_input,
-        |hashed_chunk| {
+    let (file_size, file_hash, chunks) =
+        unique_chunks(chunker, hash_chunk, &pool, hash_input, |hashed_chunk| {
             // For each unique chunk
             let chunk_tx = chunk_channel.new_tx();
             pool.execute(move || {
@@ -180,8 +173,7 @@ where
             chunk_channel.rx().try_iter().for_each(|compressed_chunk| {
                 result(compressed_chunk);
             });
-        },
-    )?;
+        })?;
 
     // Wait for threads to be done
     pool.join();

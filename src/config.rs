@@ -30,7 +30,7 @@ pub struct UnpackConfig {
 
     pub input: String,
     pub output: String,
-    pub seed_files: Vec<String>,
+    pub seed_files: Vec<PathBuf>,
     pub seed_stdin: bool,
 }
 

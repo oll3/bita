@@ -216,7 +216,7 @@ fn parse_opts() -> Result<Config> {
         let seed_files = matches
             .values_of("seed")
             .unwrap_or_default()
-            .map(|s| s.to_string())
+            .map(|s| Path::new(s).to_path_buf())
             .collect();
 
         Ok(Config::Unpack(UnpackConfig {

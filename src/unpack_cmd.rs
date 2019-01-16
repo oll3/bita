@@ -1,26 +1,26 @@
-use crate::buzhash::BuzHash;
 use atty::Stream;
 use blake2::{Blake2b, Digest};
 use std::collections::HashSet;
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::io::prelude::*;
+use std::io::BufWriter;
 use std::io::SeekFrom;
+use std::os::linux::fs::MetadataExt;
 use threadpool::ThreadPool;
 
 use crate::archive_reader::*;
-use crate::chunker::Chunker;
+use crate::buzhash::BuzHash;
+use crate::chunker::{Chunker, ChunkerParams};
 use crate::chunker_utils::*;
 use crate::config::*;
 use crate::errors::*;
 use crate::remote_archive_backend::RemoteReader;
 use crate::string_utils::*;
-use std::io::BufWriter;
-use std::os::linux::fs::MetadataExt;
 
 fn chunk_seed<T, F>(
     mut seed_input: T,
-    mut chunker: Chunker,
+    chunker_params: &ChunkerParams,
     hash_length: usize,
     chunk_hash_set: &mut HashSet<HashBuf>,
     mut result: F,
@@ -36,6 +36,7 @@ where
         Err(Error(ErrorKind::NotAnArchive(_), _)) => {
             // As the input file was not an archive we feed the data read so
             // far into the chunker.
+            let mut chunker = Chunker::new(chunker_params.clone(), &mut seed_input);
             chunker.preload(&archive_header);
 
             // If input is an archive also check if chunker parameter
@@ -46,20 +47,13 @@ where
                 hasher.input(data);
                 hasher.result().to_vec()
             };
-            unique_chunks(
-                &mut seed_input,
-                &mut chunker,
-                hasher,
-                &pool,
-                false,
-                |hashed_chunk| {
-                    let hash = &hashed_chunk.hash[0..hash_length].to_vec();
-                    if chunk_hash_set.contains(hash) {
-                        result(hash, &hashed_chunk.data);
-                        chunk_hash_set.remove(hash);
-                    }
-                },
-            )
+            unique_chunks(&mut chunker, hasher, &pool, false, |hashed_chunk| {
+                let hash = &hashed_chunk.hash[0..hash_length].to_vec();
+                if chunk_hash_set.contains(hash) {
+                    result(hash, &hashed_chunk.data);
+                    chunk_hash_set.remove(hash);
+                }
+            })
             .chain_err(|| "failed to get unique chunks")?;
 
             println!(
@@ -141,8 +135,7 @@ where
     let mut output_file = BufWriter::new(output_file);
 
     // Setup chunker to use when chunking seed input
-    let chunker = Chunker::new(
-        1024 * 1024,
+    let chunker_params = ChunkerParams::new(
         archive.chunk_filter_bits,
         archive.min_chunk_size,
         archive.max_chunk_size,
@@ -173,39 +166,41 @@ where
         // Start with scanning stdin, if not a tty.
         if !atty::is(Stream::Stdin) {
             let stdin = io::stdin();
-            let seed_file = stdin.lock();
+            let chunks_missing = chunks_left.len();
+            let stdin = stdin.lock();
             println!("Scanning stdin for chunks...");
             chunk_seed(
-                seed_file,
-                chunker.clone(),
+                stdin,
+                &chunker_params,
                 archive.hash_length,
                 &mut chunks_left,
                 &mut chunk_output,
                 &pool,
             )?;
             println!(
-                "Reached end of stdin ({} chunks missing)",
-                chunks_left.len()
+                "Used {} chunks from stdin",
+                chunks_missing - chunks_left.len()
             );
         }
         // Now scan through all given seed files
-        for seed in &config.seed_files {
+        for seed_path in &config.seed_files {
             if !chunks_left.is_empty() {
-                let seed_file = File::open(&seed)
-                    .chain_err(|| format!("failed to open seed file ({})", seed))?;
-                println!("Scanning {} for chunks...", seed);
+                let chunks_missing = chunks_left.len();
+                let seed_file = File::open(&seed_path)
+                    .chain_err(|| format!("failed to open seed file ({})", seed_path.display()))?;
+                println!("Scanning {} for chunks...", seed_path.display());
                 chunk_seed(
                     seed_file,
-                    chunker.clone(),
+                    &chunker_params,
                     archive.hash_length,
                     &mut chunks_left,
                     &mut chunk_output,
                     &pool,
                 )?;
                 println!(
-                    "Reached end of {} ({} chunks missing)",
-                    seed,
-                    chunks_left.len()
+                    "Used {} chunks from seed file {}",
+                    chunks_missing - chunks_left.len(),
+                    seed_path.display(),
                 );
             }
         }
@@ -221,7 +216,7 @@ where
                     .seek(SeekFrom::Start(*offset as u64))
                     .chain_err(|| "failed to seek output file")?;
                 output_file
-                    .write_all(chunk_data)
+                    .write_all(&chunk_data)
                     .chain_err(|| "failed to write output file")?;
             }
 
