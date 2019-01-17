@@ -1,11 +1,11 @@
 use blake2::{Blake2b, Digest};
-use ordered_mpsc::OrderedMPSC;
+use crate::ordered_mpsc::OrderedMPSC;
 use std::collections::{hash_map::Entry, HashMap};
 use std::io;
 use std::io::prelude::*;
 use threadpool::ThreadPool;
 
-use chunker::*;
+use crate::chunker::*;
 
 pub type HashBuf = Vec<u8>;
 

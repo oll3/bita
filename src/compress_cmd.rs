@@ -6,16 +6,16 @@ use std::fs;
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::io::{Seek, SeekFrom, Write};
-use string_utils::*;
+use crate::string_utils::*;
 use threadpool::ThreadPool;
 
-use archive;
-use buzhash::BuzHash;
-use chunk_dictionary;
-use chunker::*;
-use chunker_utils::*;
-use config::*;
-use errors::*;
+use crate::archive;
+use crate::buzhash::BuzHash;
+use crate::chunk_dictionary;
+use crate::chunker::*;
+use crate::chunker_utils::*;
+use crate::config::*;
+use crate::errors::*;
 
 // Ok((file_size, file_hash, chunks, chunk_descriptors))
 struct ChunkFileDescriptor {
@@ -36,7 +36,7 @@ fn chunk_into_file(
         config.chunk_filter_bits,
         config.min_chunk_size,
         config.max_chunk_size,
-        BuzHash::new(config.hash_window_size as usize, ::BUZHASH_SEED),
+        BuzHash::new(config.hash_window_size as usize, crate::BUZHASH_SEED),
     );
 
     let mut compression = chunk_dictionary::ChunkCompression::new();
@@ -221,7 +221,7 @@ pub fn run(config: &CompressConfig, pool: &ThreadPool) -> Result<()> {
             .iter()
             .map(|source_descriptor| source_descriptor.unique_chunk_index as u32)
             .collect(),
-        application_version: ::PKG_VERSION.to_string(),
+        application_version: crate::PKG_VERSION.to_string(),
         chunk_descriptors: RepeatedField::from_vec(chunk_file_descriptor.chunk_descriptors),
         source_checksum: chunk_file_descriptor.file_hash,
         chunk_data_location: SingularPtrField::none(),

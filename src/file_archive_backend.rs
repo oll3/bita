@@ -2,8 +2,8 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::io::SeekFrom;
 
-use archive_reader::*;
-use errors::*;
+use crate::archive_reader::*;
+use crate::errors::*;
 
 impl ArchiveBackend for File {
     fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> Result<()> {

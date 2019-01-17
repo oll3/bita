@@ -120,7 +120,7 @@ impl BuzHash {
 
 #[cfg(test)]
 mod tests {
-    use buzhash::BuzHash;
+    use crate::buzhash::BuzHash;
     #[test]
     fn equal_sums_for_equal_range() {
         let window_size = 8;

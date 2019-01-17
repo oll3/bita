@@ -3,10 +3,10 @@ use protobuf::Message;
 use blake2::{Blake2b, Digest};
 use std::fmt;
 
-use chunk_dictionary;
-use chunk_dictionary::{ChunkDataLocation, ChunkDataLocation_Type};
-use errors::*;
-use string_utils::*;
+use crate::chunk_dictionary;
+use crate::chunk_dictionary::{ChunkDataLocation, ChunkDataLocation_Type};
+use crate::errors::*;
+use crate::string_utils::*;
 
 impl fmt::Display for ChunkDataLocation {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

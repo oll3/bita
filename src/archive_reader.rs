@@ -1,14 +1,14 @@
 use blake2::{Blake2b, Digest};
-use chunker_utils::HashBuf;
+use crate::chunker_utils::HashBuf;
 use lzma::LzmaWriter;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::io::prelude::*;
-use string_utils::*;
+use crate::string_utils::*;
 
-use archive;
-use chunk_dictionary;
-use errors::*;
+use crate::archive;
+use crate::chunk_dictionary;
+use crate::errors::*;
 
 // Skip forward in a file/stream which is non seekable
 fn skip_bytes<T>(input: &mut T, skip_bytes: u64, skip_buffer: &mut [u8]) -> Result<()>

@@ -1,4 +1,4 @@
-use chunk_dictionary;
+use crate::chunk_dictionary;
 use std::path::PathBuf;
 
 #[derive(Debug)]

@@ -65,7 +65,7 @@ impl<T> OrderedMPSC<T> {
 
 #[cfg(test)]
 mod tests {
-    use ordered_mpsc::OrderedMPSC;
+    use crate::ordered_mpsc::OrderedMPSC;
     #[test]
     fn test_ordering() {
         let mut channel = OrderedMPSC::new();

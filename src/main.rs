@@ -29,8 +29,8 @@ use std::process;
 use threadpool::ThreadPool;
 
 use clap::{App, Arg, SubCommand};
-use config::*;
-use errors::*;
+use crate::config::*;
+use crate::errors::*;
 use std::path::Path;
 
 pub const BUZHASH_SEED: u32 = 0x1032_4195;

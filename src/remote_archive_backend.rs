@@ -1,8 +1,8 @@
 use curl::easy::Easy;
 use std::io;
 
-use archive_reader::ArchiveBackend;
-use errors::*;
+use crate::archive_reader::ArchiveBackend;
+use crate::errors::*;
 
 pub struct RemoteReader {
     url: String,

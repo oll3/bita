@@ -1,4 +1,4 @@
-use buzhash::BuzHash;
+use crate::buzhash::BuzHash;
 use std::io;
 use std::io::prelude::*;
 use std::time::{Duration, Instant};

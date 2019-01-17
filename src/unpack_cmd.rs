@@ -1,6 +1,6 @@
 use atty::Stream;
 use blake2::{Blake2b, Digest};
-use buzhash::BuzHash;
+use crate::buzhash::BuzHash;
 use std::collections::HashSet;
 use std::fs::{File, OpenOptions};
 use std::io;
@@ -8,15 +8,15 @@ use std::io::prelude::*;
 use std::io::SeekFrom;
 use threadpool::ThreadPool;
 
-use archive_reader::*;
-use chunker::Chunker;
-use chunker_utils::*;
-use config::*;
-use errors::*;
-use remote_archive_backend::RemoteReader;
+use crate::archive_reader::*;
+use crate::chunker::Chunker;
+use crate::chunker_utils::*;
+use crate::config::*;
+use crate::errors::*;
+use crate::remote_archive_backend::RemoteReader;
 use std::io::BufWriter;
 use std::os::linux::fs::MetadataExt;
-use string_utils::*;
+use crate::string_utils::*;
 
 fn chunk_seed<T, F>(
     mut seed_input: T,
@@ -146,7 +146,7 @@ where
         archive.chunk_filter_bits,
         archive.min_chunk_size,
         archive.max_chunk_size,
-        BuzHash::new(archive.hash_window_size as usize, ::BUZHASH_SEED),
+        BuzHash::new(archive.hash_window_size as usize, crate::BUZHASH_SEED),
     );
 
     let mut total_read_from_seed = 0;
