@@ -87,14 +87,14 @@ where
     }
 }
 
-fn unpack_input<T>(mut input: T, config: &UnpackConfig, pool: &ThreadPool) -> Result<()>
+fn clone_input<T>(mut input: T, config: &CloneConfig, pool: &ThreadPool) -> Result<()>
 where
     T: ArchiveBackend,
 {
     let archive = ArchiveReader::try_init(&mut input, &mut Vec::new())?;
     let mut chunks_left = archive.chunk_hash_set();
 
-    println!("Unpacking archive ({})", archive);
+    println!("Cloning archive ({})", archive);
 
     // Create or open output file.
     let mut output_file = OpenOptions::new()
@@ -232,7 +232,7 @@ where
         })?;
 
     println!(
-        "Unpacked using {} from seed and {} from archive.",
+        "Cloned using {} from seed and {} from archive.",
         size_to_str(total_read_from_seed),
         size_to_str(archive_total_read)
     );
@@ -240,14 +240,14 @@ where
     Ok(())
 }
 
-pub fn run(config: &UnpackConfig, pool: &ThreadPool) -> Result<()> {
+pub fn run(config: &CloneConfig, pool: &ThreadPool) -> Result<()> {
     if &config.input[0..7] == "http://" || &config.input[0..8] == "https://" {
         let remote_source = RemoteReader::new(&config.input);
-        unpack_input(remote_source, config, pool)?;
+        clone_input(remote_source, config, pool)?;
     } else {
         let local_file =
             File::open(&config.input).chain_err(|| format!("unable to open {}", config.input))?;
-        unpack_input(local_file, config, pool)?;
+        clone_input(local_file, config, pool)?;
     }
 
     Ok(())
