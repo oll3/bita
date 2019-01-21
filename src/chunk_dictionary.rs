@@ -22,263 +22,16 @@ use protobuf::Message as Message_imported_for_functions;
 use protobuf::ProtobufEnum as ProtobufEnum_imported_for_functions;
 
 #[derive(PartialEq,Clone,Default)]
-pub struct ChunkCompression {
-    // message fields
-    pub compression: ChunkCompression_CompressionType,
-    pub compression_level: u32,
-    // special fields
-    pub unknown_fields: ::protobuf::UnknownFields,
-    pub cached_size: ::protobuf::CachedSize,
-}
-
-impl ChunkCompression {
-    pub fn new() -> ChunkCompression {
-        ::std::default::Default::default()
-    }
-
-    // .chunk_dictionary.ChunkCompression.CompressionType compression = 2;
-
-    pub fn clear_compression(&mut self) {
-        self.compression = ChunkCompression_CompressionType::NONE;
-    }
-
-    // Param is passed by value, moved
-    pub fn set_compression(&mut self, v: ChunkCompression_CompressionType) {
-        self.compression = v;
-    }
-
-    pub fn get_compression(&self) -> ChunkCompression_CompressionType {
-        self.compression
-    }
-
-    // uint32 compression_level = 3;
-
-    pub fn clear_compression_level(&mut self) {
-        self.compression_level = 0;
-    }
-
-    // Param is passed by value, moved
-    pub fn set_compression_level(&mut self, v: u32) {
-        self.compression_level = v;
-    }
-
-    pub fn get_compression_level(&self) -> u32 {
-        self.compression_level
-    }
-}
-
-impl ::protobuf::Message for ChunkCompression {
-    fn is_initialized(&self) -> bool {
-        true
-    }
-
-    fn merge_from(&mut self, is: &mut ::protobuf::CodedInputStream) -> ::protobuf::ProtobufResult<()> {
-        while !is.eof()? {
-            let (field_number, wire_type) = is.read_tag_unpack()?;
-            match field_number {
-                2 => {
-                    ::protobuf::rt::read_proto3_enum_with_unknown_fields_into(wire_type, is, &mut self.compression, 2, &mut self.unknown_fields)?
-                },
-                3 => {
-                    if wire_type != ::protobuf::wire_format::WireTypeVarint {
-                        return ::std::result::Result::Err(::protobuf::rt::unexpected_wire_type(wire_type));
-                    }
-                    let tmp = is.read_uint32()?;
-                    self.compression_level = tmp;
-                },
-                _ => {
-                    ::protobuf::rt::read_unknown_or_skip_group(field_number, wire_type, is, self.mut_unknown_fields())?;
-                },
-            };
-        }
-        ::std::result::Result::Ok(())
-    }
-
-    // Compute sizes of nested messages
-    #[allow(unused_variables)]
-    fn compute_size(&self) -> u32 {
-        let mut my_size = 0;
-        if self.compression != ChunkCompression_CompressionType::NONE {
-            my_size += ::protobuf::rt::enum_size(2, self.compression);
-        }
-        if self.compression_level != 0 {
-            my_size += ::protobuf::rt::value_size(3, self.compression_level, ::protobuf::wire_format::WireTypeVarint);
-        }
-        my_size += ::protobuf::rt::unknown_fields_size(self.get_unknown_fields());
-        self.cached_size.set(my_size);
-        my_size
-    }
-
-    fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream) -> ::protobuf::ProtobufResult<()> {
-        if self.compression != ChunkCompression_CompressionType::NONE {
-            os.write_enum(2, self.compression.value())?;
-        }
-        if self.compression_level != 0 {
-            os.write_uint32(3, self.compression_level)?;
-        }
-        os.write_unknown_fields(self.get_unknown_fields())?;
-        ::std::result::Result::Ok(())
-    }
-
-    fn get_cached_size(&self) -> u32 {
-        self.cached_size.get()
-    }
-
-    fn get_unknown_fields(&self) -> &::protobuf::UnknownFields {
-        &self.unknown_fields
-    }
-
-    fn mut_unknown_fields(&mut self) -> &mut ::protobuf::UnknownFields {
-        &mut self.unknown_fields
-    }
-
-    fn as_any(&self) -> &::std::any::Any {
-        self as &::std::any::Any
-    }
-    fn as_any_mut(&mut self) -> &mut ::std::any::Any {
-        self as &mut ::std::any::Any
-    }
-    fn into_any(self: Box<Self>) -> ::std::boxed::Box<::std::any::Any> {
-        self
-    }
-
-    fn descriptor(&self) -> &'static ::protobuf::reflect::MessageDescriptor {
-        Self::descriptor_static()
-    }
-
-    fn new() -> ChunkCompression {
-        ChunkCompression::new()
-    }
-
-    fn descriptor_static() -> &'static ::protobuf::reflect::MessageDescriptor {
-        static mut descriptor: ::protobuf::lazy::Lazy<::protobuf::reflect::MessageDescriptor> = ::protobuf::lazy::Lazy {
-            lock: ::protobuf::lazy::ONCE_INIT,
-            ptr: 0 as *const ::protobuf::reflect::MessageDescriptor,
-        };
-        unsafe {
-            descriptor.get(|| {
-                let mut fields = ::std::vec::Vec::new();
-                fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeEnum<ChunkCompression_CompressionType>>(
-                    "compression",
-                    |m: &ChunkCompression| { &m.compression },
-                    |m: &mut ChunkCompression| { &mut m.compression },
-                ));
-                fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeUint32>(
-                    "compression_level",
-                    |m: &ChunkCompression| { &m.compression_level },
-                    |m: &mut ChunkCompression| { &mut m.compression_level },
-                ));
-                ::protobuf::reflect::MessageDescriptor::new::<ChunkCompression>(
-                    "ChunkCompression",
-                    fields,
-                    file_descriptor_proto()
-                )
-            })
-        }
-    }
-
-    fn default_instance() -> &'static ChunkCompression {
-        static mut instance: ::protobuf::lazy::Lazy<ChunkCompression> = ::protobuf::lazy::Lazy {
-            lock: ::protobuf::lazy::ONCE_INIT,
-            ptr: 0 as *const ChunkCompression,
-        };
-        unsafe {
-            instance.get(ChunkCompression::new)
-        }
-    }
-}
-
-impl ::protobuf::Clear for ChunkCompression {
-    fn clear(&mut self) {
-        self.clear_compression();
-        self.clear_compression_level();
-        self.unknown_fields.clear();
-    }
-}
-
-impl ::std::fmt::Debug for ChunkCompression {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        ::protobuf::text_format::fmt(self, f)
-    }
-}
-
-impl ::protobuf::reflect::ProtobufValue for ChunkCompression {
-    fn as_ref(&self) -> ::protobuf::reflect::ProtobufValueRef {
-        ::protobuf::reflect::ProtobufValueRef::Message(self)
-    }
-}
-
-#[derive(Clone,PartialEq,Eq,Debug,Hash)]
-pub enum ChunkCompression_CompressionType {
-    NONE = 0,
-    LZMA = 1,
-    ZSTD = 2,
-}
-
-impl ::protobuf::ProtobufEnum for ChunkCompression_CompressionType {
-    fn value(&self) -> i32 {
-        *self as i32
-    }
-
-    fn from_i32(value: i32) -> ::std::option::Option<ChunkCompression_CompressionType> {
-        match value {
-            0 => ::std::option::Option::Some(ChunkCompression_CompressionType::NONE),
-            1 => ::std::option::Option::Some(ChunkCompression_CompressionType::LZMA),
-            2 => ::std::option::Option::Some(ChunkCompression_CompressionType::ZSTD),
-            _ => ::std::option::Option::None
-        }
-    }
-
-    fn values() -> &'static [Self] {
-        static values: &'static [ChunkCompression_CompressionType] = &[
-            ChunkCompression_CompressionType::NONE,
-            ChunkCompression_CompressionType::LZMA,
-            ChunkCompression_CompressionType::ZSTD,
-        ];
-        values
-    }
-
-    fn enum_descriptor_static() -> &'static ::protobuf::reflect::EnumDescriptor {
-        static mut descriptor: ::protobuf::lazy::Lazy<::protobuf::reflect::EnumDescriptor> = ::protobuf::lazy::Lazy {
-            lock: ::protobuf::lazy::ONCE_INIT,
-            ptr: 0 as *const ::protobuf::reflect::EnumDescriptor,
-        };
-        unsafe {
-            descriptor.get(|| {
-                ::protobuf::reflect::EnumDescriptor::new("ChunkCompression_CompressionType", file_descriptor_proto())
-            })
-        }
-    }
-}
-
-impl ::std::marker::Copy for ChunkCompression_CompressionType {
-}
-
-impl ::std::default::Default for ChunkCompression_CompressionType {
-    fn default() -> Self {
-        ChunkCompression_CompressionType::NONE
-    }
-}
-
-impl ::protobuf::reflect::ProtobufValue for ChunkCompression_CompressionType {
-    fn as_ref(&self) -> ::protobuf::reflect::ProtobufValueRef {
-        ::protobuf::reflect::ProtobufValueRef::Enum(self.descriptor())
-    }
-}
-
-#[derive(PartialEq,Clone,Default)]
 pub struct ChunkDescriptor {
     // message fields
     pub checksum: ::std::vec::Vec<u8>,
-    pub compression: ::protobuf::SingularPtrField<ChunkCompression>,
-    pub archive_size: u64,
+    pub archive_size: u32,
     pub archive_offset: u64,
-    pub source_size: u64,
+    pub source_size: u32,
     // special fields
     pub unknown_fields: ::protobuf::UnknownFields,
     pub cached_size: ::protobuf::CachedSize,
 }
-
 
 impl ChunkDescriptor {
     pub fn new() -> ChunkDescriptor {
@@ -311,55 +64,22 @@ impl ChunkDescriptor {
         &self.checksum
     }
 
-    // .chunk_dictionary.ChunkCompression compression = 2;
-
-    pub fn clear_compression(&mut self) {
-        self.compression.clear();
-    }
-
-    pub fn has_compression(&self) -> bool {
-        self.compression.is_some()
-    }
-
-    // Param is passed by value, moved
-    pub fn set_compression(&mut self, v: ChunkCompression) {
-        self.compression = ::protobuf::SingularPtrField::some(v);
-    }
-
-    // Mutable pointer to the field.
-    // If field is not initialized, it is initialized with default value first.
-    pub fn mut_compression(&mut self) -> &mut ChunkCompression {
-        if self.compression.is_none() {
-            self.compression.set_default();
-        }
-        self.compression.as_mut().unwrap()
-    }
-
-    // Take field
-    pub fn take_compression(&mut self) -> ChunkCompression {
-        self.compression.take().unwrap_or_else(|| ChunkCompression::new())
-    }
-
-    pub fn get_compression(&self) -> &ChunkCompression {
-        self.compression.as_ref().unwrap_or_else(|| ChunkCompression::default_instance())
-    }
-
-    // uint64 archive_size = 3;
+    // fixed32 archive_size = 3;
 
     pub fn clear_archive_size(&mut self) {
         self.archive_size = 0;
     }
 
     // Param is passed by value, moved
-    pub fn set_archive_size(&mut self, v: u64) {
+    pub fn set_archive_size(&mut self, v: u32) {
         self.archive_size = v;
     }
 
-    pub fn get_archive_size(&self) -> u64 {
+    pub fn get_archive_size(&self) -> u32 {
         self.archive_size
     }
 
-    // uint64 archive_offset = 4;
+    // fixed64 archive_offset = 4;
 
     pub fn clear_archive_offset(&mut self) {
         self.archive_offset = 0;
@@ -374,29 +94,24 @@ impl ChunkDescriptor {
         self.archive_offset
     }
 
-    // uint64 source_size = 5;
+    // fixed32 source_size = 5;
 
     pub fn clear_source_size(&mut self) {
         self.source_size = 0;
     }
 
     // Param is passed by value, moved
-    pub fn set_source_size(&mut self, v: u64) {
+    pub fn set_source_size(&mut self, v: u32) {
         self.source_size = v;
     }
 
-    pub fn get_source_size(&self) -> u64 {
+    pub fn get_source_size(&self) -> u32 {
         self.source_size
     }
 }
 
 impl ::protobuf::Message for ChunkDescriptor {
     fn is_initialized(&self) -> bool {
-        for v in &self.compression {
-            if !v.is_initialized() {
-                return false;
-            }
-        };
         true
     }
 
@@ -407,28 +122,25 @@ impl ::protobuf::Message for ChunkDescriptor {
                 1 => {
                     ::protobuf::rt::read_singular_proto3_bytes_into(wire_type, is, &mut self.checksum)?;
                 },
-                2 => {
-                    ::protobuf::rt::read_singular_message_into(wire_type, is, &mut self.compression)?;
-                },
                 3 => {
-                    if wire_type != ::protobuf::wire_format::WireTypeVarint {
+                    if wire_type != ::protobuf::wire_format::WireTypeFixed32 {
                         return ::std::result::Result::Err(::protobuf::rt::unexpected_wire_type(wire_type));
                     }
-                    let tmp = is.read_uint64()?;
+                    let tmp = is.read_fixed32()?;
                     self.archive_size = tmp;
                 },
                 4 => {
-                    if wire_type != ::protobuf::wire_format::WireTypeVarint {
+                    if wire_type != ::protobuf::wire_format::WireTypeFixed64 {
                         return ::std::result::Result::Err(::protobuf::rt::unexpected_wire_type(wire_type));
                     }
-                    let tmp = is.read_uint64()?;
+                    let tmp = is.read_fixed64()?;
                     self.archive_offset = tmp;
                 },
                 5 => {
-                    if wire_type != ::protobuf::wire_format::WireTypeVarint {
+                    if wire_type != ::protobuf::wire_format::WireTypeFixed32 {
                         return ::std::result::Result::Err(::protobuf::rt::unexpected_wire_type(wire_type));
                     }
-                    let tmp = is.read_uint64()?;
+                    let tmp = is.read_fixed32()?;
                     self.source_size = tmp;
                 },
                 _ => {
@@ -446,18 +158,14 @@ impl ::protobuf::Message for ChunkDescriptor {
         if !self.checksum.is_empty() {
             my_size += ::protobuf::rt::bytes_size(1, &self.checksum);
         }
-        if let Some(ref v) = self.compression.as_ref() {
-            let len = v.compute_size();
-            my_size += 1 + ::protobuf::rt::compute_raw_varint32_size(len) + len;
-        }
         if self.archive_size != 0 {
-            my_size += ::protobuf::rt::value_size(3, self.archive_size, ::protobuf::wire_format::WireTypeVarint);
+            my_size += 5;
         }
         if self.archive_offset != 0 {
-            my_size += ::protobuf::rt::value_size(4, self.archive_offset, ::protobuf::wire_format::WireTypeVarint);
+            my_size += 9;
         }
         if self.source_size != 0 {
-            my_size += ::protobuf::rt::value_size(5, self.source_size, ::protobuf::wire_format::WireTypeVarint);
+            my_size += 5;
         }
         my_size += ::protobuf::rt::unknown_fields_size(self.get_unknown_fields());
         self.cached_size.set(my_size);
@@ -468,19 +176,14 @@ impl ::protobuf::Message for ChunkDescriptor {
         if !self.checksum.is_empty() {
             os.write_bytes(1, &self.checksum)?;
         }
-        if let Some(ref v) = self.compression.as_ref() {
-            os.write_tag(2, ::protobuf::wire_format::WireTypeLengthDelimited)?;
-            os.write_raw_varint32(v.get_cached_size())?;
-            v.write_to_with_cached_sizes(os)?;
-        }
         if self.archive_size != 0 {
-            os.write_uint64(3, self.archive_size)?;
+            os.write_fixed32(3, self.archive_size)?;
         }
         if self.archive_offset != 0 {
-            os.write_uint64(4, self.archive_offset)?;
+            os.write_fixed64(4, self.archive_offset)?;
         }
         if self.source_size != 0 {
-            os.write_uint64(5, self.source_size)?;
+            os.write_fixed32(5, self.source_size)?;
         }
         os.write_unknown_fields(self.get_unknown_fields())?;
         ::std::result::Result::Ok(())
@@ -529,22 +232,17 @@ impl ::protobuf::Message for ChunkDescriptor {
                     |m: &ChunkDescriptor| { &m.checksum },
                     |m: &mut ChunkDescriptor| { &mut m.checksum },
                 ));
-                fields.push(::protobuf::reflect::accessor::make_singular_ptr_field_accessor::<_, ::protobuf::types::ProtobufTypeMessage<ChunkCompression>>(
-                    "compression",
-                    |m: &ChunkDescriptor| { &m.compression },
-                    |m: &mut ChunkDescriptor| { &mut m.compression },
-                ));
-                fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeUint64>(
+                fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeFixed32>(
                     "archive_size",
                     |m: &ChunkDescriptor| { &m.archive_size },
                     |m: &mut ChunkDescriptor| { &mut m.archive_size },
                 ));
-                fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeUint64>(
+                fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeFixed64>(
                     "archive_offset",
                     |m: &ChunkDescriptor| { &m.archive_offset },
                     |m: &mut ChunkDescriptor| { &mut m.archive_offset },
                 ));
-                fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeUint64>(
+                fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeFixed32>(
                     "source_size",
                     |m: &ChunkDescriptor| { &m.source_size },
                     |m: &mut ChunkDescriptor| { &mut m.source_size },
@@ -572,7 +270,6 @@ impl ::protobuf::Message for ChunkDescriptor {
 impl ::protobuf::Clear for ChunkDescriptor {
     fn clear(&mut self) {
         self.clear_checksum();
-        self.clear_compression();
         self.clear_archive_size();
         self.clear_archive_offset();
         self.clear_source_size();
@@ -889,63 +586,52 @@ impl ::protobuf::reflect::ProtobufValue for ChunkerParameters {
 }
 
 #[derive(PartialEq,Clone,Default)]
-pub struct ChunkDataLocation {
+pub struct ChunkCompression {
     // message fields
-    pub location_type: ChunkDataLocation_Type,
-    pub location_path: ::std::string::String,
+    pub compression: ChunkCompression_CompressionType,
+    pub compression_level: u32,
     // special fields
     pub unknown_fields: ::protobuf::UnknownFields,
     pub cached_size: ::protobuf::CachedSize,
 }
 
-impl ChunkDataLocation {
-    pub fn new() -> ChunkDataLocation {
+impl ChunkCompression {
+    pub fn new() -> ChunkCompression {
         ::std::default::Default::default()
     }
 
-    // .chunk_dictionary.ChunkDataLocation.Type location_type = 1;
+    // .chunk_dictionary.ChunkCompression.CompressionType compression = 2;
 
-    pub fn clear_location_type(&mut self) {
-        self.location_type = ChunkDataLocation_Type::INTERNAL;
+    pub fn clear_compression(&mut self) {
+        self.compression = ChunkCompression_CompressionType::NONE;
     }
 
     // Param is passed by value, moved
-    pub fn set_location_type(&mut self, v: ChunkDataLocation_Type) {
-        self.location_type = v;
+    pub fn set_compression(&mut self, v: ChunkCompression_CompressionType) {
+        self.compression = v;
     }
 
-    pub fn get_location_type(&self) -> ChunkDataLocation_Type {
-        self.location_type
+    pub fn get_compression(&self) -> ChunkCompression_CompressionType {
+        self.compression
     }
 
-    // string location_path = 2;
+    // uint32 compression_level = 3;
 
-    pub fn clear_location_path(&mut self) {
-        self.location_path.clear();
+    pub fn clear_compression_level(&mut self) {
+        self.compression_level = 0;
     }
 
     // Param is passed by value, moved
-    pub fn set_location_path(&mut self, v: ::std::string::String) {
-        self.location_path = v;
+    pub fn set_compression_level(&mut self, v: u32) {
+        self.compression_level = v;
     }
 
-    // Mutable pointer to the field.
-    // If field is not initialized, it is initialized with default value first.
-    pub fn mut_location_path(&mut self) -> &mut ::std::string::String {
-        &mut self.location_path
-    }
-
-    // Take field
-    pub fn take_location_path(&mut self) -> ::std::string::String {
-        ::std::mem::replace(&mut self.location_path, ::std::string::String::new())
-    }
-
-    pub fn get_location_path(&self) -> &str {
-        &self.location_path
+    pub fn get_compression_level(&self) -> u32 {
+        self.compression_level
     }
 }
 
-impl ::protobuf::Message for ChunkDataLocation {
+impl ::protobuf::Message for ChunkCompression {
     fn is_initialized(&self) -> bool {
         true
     }
@@ -954,11 +640,15 @@ impl ::protobuf::Message for ChunkDataLocation {
         while !is.eof()? {
             let (field_number, wire_type) = is.read_tag_unpack()?;
             match field_number {
-                1 => {
-                    ::protobuf::rt::read_proto3_enum_with_unknown_fields_into(wire_type, is, &mut self.location_type, 1, &mut self.unknown_fields)?
-                },
                 2 => {
-                    ::protobuf::rt::read_singular_proto3_string_into(wire_type, is, &mut self.location_path)?;
+                    ::protobuf::rt::read_proto3_enum_with_unknown_fields_into(wire_type, is, &mut self.compression, 2, &mut self.unknown_fields)?
+                },
+                3 => {
+                    if wire_type != ::protobuf::wire_format::WireTypeVarint {
+                        return ::std::result::Result::Err(::protobuf::rt::unexpected_wire_type(wire_type));
+                    }
+                    let tmp = is.read_uint32()?;
+                    self.compression_level = tmp;
                 },
                 _ => {
                     ::protobuf::rt::read_unknown_or_skip_group(field_number, wire_type, is, self.mut_unknown_fields())?;
@@ -972,11 +662,11 @@ impl ::protobuf::Message for ChunkDataLocation {
     #[allow(unused_variables)]
     fn compute_size(&self) -> u32 {
         let mut my_size = 0;
-        if self.location_type != ChunkDataLocation_Type::INTERNAL {
-            my_size += ::protobuf::rt::enum_size(1, self.location_type);
+        if self.compression != ChunkCompression_CompressionType::NONE {
+            my_size += ::protobuf::rt::enum_size(2, self.compression);
         }
-        if !self.location_path.is_empty() {
-            my_size += ::protobuf::rt::string_size(2, &self.location_path);
+        if self.compression_level != 0 {
+            my_size += ::protobuf::rt::value_size(3, self.compression_level, ::protobuf::wire_format::WireTypeVarint);
         }
         my_size += ::protobuf::rt::unknown_fields_size(self.get_unknown_fields());
         self.cached_size.set(my_size);
@@ -984,11 +674,11 @@ impl ::protobuf::Message for ChunkDataLocation {
     }
 
     fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream) -> ::protobuf::ProtobufResult<()> {
-        if self.location_type != ChunkDataLocation_Type::INTERNAL {
-            os.write_enum(1, self.location_type.value())?;
+        if self.compression != ChunkCompression_CompressionType::NONE {
+            os.write_enum(2, self.compression.value())?;
         }
-        if !self.location_path.is_empty() {
-            os.write_string(2, &self.location_path)?;
+        if self.compression_level != 0 {
+            os.write_uint32(3, self.compression_level)?;
         }
         os.write_unknown_fields(self.get_unknown_fields())?;
         ::std::result::Result::Ok(())
@@ -1020,8 +710,8 @@ impl ::protobuf::Message for ChunkDataLocation {
         Self::descriptor_static()
     }
 
-    fn new() -> ChunkDataLocation {
-        ChunkDataLocation::new()
+    fn new() -> ChunkCompression {
+        ChunkCompression::new()
     }
 
     fn descriptor_static() -> &'static ::protobuf::reflect::MessageDescriptor {
@@ -1032,18 +722,18 @@ impl ::protobuf::Message for ChunkDataLocation {
         unsafe {
             descriptor.get(|| {
                 let mut fields = ::std::vec::Vec::new();
-                fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeEnum<ChunkDataLocation_Type>>(
-                    "location_type",
-                    |m: &ChunkDataLocation| { &m.location_type },
-                    |m: &mut ChunkDataLocation| { &mut m.location_type },
+                fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeEnum<ChunkCompression_CompressionType>>(
+                    "compression",
+                    |m: &ChunkCompression| { &m.compression },
+                    |m: &mut ChunkCompression| { &mut m.compression },
                 ));
-                fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeString>(
-                    "location_path",
-                    |m: &ChunkDataLocation| { &m.location_path },
-                    |m: &mut ChunkDataLocation| { &mut m.location_path },
+                fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeUint32>(
+                    "compression_level",
+                    |m: &ChunkCompression| { &m.compression_level },
+                    |m: &mut ChunkCompression| { &mut m.compression_level },
                 ));
-                ::protobuf::reflect::MessageDescriptor::new::<ChunkDataLocation>(
-                    "ChunkDataLocation",
+                ::protobuf::reflect::MessageDescriptor::new::<ChunkCompression>(
+                    "ChunkCompression",
                     fields,
                     file_descriptor_proto()
                 )
@@ -1051,63 +741,63 @@ impl ::protobuf::Message for ChunkDataLocation {
         }
     }
 
-    fn default_instance() -> &'static ChunkDataLocation {
-        static mut instance: ::protobuf::lazy::Lazy<ChunkDataLocation> = ::protobuf::lazy::Lazy {
+    fn default_instance() -> &'static ChunkCompression {
+        static mut instance: ::protobuf::lazy::Lazy<ChunkCompression> = ::protobuf::lazy::Lazy {
             lock: ::protobuf::lazy::ONCE_INIT,
-            ptr: 0 as *const ChunkDataLocation,
+            ptr: 0 as *const ChunkCompression,
         };
         unsafe {
-            instance.get(ChunkDataLocation::new)
+            instance.get(ChunkCompression::new)
         }
     }
 }
 
-impl ::protobuf::Clear for ChunkDataLocation {
+impl ::protobuf::Clear for ChunkCompression {
     fn clear(&mut self) {
-        self.clear_location_type();
-        self.clear_location_path();
+        self.clear_compression();
+        self.clear_compression_level();
         self.unknown_fields.clear();
     }
 }
 
-impl ::std::fmt::Debug for ChunkDataLocation {
+impl ::std::fmt::Debug for ChunkCompression {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         ::protobuf::text_format::fmt(self, f)
     }
 }
 
-impl ::protobuf::reflect::ProtobufValue for ChunkDataLocation {
+impl ::protobuf::reflect::ProtobufValue for ChunkCompression {
     fn as_ref(&self) -> ::protobuf::reflect::ProtobufValueRef {
         ::protobuf::reflect::ProtobufValueRef::Message(self)
     }
 }
 
 #[derive(Clone,PartialEq,Eq,Debug,Hash)]
-pub enum ChunkDataLocation_Type {
-    INTERNAL = 0,
-    EXTERNAL = 1,
-    PER_CHUNK = 2,
+pub enum ChunkCompression_CompressionType {
+    NONE = 0,
+    LZMA = 1,
+    ZSTD = 2,
 }
 
-impl ::protobuf::ProtobufEnum for ChunkDataLocation_Type {
+impl ::protobuf::ProtobufEnum for ChunkCompression_CompressionType {
     fn value(&self) -> i32 {
         *self as i32
     }
 
-    fn from_i32(value: i32) -> ::std::option::Option<ChunkDataLocation_Type> {
+    fn from_i32(value: i32) -> ::std::option::Option<ChunkCompression_CompressionType> {
         match value {
-            0 => ::std::option::Option::Some(ChunkDataLocation_Type::INTERNAL),
-            1 => ::std::option::Option::Some(ChunkDataLocation_Type::EXTERNAL),
-            2 => ::std::option::Option::Some(ChunkDataLocation_Type::PER_CHUNK),
+            0 => ::std::option::Option::Some(ChunkCompression_CompressionType::NONE),
+            1 => ::std::option::Option::Some(ChunkCompression_CompressionType::LZMA),
+            2 => ::std::option::Option::Some(ChunkCompression_CompressionType::ZSTD),
             _ => ::std::option::Option::None
         }
     }
 
     fn values() -> &'static [Self] {
-        static values: &'static [ChunkDataLocation_Type] = &[
-            ChunkDataLocation_Type::INTERNAL,
-            ChunkDataLocation_Type::EXTERNAL,
-            ChunkDataLocation_Type::PER_CHUNK,
+        static values: &'static [ChunkCompression_CompressionType] = &[
+            ChunkCompression_CompressionType::NONE,
+            ChunkCompression_CompressionType::LZMA,
+            ChunkCompression_CompressionType::ZSTD,
         ];
         values
     }
@@ -1119,22 +809,22 @@ impl ::protobuf::ProtobufEnum for ChunkDataLocation_Type {
         };
         unsafe {
             descriptor.get(|| {
-                ::protobuf::reflect::EnumDescriptor::new("ChunkDataLocation_Type", file_descriptor_proto())
+                ::protobuf::reflect::EnumDescriptor::new("ChunkCompression_CompressionType", file_descriptor_proto())
             })
         }
     }
 }
 
-impl ::std::marker::Copy for ChunkDataLocation_Type {
+impl ::std::marker::Copy for ChunkCompression_CompressionType {
 }
 
-impl ::std::default::Default for ChunkDataLocation_Type {
+impl ::std::default::Default for ChunkCompression_CompressionType {
     fn default() -> Self {
-        ChunkDataLocation_Type::INTERNAL
+        ChunkCompression_CompressionType::NONE
     }
 }
 
-impl ::protobuf::reflect::ProtobufValue for ChunkDataLocation_Type {
+impl ::protobuf::reflect::ProtobufValue for ChunkCompression_CompressionType {
     fn as_ref(&self) -> ::protobuf::reflect::ProtobufValueRef {
         ::protobuf::reflect::ProtobufValueRef::Enum(self.descriptor())
     }
@@ -1146,8 +836,8 @@ pub struct ChunkDictionary {
     pub application_version: ::std::string::String,
     pub source_checksum: ::std::vec::Vec<u8>,
     pub source_total_size: u64,
-    pub chunk_data_location: ::protobuf::SingularPtrField<ChunkDataLocation>,
     pub chunker_params: ::protobuf::SingularPtrField<ChunkerParameters>,
+    pub chunk_compression: ::protobuf::SingularPtrField<ChunkCompression>,
     pub rebuild_order: ::std::vec::Vec<u32>,
     pub chunk_descriptors: ::protobuf::RepeatedField<ChunkDescriptor>,
     // special fields
@@ -1227,40 +917,7 @@ impl ChunkDictionary {
         self.source_total_size
     }
 
-    // .chunk_dictionary.ChunkDataLocation chunk_data_location = 4;
-
-    pub fn clear_chunk_data_location(&mut self) {
-        self.chunk_data_location.clear();
-    }
-
-    pub fn has_chunk_data_location(&self) -> bool {
-        self.chunk_data_location.is_some()
-    }
-
-    // Param is passed by value, moved
-    pub fn set_chunk_data_location(&mut self, v: ChunkDataLocation) {
-        self.chunk_data_location = ::protobuf::SingularPtrField::some(v);
-    }
-
-    // Mutable pointer to the field.
-    // If field is not initialized, it is initialized with default value first.
-    pub fn mut_chunk_data_location(&mut self) -> &mut ChunkDataLocation {
-        if self.chunk_data_location.is_none() {
-            self.chunk_data_location.set_default();
-        }
-        self.chunk_data_location.as_mut().unwrap()
-    }
-
-    // Take field
-    pub fn take_chunk_data_location(&mut self) -> ChunkDataLocation {
-        self.chunk_data_location.take().unwrap_or_else(|| ChunkDataLocation::new())
-    }
-
-    pub fn get_chunk_data_location(&self) -> &ChunkDataLocation {
-        self.chunk_data_location.as_ref().unwrap_or_else(|| ChunkDataLocation::default_instance())
-    }
-
-    // .chunk_dictionary.ChunkerParameters chunker_params = 5;
+    // .chunk_dictionary.ChunkerParameters chunker_params = 4;
 
     pub fn clear_chunker_params(&mut self) {
         self.chunker_params.clear();
@@ -1291,6 +948,39 @@ impl ChunkDictionary {
 
     pub fn get_chunker_params(&self) -> &ChunkerParameters {
         self.chunker_params.as_ref().unwrap_or_else(|| ChunkerParameters::default_instance())
+    }
+
+    // .chunk_dictionary.ChunkCompression chunk_compression = 5;
+
+    pub fn clear_chunk_compression(&mut self) {
+        self.chunk_compression.clear();
+    }
+
+    pub fn has_chunk_compression(&self) -> bool {
+        self.chunk_compression.is_some()
+    }
+
+    // Param is passed by value, moved
+    pub fn set_chunk_compression(&mut self, v: ChunkCompression) {
+        self.chunk_compression = ::protobuf::SingularPtrField::some(v);
+    }
+
+    // Mutable pointer to the field.
+    // If field is not initialized, it is initialized with default value first.
+    pub fn mut_chunk_compression(&mut self) -> &mut ChunkCompression {
+        if self.chunk_compression.is_none() {
+            self.chunk_compression.set_default();
+        }
+        self.chunk_compression.as_mut().unwrap()
+    }
+
+    // Take field
+    pub fn take_chunk_compression(&mut self) -> ChunkCompression {
+        self.chunk_compression.take().unwrap_or_else(|| ChunkCompression::new())
+    }
+
+    pub fn get_chunk_compression(&self) -> &ChunkCompression {
+        self.chunk_compression.as_ref().unwrap_or_else(|| ChunkCompression::default_instance())
     }
 
     // repeated uint32 rebuild_order = 6;
@@ -1346,12 +1036,12 @@ impl ChunkDictionary {
 
 impl ::protobuf::Message for ChunkDictionary {
     fn is_initialized(&self) -> bool {
-        for v in &self.chunk_data_location {
+        for v in &self.chunker_params {
             if !v.is_initialized() {
                 return false;
             }
         };
-        for v in &self.chunker_params {
+        for v in &self.chunk_compression {
             if !v.is_initialized() {
                 return false;
             }
@@ -1382,10 +1072,10 @@ impl ::protobuf::Message for ChunkDictionary {
                     self.source_total_size = tmp;
                 },
                 4 => {
-                    ::protobuf::rt::read_singular_message_into(wire_type, is, &mut self.chunk_data_location)?;
+                    ::protobuf::rt::read_singular_message_into(wire_type, is, &mut self.chunker_params)?;
                 },
                 5 => {
-                    ::protobuf::rt::read_singular_message_into(wire_type, is, &mut self.chunker_params)?;
+                    ::protobuf::rt::read_singular_message_into(wire_type, is, &mut self.chunk_compression)?;
                 },
                 6 => {
                     ::protobuf::rt::read_repeated_uint32_into(wire_type, is, &mut self.rebuild_order)?;
@@ -1414,11 +1104,11 @@ impl ::protobuf::Message for ChunkDictionary {
         if self.source_total_size != 0 {
             my_size += ::protobuf::rt::value_size(3, self.source_total_size, ::protobuf::wire_format::WireTypeVarint);
         }
-        if let Some(ref v) = self.chunk_data_location.as_ref() {
+        if let Some(ref v) = self.chunker_params.as_ref() {
             let len = v.compute_size();
             my_size += 1 + ::protobuf::rt::compute_raw_varint32_size(len) + len;
         }
-        if let Some(ref v) = self.chunker_params.as_ref() {
+        if let Some(ref v) = self.chunk_compression.as_ref() {
             let len = v.compute_size();
             my_size += 1 + ::protobuf::rt::compute_raw_varint32_size(len) + len;
         }
@@ -1444,12 +1134,12 @@ impl ::protobuf::Message for ChunkDictionary {
         if self.source_total_size != 0 {
             os.write_uint64(3, self.source_total_size)?;
         }
-        if let Some(ref v) = self.chunk_data_location.as_ref() {
+        if let Some(ref v) = self.chunker_params.as_ref() {
             os.write_tag(4, ::protobuf::wire_format::WireTypeLengthDelimited)?;
             os.write_raw_varint32(v.get_cached_size())?;
             v.write_to_with_cached_sizes(os)?;
         }
-        if let Some(ref v) = self.chunker_params.as_ref() {
+        if let Some(ref v) = self.chunk_compression.as_ref() {
             os.write_tag(5, ::protobuf::wire_format::WireTypeLengthDelimited)?;
             os.write_raw_varint32(v.get_cached_size())?;
             v.write_to_with_cached_sizes(os)?;
@@ -1519,15 +1209,15 @@ impl ::protobuf::Message for ChunkDictionary {
                     |m: &ChunkDictionary| { &m.source_total_size },
                     |m: &mut ChunkDictionary| { &mut m.source_total_size },
                 ));
-                fields.push(::protobuf::reflect::accessor::make_singular_ptr_field_accessor::<_, ::protobuf::types::ProtobufTypeMessage<ChunkDataLocation>>(
-                    "chunk_data_location",
-                    |m: &ChunkDictionary| { &m.chunk_data_location },
-                    |m: &mut ChunkDictionary| { &mut m.chunk_data_location },
-                ));
                 fields.push(::protobuf::reflect::accessor::make_singular_ptr_field_accessor::<_, ::protobuf::types::ProtobufTypeMessage<ChunkerParameters>>(
                     "chunker_params",
                     |m: &ChunkDictionary| { &m.chunker_params },
                     |m: &mut ChunkDictionary| { &mut m.chunker_params },
+                ));
+                fields.push(::protobuf::reflect::accessor::make_singular_ptr_field_accessor::<_, ::protobuf::types::ProtobufTypeMessage<ChunkCompression>>(
+                    "chunk_compression",
+                    |m: &ChunkDictionary| { &m.chunk_compression },
+                    |m: &mut ChunkDictionary| { &mut m.chunk_compression },
                 ));
                 fields.push(::protobuf::reflect::accessor::make_vec_accessor::<_, ::protobuf::types::ProtobufTypeUint32>(
                     "rebuild_order",
@@ -1564,8 +1254,8 @@ impl ::protobuf::Clear for ChunkDictionary {
         self.clear_application_version();
         self.clear_source_checksum();
         self.clear_source_total_size();
-        self.clear_chunk_data_location();
         self.clear_chunker_params();
+        self.clear_chunk_compression();
         self.clear_rebuild_order();
         self.clear_chunk_descriptors();
         self.unknown_fields.clear();
@@ -1585,141 +1275,115 @@ impl ::protobuf::reflect::ProtobufValue for ChunkDictionary {
 }
 
 static file_descriptor_proto_data: &'static [u8] = b"\
-    \n\x1cproto/chunk_dictionary.proto\x12\x10chunk_dictionary\"\xc6\x01\n\
-    \x10ChunkCompression\x12T\n\x0bcompression\x18\x02\x20\x01(\x0e22.chunk_\
-    dictionary.ChunkCompression.CompressionTypeR\x0bcompression\x12+\n\x11co\
-    mpression_level\x18\x03\x20\x01(\rR\x10compressionLevel\"/\n\x0fCompress\
-    ionType\x12\x08\n\x04NONE\x10\0\x12\x08\n\x04LZMA\x10\x01\x12\x08\n\x04Z\
-    STD\x10\x02\"\xde\x01\n\x0fChunkDescriptor\x12\x1a\n\x08checksum\x18\x01\
-    \x20\x01(\x0cR\x08checksum\x12D\n\x0bcompression\x18\x02\x20\x01(\x0b2\"\
-    .chunk_dictionary.ChunkCompressionR\x0bcompression\x12!\n\x0carchive_siz\
-    e\x18\x03\x20\x01(\x04R\x0barchiveSize\x12%\n\x0earchive_offset\x18\x04\
-    \x20\x01(\x04R\rarchiveOffset\x12\x1f\n\x0bsource_size\x18\x05\x20\x01(\
-    \x04R\nsourceSize\"\xe1\x01\n\x11ChunkerParameters\x12*\n\x11chunk_filte\
-    r_bits\x18\x01\x20\x01(\rR\x0fchunkFilterBits\x12$\n\x0emin_chunk_size\
-    \x18\x02\x20\x01(\x04R\x0cminChunkSize\x12$\n\x0emax_chunk_size\x18\x03\
-    \x20\x01(\x04R\x0cmaxChunkSize\x12(\n\x10hash_window_size\x18\x04\x20\
-    \x01(\rR\x0ehashWindowSize\x12*\n\x11chunk_hash_length\x18\x05\x20\x01(\
-    \rR\x0fchunkHashLength\"\xba\x01\n\x11ChunkDataLocation\x12M\n\rlocation\
-    _type\x18\x01\x20\x01(\x0e2(.chunk_dictionary.ChunkDataLocation.TypeR\
-    \x0clocationType\x12#\n\rlocation_path\x18\x02\x20\x01(\tR\x0clocationPa\
-    th\"1\n\x04Type\x12\x0c\n\x08INTERNAL\x10\0\x12\x0c\n\x08EXTERNAL\x10\
-    \x01\x12\r\n\tPER_CHUNK\x10\x02\"\xad\x03\n\x0fChunkDictionary\x12/\n\
-    \x13application_version\x18\x01\x20\x01(\tR\x12applicationVersion\x12'\n\
-    \x0fsource_checksum\x18\x02\x20\x01(\x0cR\x0esourceChecksum\x12*\n\x11so\
-    urce_total_size\x18\x03\x20\x01(\x04R\x0fsourceTotalSize\x12S\n\x13chunk\
-    _data_location\x18\x04\x20\x01(\x0b2#.chunk_dictionary.ChunkDataLocation\
-    R\x11chunkDataLocation\x12J\n\x0echunker_params\x18\x05\x20\x01(\x0b2#.c\
-    hunk_dictionary.ChunkerParametersR\rchunkerParams\x12#\n\rrebuild_order\
-    \x18\x06\x20\x03(\rR\x0crebuildOrder\x12N\n\x11chunk_descriptors\x18\x07\
-    \x20\x03(\x0b2!.chunk_dictionary.ChunkDescriptorR\x10chunkDescriptorsJ\
-    \xb8\x14\n\x06\x12\x04\0\0O\x01\n\x08\n\x01\x0c\x12\x03\0\0\x12\n\x08\n\
-    \x01\x02\x12\x03\x02\x08\x18\n\n\n\x02\x04\0\x12\x04\x04\0\r\x01\n\n\n\
-    \x03\x04\0\x01\x12\x03\x04\x08\x18\n\x0c\n\x04\x04\0\x04\0\x12\x04\x06\
-    \x04\n\x05\n\x0c\n\x05\x04\0\x04\0\x01\x12\x03\x06\t\x18\n\r\n\x06\x04\0\
-    \x04\0\x02\0\x12\x03\x07\x08\x11\n\x0e\n\x07\x04\0\x04\0\x02\0\x01\x12\
-    \x03\x07\x08\x0c\n\x0e\n\x07\x04\0\x04\0\x02\0\x02\x12\x03\x07\x0f\x10\n\
-    \r\n\x06\x04\0\x04\0\x02\x01\x12\x03\x08\x08\x11\n\x0e\n\x07\x04\0\x04\0\
-    \x02\x01\x01\x12\x03\x08\x08\x0c\n\x0e\n\x07\x04\0\x04\0\x02\x01\x02\x12\
-    \x03\x08\x0f\x10\n\r\n\x06\x04\0\x04\0\x02\x02\x12\x03\t\x08\x11\n\x0e\n\
-    \x07\x04\0\x04\0\x02\x02\x01\x12\x03\t\x08\x0c\n\x0e\n\x07\x04\0\x04\0\
-    \x02\x02\x02\x12\x03\t\x0f\x10\n\x0b\n\x04\x04\0\x02\0\x12\x03\x0b\x04$\
-    \n\r\n\x05\x04\0\x02\0\x04\x12\x04\x0b\x04\n\x05\n\x0c\n\x05\x04\0\x02\0\
-    \x06\x12\x03\x0b\x04\x13\n\x0c\n\x05\x04\0\x02\0\x01\x12\x03\x0b\x14\x1f\
-    \n\x0c\n\x05\x04\0\x02\0\x03\x12\x03\x0b\"#\n\x0b\n\x04\x04\0\x02\x01\
-    \x12\x03\x0c\x04!\n\r\n\x05\x04\0\x02\x01\x04\x12\x04\x0c\x04\x0b$\n\x0c\
-    \n\x05\x04\0\x02\x01\x05\x12\x03\x0c\x04\n\n\x0c\n\x05\x04\0\x02\x01\x01\
-    \x12\x03\x0c\x0b\x1c\n\x0c\n\x05\x04\0\x02\x01\x03\x12\x03\x0c\x1f\x20\n\
-    \n\n\x02\x04\x01\x12\x04\x0f\0\x1d\x01\n\n\n\x03\x04\x01\x01\x12\x03\x0f\
-    \x08\x17\n+\n\x04\x04\x01\x02\0\x12\x03\x12\x04\x17\x1a\x1e\x20Hash\x20o\
-    f\x20(uncompressed)\x20chunk\n\n\r\n\x05\x04\x01\x02\0\x04\x12\x04\x12\
-    \x04\x10\x01\n\x0c\n\x05\x04\x01\x02\0\x05\x12\x03\x12\x04\t\n\x0c\n\x05\
-    \x04\x01\x02\0\x01\x12\x03\x12\n\x12\n\x0c\n\x05\x04\x01\x02\0\x03\x12\
-    \x03\x12\x15\x16\n=\n\x04\x04\x01\x02\x01\x12\x03\x15\x04%\x1a0\x20Archi\
-    ve\x20chunk\x20data\x20compression\x20type\x20and\x20level.\n\n\r\n\x05\
-    \x04\x01\x02\x01\x04\x12\x04\x15\x04\x12\x17\n\x0c\n\x05\x04\x01\x02\x01\
-    \x06\x12\x03\x15\x04\x14\n\x0c\n\x05\x04\x01\x02\x01\x01\x12\x03\x15\x15\
-    \x20\n\x0c\n\x05\x04\x01\x02\x01\x03\x12\x03\x15#$\n/\n\x04\x04\x01\x02\
-    \x02\x12\x03\x18\x04\x1c\x1a\"\x20Chunk\x20data\x20placement\x20in\x20ar\
-    chive.\n\n\r\n\x05\x04\x01\x02\x02\x04\x12\x04\x18\x04\x15%\n\x0c\n\x05\
-    \x04\x01\x02\x02\x05\x12\x03\x18\x04\n\n\x0c\n\x05\x04\x01\x02\x02\x01\
-    \x12\x03\x18\x0b\x17\n\x0c\n\x05\x04\x01\x02\x02\x03\x12\x03\x18\x1a\x1b\
-    \n\x0b\n\x04\x04\x01\x02\x03\x12\x03\x19\x04\x1e\n\r\n\x05\x04\x01\x02\
-    \x03\x04\x12\x04\x19\x04\x18\x1c\n\x0c\n\x05\x04\x01\x02\x03\x05\x12\x03\
-    \x19\x04\n\n\x0c\n\x05\x04\x01\x02\x03\x01\x12\x03\x19\x0b\x19\n\x0c\n\
-    \x05\x04\x01\x02\x03\x03\x12\x03\x19\x1c\x1d\n.\n\x04\x04\x01\x02\x04\
-    \x12\x03\x1c\x04\x1b\x1a!\x20Size\x20of\x20uncompressed\x20chunk\x20data\
-    \n\n\r\n\x05\x04\x01\x02\x04\x04\x12\x04\x1c\x04\x19\x1e\n\x0c\n\x05\x04\
-    \x01\x02\x04\x05\x12\x03\x1c\x04\n\n\x0c\n\x05\x04\x01\x02\x04\x01\x12\
-    \x03\x1c\x0b\x16\n\x0c\n\x05\x04\x01\x02\x04\x03\x12\x03\x1c\x19\x1a\n\n\
-    \n\x02\x04\x02\x12\x04\x1f\0&\x01\n\n\n\x03\x04\x02\x01\x12\x03\x1f\x08\
-    \x19\n\x0b\n\x04\x04\x02\x02\0\x12\x03!\x04!\n\r\n\x05\x04\x02\x02\0\x04\
-    \x12\x04!\x04\x20\x01\n\x0c\n\x05\x04\x02\x02\0\x05\x12\x03!\x04\n\n\x0c\
-    \n\x05\x04\x02\x02\0\x01\x12\x03!\x0b\x1c\n\x0c\n\x05\x04\x02\x02\0\x03\
-    \x12\x03!\x1f\x20\n\x0b\n\x04\x04\x02\x02\x01\x12\x03\"\x04\x1e\n\r\n\
-    \x05\x04\x02\x02\x01\x04\x12\x04\"\x04!!\n\x0c\n\x05\x04\x02\x02\x01\x05\
-    \x12\x03\"\x04\n\n\x0c\n\x05\x04\x02\x02\x01\x01\x12\x03\"\x0b\x19\n\x0c\
-    \n\x05\x04\x02\x02\x01\x03\x12\x03\"\x1c\x1d\n\x0b\n\x04\x04\x02\x02\x02\
-    \x12\x03#\x04\x1e\n\r\n\x05\x04\x02\x02\x02\x04\x12\x04#\x04\"\x1e\n\x0c\
-    \n\x05\x04\x02\x02\x02\x05\x12\x03#\x04\n\n\x0c\n\x05\x04\x02\x02\x02\
-    \x01\x12\x03#\x0b\x19\n\x0c\n\x05\x04\x02\x02\x02\x03\x12\x03#\x1c\x1d\n\
-    \x0b\n\x04\x04\x02\x02\x03\x12\x03$\x04\x20\n\r\n\x05\x04\x02\x02\x03\
-    \x04\x12\x04$\x04#\x1e\n\x0c\n\x05\x04\x02\x02\x03\x05\x12\x03$\x04\n\n\
-    \x0c\n\x05\x04\x02\x02\x03\x01\x12\x03$\x0b\x1b\n\x0c\n\x05\x04\x02\x02\
-    \x03\x03\x12\x03$\x1e\x1f\n\x0b\n\x04\x04\x02\x02\x04\x12\x03%\x04!\n\r\
-    \n\x05\x04\x02\x02\x04\x04\x12\x04%\x04$\x20\n\x0c\n\x05\x04\x02\x02\x04\
-    \x05\x12\x03%\x04\n\n\x0c\n\x05\x04\x02\x02\x04\x01\x12\x03%\x0b\x1c\n\
-    \x0c\n\x05\x04\x02\x02\x04\x03\x12\x03%\x1f\x20\n\n\n\x02\x04\x03\x12\
-    \x04(\07\x01\n\n\n\x03\x04\x03\x01\x12\x03(\x08\x19\n\x0c\n\x04\x04\x03\
-    \x04\0\x12\x04)\x042\x05\n\x0c\n\x05\x04\x03\x04\0\x01\x12\x03)\t\r\n-\n\
-    \x06\x04\x03\x04\0\x02\0\x12\x03+\x08\x15\x1a\x1e\x20Chunk\x20data\x20is\
-    \x20inside\x20archive\n\n\x0e\n\x07\x04\x03\x04\0\x02\0\x01\x12\x03+\x08\
-    \x10\n\x0e\n\x07\x04\x03\x04\0\x02\0\x02\x12\x03+\x13\x14\n2\n\x06\x04\
-    \x03\x04\0\x02\x01\x12\x03.\x08\x15\x1a#\x20Chunk\x20data\x20lives\x20in\
-    \x20external\x20file\n\n\x0e\n\x07\x04\x03\x04\0\x02\x01\x01\x12\x03.\
-    \x08\x10\n\x0e\n\x07\x04\x03\x04\0\x02\x01\x02\x12\x03.\x13\x14\nT\n\x06\
-    \x04\x03\x04\0\x02\x02\x12\x031\x08\x16\x1aE\x20Each\x20chunk\x20is\x20i\
-    n\x20a\x20separate\x20file\x20with\x20file\x20name\x20based\x20on\x20chu\
-    nk\x20hash\n\n\x0e\n\x07\x04\x03\x04\0\x02\x02\x01\x12\x031\x08\x11\n\
-    \x0e\n\x07\x04\x03\x04\0\x02\x02\x02\x12\x031\x14\x15\n\x0b\n\x04\x04\
-    \x03\x02\0\x12\x033\x04\x1b\n\r\n\x05\x04\x03\x02\0\x04\x12\x043\x042\
-    \x05\n\x0c\n\x05\x04\x03\x02\0\x06\x12\x033\x04\x08\n\x0c\n\x05\x04\x03\
-    \x02\0\x01\x12\x033\t\x16\n\x0c\n\x05\x04\x03\x02\0\x03\x12\x033\x19\x1a\
-    \n@\n\x04\x04\x03\x02\x01\x12\x036\x04\x1d\x1a3\x20Path\x20to\x20be\x20u\
-    sed\x20if\x20chunks\x20are\x20external\x20to\x20archive\n\n\r\n\x05\x04\
-    \x03\x02\x01\x04\x12\x046\x043\x1b\n\x0c\n\x05\x04\x03\x02\x01\x05\x12\
-    \x036\x04\n\n\x0c\n\x05\x04\x03\x02\x01\x01\x12\x036\x0b\x18\n\x0c\n\x05\
-    \x04\x03\x02\x01\x03\x12\x036\x1b\x1c\n\n\n\x02\x04\x04\x12\x049\0O\x01\
-    \n\n\n\x03\x04\x04\x01\x12\x039\x08\x17\n7\n\x04\x04\x04\x02\0\x12\x03<\
-    \x04#\x1a*\x20Dictionary\x20was\x20created\x20with\x20this\x20version\n\
-    \n\r\n\x05\x04\x04\x02\0\x04\x12\x04<\x04:\x01\n\x0c\n\x05\x04\x04\x02\0\
-    \x05\x12\x03<\x04\n\n\x0c\n\x05\x04\x04\x02\0\x01\x12\x03<\x0b\x1e\n\x0c\
-    \n\x05\x04\x04\x02\0\x03\x12\x03<!\"\n&\n\x04\x04\x04\x02\x01\x12\x03?\
-    \x04\x1e\x1a\x19\x20Hash\x20of\x20the\x20source\x20file\n\n\r\n\x05\x04\
-    \x04\x02\x01\x04\x12\x04?\x04<#\n\x0c\n\x05\x04\x04\x02\x01\x05\x12\x03?\
-    \x04\t\n\x0c\n\x05\x04\x04\x02\x01\x01\x12\x03?\n\x19\n\x0c\n\x05\x04\
-    \x04\x02\x01\x03\x12\x03?\x1c\x1d\n,\n\x04\x04\x04\x02\x02\x12\x03B\x04!\
-    \x1a\x1f\x20Total\x20size\x20of\x20the\x20source\x20file\n\n\r\n\x05\x04\
-    \x04\x02\x02\x04\x12\x04B\x04?\x1e\n\x0c\n\x05\x04\x04\x02\x02\x05\x12\
-    \x03B\x04\n\n\x0c\n\x05\x04\x04\x02\x02\x01\x12\x03B\x0b\x1c\n\x0c\n\x05\
-    \x04\x04\x02\x02\x03\x12\x03B\x1f\x20\n%\n\x04\x04\x04\x02\x03\x12\x03E\
-    \x04.\x1a\x18\x20Where\x20chunk\x20data\x20lives\n\n\r\n\x05\x04\x04\x02\
-    \x03\x04\x12\x04E\x04B!\n\x0c\n\x05\x04\x04\x02\x03\x06\x12\x03E\x04\x15\
-    \n\x0c\n\x05\x04\x04\x02\x03\x01\x12\x03E\x16)\n\x0c\n\x05\x04\x04\x02\
-    \x03\x03\x12\x03E,-\n<\n\x04\x04\x04\x02\x04\x12\x03H\x04)\x1a/\x20Chunk\
-    er\x20parameters\x20used\x20when\x20building\x20archive\n\n\r\n\x05\x04\
-    \x04\x02\x04\x04\x12\x04H\x04E.\n\x0c\n\x05\x04\x04\x02\x04\x06\x12\x03H\
-    \x04\x15\n\x0c\n\x05\x04\x04\x02\x04\x01\x12\x03H\x16$\n\x0c\n\x05\x04\
-    \x04\x02\x04\x03\x12\x03H'(\nT\n\x04\x04\x04\x02\x05\x12\x03K\x04&\x1aG\
-    \x20Array\x20of\x20chunk\x20descriptor\x20indexes\x20describing\x20howto\
-    \x20rebuild\x20the\x20source\n\n\x0c\n\x05\x04\x04\x02\x05\x04\x12\x03K\
-    \x04\x0c\n\x0c\n\x05\x04\x04\x02\x05\x05\x12\x03K\r\x13\n\x0c\n\x05\x04\
-    \x04\x02\x05\x01\x12\x03K\x14!\n\x0c\n\x05\x04\x04\x02\x05\x03\x12\x03K$\
-    %\nK\n\x04\x04\x04\x02\x06\x12\x03N\x043\x1a>\x20Chunk\x20descriptors\
-    \x20in\x20order\x20of\x20first\x20occurence\x20in\x20source\x20file\n\n\
-    \x0c\n\x05\x04\x04\x02\x06\x04\x12\x03N\x04\x0c\n\x0c\n\x05\x04\x04\x02\
-    \x06\x06\x12\x03N\r\x1c\n\x0c\n\x05\x04\x04\x02\x06\x01\x12\x03N\x1d.\n\
-    \x0c\n\x05\x04\x04\x02\x06\x03\x12\x03N12b\x06proto3\
+    \n\x1cproto/chunk_dictionary.proto\x12\x10chunk_dictionary\"\x98\x01\n\
+    \x0fChunkDescriptor\x12\x1a\n\x08checksum\x18\x01\x20\x01(\x0cR\x08check\
+    sum\x12!\n\x0carchive_size\x18\x03\x20\x01(\x07R\x0barchiveSize\x12%\n\
+    \x0earchive_offset\x18\x04\x20\x01(\x06R\rarchiveOffset\x12\x1f\n\x0bsou\
+    rce_size\x18\x05\x20\x01(\x07R\nsourceSize\"\xe1\x01\n\x11ChunkerParamet\
+    ers\x12*\n\x11chunk_filter_bits\x18\x01\x20\x01(\rR\x0fchunkFilterBits\
+    \x12$\n\x0emin_chunk_size\x18\x02\x20\x01(\x04R\x0cminChunkSize\x12$\n\
+    \x0emax_chunk_size\x18\x03\x20\x01(\x04R\x0cmaxChunkSize\x12(\n\x10hash_\
+    window_size\x18\x04\x20\x01(\rR\x0ehashWindowSize\x12*\n\x11chunk_hash_l\
+    ength\x18\x05\x20\x01(\rR\x0fchunkHashLength\"\xc6\x01\n\x10ChunkCompres\
+    sion\x12T\n\x0bcompression\x18\x02\x20\x01(\x0e22.chunk_dictionary.Chunk\
+    Compression.CompressionTypeR\x0bcompression\x12+\n\x11compression_level\
+    \x18\x03\x20\x01(\rR\x10compressionLevel\"/\n\x0fCompressionType\x12\x08\
+    \n\x04NONE\x10\0\x12\x08\n\x04LZMA\x10\x01\x12\x08\n\x04ZSTD\x10\x02\"\
+    \xa9\x03\n\x0fChunkDictionary\x12/\n\x13application_version\x18\x01\x20\
+    \x01(\tR\x12applicationVersion\x12'\n\x0fsource_checksum\x18\x02\x20\x01\
+    (\x0cR\x0esourceChecksum\x12*\n\x11source_total_size\x18\x03\x20\x01(\
+    \x04R\x0fsourceTotalSize\x12J\n\x0echunker_params\x18\x04\x20\x01(\x0b2#\
+    .chunk_dictionary.ChunkerParametersR\rchunkerParams\x12O\n\x11chunk_comp\
+    ression\x18\x05\x20\x01(\x0b2\".chunk_dictionary.ChunkCompressionR\x10ch\
+    unkCompression\x12#\n\rrebuild_order\x18\x06\x20\x03(\rR\x0crebuildOrder\
+    \x12N\n\x11chunk_descriptors\x18\x07\x20\x03(\x0b2!.chunk_dictionary.Chu\
+    nkDescriptorR\x10chunkDescriptorsJ\x8e\x10\n\x06\x12\x04\0\0<\x01\n\x08\
+    \n\x01\x0c\x12\x03\0\0\x12\n\x08\n\x01\x02\x12\x03\x02\x08\x18\n\n\n\x02\
+    \x04\0\x12\x04\x04\0\x10\x01\n\n\n\x03\x04\0\x01\x12\x03\x04\x08\x17\n+\
+    \n\x04\x04\0\x02\0\x12\x03\x07\x04\x17\x1a\x1e\x20Hash\x20of\x20(uncompr\
+    essed)\x20chunk\n\n\r\n\x05\x04\0\x02\0\x04\x12\x04\x07\x04\x05\x01\n\
+    \x0c\n\x05\x04\0\x02\0\x05\x12\x03\x07\x04\t\n\x0c\n\x05\x04\0\x02\0\x01\
+    \x12\x03\x07\n\x12\n\x0c\n\x05\x04\0\x02\0\x03\x12\x03\x07\x15\x16\nq\n\
+    \x04\x04\0\x02\x01\x12\x03\x0b\x04\x1d\x1ad\x20Chunk\x20data\x20placemen\
+    t\x20in\x20archive.\n\x20If\x20the\x20archive_size\x20=\x20source_size\
+    \x20then\x20the\x20chunk\x20is\x20uncompresed.\n\n\r\n\x05\x04\0\x02\x01\
+    \x04\x12\x04\x0b\x04\x07\x17\n\x0c\n\x05\x04\0\x02\x01\x05\x12\x03\x0b\
+    \x04\x0b\n\x0c\n\x05\x04\0\x02\x01\x01\x12\x03\x0b\x0c\x18\n\x0c\n\x05\
+    \x04\0\x02\x01\x03\x12\x03\x0b\x1b\x1c\n\x0b\n\x04\x04\0\x02\x02\x12\x03\
+    \x0c\x04\x1f\n\r\n\x05\x04\0\x02\x02\x04\x12\x04\x0c\x04\x0b\x1d\n\x0c\n\
+    \x05\x04\0\x02\x02\x05\x12\x03\x0c\x04\x0b\n\x0c\n\x05\x04\0\x02\x02\x01\
+    \x12\x03\x0c\x0c\x1a\n\x0c\n\x05\x04\0\x02\x02\x03\x12\x03\x0c\x1d\x1e\n\
+    .\n\x04\x04\0\x02\x03\x12\x03\x0f\x04\x1c\x1a!\x20Size\x20of\x20uncompre\
+    ssed\x20chunk\x20data\n\n\r\n\x05\x04\0\x02\x03\x04\x12\x04\x0f\x04\x0c\
+    \x1f\n\x0c\n\x05\x04\0\x02\x03\x05\x12\x03\x0f\x04\x0b\n\x0c\n\x05\x04\0\
+    \x02\x03\x01\x12\x03\x0f\x0c\x17\n\x0c\n\x05\x04\0\x02\x03\x03\x12\x03\
+    \x0f\x1a\x1b\n\n\n\x02\x04\x01\x12\x04\x12\0\x19\x01\n\n\n\x03\x04\x01\
+    \x01\x12\x03\x12\x08\x19\n\x0b\n\x04\x04\x01\x02\0\x12\x03\x14\x04!\n\r\
+    \n\x05\x04\x01\x02\0\x04\x12\x04\x14\x04\x13\x01\n\x0c\n\x05\x04\x01\x02\
+    \0\x05\x12\x03\x14\x04\n\n\x0c\n\x05\x04\x01\x02\0\x01\x12\x03\x14\x0b\
+    \x1c\n\x0c\n\x05\x04\x01\x02\0\x03\x12\x03\x14\x1f\x20\n\x0b\n\x04\x04\
+    \x01\x02\x01\x12\x03\x15\x04\x1e\n\r\n\x05\x04\x01\x02\x01\x04\x12\x04\
+    \x15\x04\x14!\n\x0c\n\x05\x04\x01\x02\x01\x05\x12\x03\x15\x04\n\n\x0c\n\
+    \x05\x04\x01\x02\x01\x01\x12\x03\x15\x0b\x19\n\x0c\n\x05\x04\x01\x02\x01\
+    \x03\x12\x03\x15\x1c\x1d\n\x0b\n\x04\x04\x01\x02\x02\x12\x03\x16\x04\x1e\
+    \n\r\n\x05\x04\x01\x02\x02\x04\x12\x04\x16\x04\x15\x1e\n\x0c\n\x05\x04\
+    \x01\x02\x02\x05\x12\x03\x16\x04\n\n\x0c\n\x05\x04\x01\x02\x02\x01\x12\
+    \x03\x16\x0b\x19\n\x0c\n\x05\x04\x01\x02\x02\x03\x12\x03\x16\x1c\x1d\n\
+    \x0b\n\x04\x04\x01\x02\x03\x12\x03\x17\x04\x20\n\r\n\x05\x04\x01\x02\x03\
+    \x04\x12\x04\x17\x04\x16\x1e\n\x0c\n\x05\x04\x01\x02\x03\x05\x12\x03\x17\
+    \x04\n\n\x0c\n\x05\x04\x01\x02\x03\x01\x12\x03\x17\x0b\x1b\n\x0c\n\x05\
+    \x04\x01\x02\x03\x03\x12\x03\x17\x1e\x1f\n\x0b\n\x04\x04\x01\x02\x04\x12\
+    \x03\x18\x04!\n\r\n\x05\x04\x01\x02\x04\x04\x12\x04\x18\x04\x17\x20\n\
+    \x0c\n\x05\x04\x01\x02\x04\x05\x12\x03\x18\x04\n\n\x0c\n\x05\x04\x01\x02\
+    \x04\x01\x12\x03\x18\x0b\x1c\n\x0c\n\x05\x04\x01\x02\x04\x03\x12\x03\x18\
+    \x1f\x20\n\n\n\x02\x04\x02\x12\x04\x1b\0$\x01\n\n\n\x03\x04\x02\x01\x12\
+    \x03\x1b\x08\x18\n\x0c\n\x04\x04\x02\x04\0\x12\x04\x1d\x04!\x05\n\x0c\n\
+    \x05\x04\x02\x04\0\x01\x12\x03\x1d\t\x18\n\r\n\x06\x04\x02\x04\0\x02\0\
+    \x12\x03\x1e\x08\x11\n\x0e\n\x07\x04\x02\x04\0\x02\0\x01\x12\x03\x1e\x08\
+    \x0c\n\x0e\n\x07\x04\x02\x04\0\x02\0\x02\x12\x03\x1e\x0f\x10\n\r\n\x06\
+    \x04\x02\x04\0\x02\x01\x12\x03\x1f\x08\x11\n\x0e\n\x07\x04\x02\x04\0\x02\
+    \x01\x01\x12\x03\x1f\x08\x0c\n\x0e\n\x07\x04\x02\x04\0\x02\x01\x02\x12\
+    \x03\x1f\x0f\x10\n\r\n\x06\x04\x02\x04\0\x02\x02\x12\x03\x20\x08\x11\n\
+    \x0e\n\x07\x04\x02\x04\0\x02\x02\x01\x12\x03\x20\x08\x0c\n\x0e\n\x07\x04\
+    \x02\x04\0\x02\x02\x02\x12\x03\x20\x0f\x10\n\x0b\n\x04\x04\x02\x02\0\x12\
+    \x03\"\x04$\n\r\n\x05\x04\x02\x02\0\x04\x12\x04\"\x04!\x05\n\x0c\n\x05\
+    \x04\x02\x02\0\x06\x12\x03\"\x04\x13\n\x0c\n\x05\x04\x02\x02\0\x01\x12\
+    \x03\"\x14\x1f\n\x0c\n\x05\x04\x02\x02\0\x03\x12\x03\"\"#\n\x0b\n\x04\
+    \x04\x02\x02\x01\x12\x03#\x04!\n\r\n\x05\x04\x02\x02\x01\x04\x12\x04#\
+    \x04\"$\n\x0c\n\x05\x04\x02\x02\x01\x05\x12\x03#\x04\n\n\x0c\n\x05\x04\
+    \x02\x02\x01\x01\x12\x03#\x0b\x1c\n\x0c\n\x05\x04\x02\x02\x01\x03\x12\
+    \x03#\x1f\x20\n\n\n\x02\x04\x03\x12\x04&\0<\x01\n\n\n\x03\x04\x03\x01\
+    \x12\x03&\x08\x17\n7\n\x04\x04\x03\x02\0\x12\x03)\x04#\x1a*\x20Dictionar\
+    y\x20was\x20created\x20with\x20this\x20version\n\n\r\n\x05\x04\x03\x02\0\
+    \x04\x12\x04)\x04'\x01\n\x0c\n\x05\x04\x03\x02\0\x05\x12\x03)\x04\n\n\
+    \x0c\n\x05\x04\x03\x02\0\x01\x12\x03)\x0b\x1e\n\x0c\n\x05\x04\x03\x02\0\
+    \x03\x12\x03)!\"\n&\n\x04\x04\x03\x02\x01\x12\x03,\x04\x1e\x1a\x19\x20Ha\
+    sh\x20of\x20the\x20source\x20file\n\n\r\n\x05\x04\x03\x02\x01\x04\x12\
+    \x04,\x04)#\n\x0c\n\x05\x04\x03\x02\x01\x05\x12\x03,\x04\t\n\x0c\n\x05\
+    \x04\x03\x02\x01\x01\x12\x03,\n\x19\n\x0c\n\x05\x04\x03\x02\x01\x03\x12\
+    \x03,\x1c\x1d\n,\n\x04\x04\x03\x02\x02\x12\x03/\x04!\x1a\x1f\x20Total\
+    \x20size\x20of\x20the\x20source\x20file\n\n\r\n\x05\x04\x03\x02\x02\x04\
+    \x12\x04/\x04,\x1e\n\x0c\n\x05\x04\x03\x02\x02\x05\x12\x03/\x04\n\n\x0c\
+    \n\x05\x04\x03\x02\x02\x01\x12\x03/\x0b\x1c\n\x0c\n\x05\x04\x03\x02\x02\
+    \x03\x12\x03/\x1f\x20\n<\n\x04\x04\x03\x02\x03\x12\x032\x04)\x1a/\x20Chu\
+    nker\x20parameters\x20used\x20when\x20building\x20archive\n\n\r\n\x05\
+    \x04\x03\x02\x03\x04\x12\x042\x04/!\n\x0c\n\x05\x04\x03\x02\x03\x06\x12\
+    \x032\x04\x15\n\x0c\n\x05\x04\x03\x02\x03\x01\x12\x032\x16$\n\x0c\n\x05\
+    \x04\x03\x02\x03\x03\x12\x032'(\n?\n\x04\x04\x03\x02\x04\x12\x035\x04+\
+    \x1a2\x20Chunk\x20compression\x20used\x20for\x20all\x20chunks\x20in\x20a\
+    rchive\n\n\r\n\x05\x04\x03\x02\x04\x04\x12\x045\x042)\n\x0c\n\x05\x04\
+    \x03\x02\x04\x06\x12\x035\x04\x14\n\x0c\n\x05\x04\x03\x02\x04\x01\x12\
+    \x035\x15&\n\x0c\n\x05\x04\x03\x02\x04\x03\x12\x035)*\nT\n\x04\x04\x03\
+    \x02\x05\x12\x038\x04&\x1aG\x20Array\x20of\x20chunk\x20descriptor\x20ind\
+    exes\x20describing\x20howto\x20rebuild\x20the\x20source\n\n\x0c\n\x05\
+    \x04\x03\x02\x05\x04\x12\x038\x04\x0c\n\x0c\n\x05\x04\x03\x02\x05\x05\
+    \x12\x038\r\x13\n\x0c\n\x05\x04\x03\x02\x05\x01\x12\x038\x14!\n\x0c\n\
+    \x05\x04\x03\x02\x05\x03\x12\x038$%\nK\n\x04\x04\x03\x02\x06\x12\x03;\
+    \x043\x1a>\x20Chunk\x20descriptors\x20in\x20order\x20of\x20first\x20occu\
+    rence\x20in\x20source\x20file\n\n\x0c\n\x05\x04\x03\x02\x06\x04\x12\x03;\
+    \x04\x0c\n\x0c\n\x05\x04\x03\x02\x06\x06\x12\x03;\r\x1c\n\x0c\n\x05\x04\
+    \x03\x02\x06\x01\x12\x03;\x1d.\n\x0c\n\x05\x04\x03\x02\x06\x03\x12\x03;1\
+    2b\x06proto3\
 ";
 
 static mut file_descriptor_proto_lazy: ::protobuf::lazy::Lazy<::protobuf::descriptor::FileDescriptorProto> = ::protobuf::lazy::Lazy {

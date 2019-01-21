@@ -13,7 +13,6 @@ use crate::buzhash::BuzHash;
 use crate::chunk_dictionary;
 use crate::chunker::*;
 use crate::chunker_utils::*;
-use crate::compression::Compression;
 use crate::config::CompressConfig;
 use crate::errors::*;
 
@@ -60,45 +59,43 @@ fn chunk_into_file(
     {
         let process_chunk = |comp_chunk: CompressedChunk| {
             // For each unique and compressed chunk
-            let chunk_data;
             let hash = &comp_chunk.hash[0..config.hash_length as usize];
-            let use_compression = if comp_chunk.cdata.len() < comp_chunk.data.len() {
-                // Use the compressed data
-                chunk_data = &comp_chunk.cdata;
-                config.compression
+
+            let store_data = if comp_chunk.cdata.len() > comp_chunk.data.len() {
+                &comp_chunk.data
+            /*println!(
+                "Wasted {} bytes by compressing chunk",
+                comp_chunk.cdata.len() - comp_chunk.data.len()
+            );*/
             } else {
-                // Compressed chunk bigger than raw - Use raw
-                chunk_data = &comp_chunk.data;
-                Compression::None
+                &comp_chunk.cdata
             };
 
             println!(
-                "Chunk {}, '{}', offset: {}, size: {}, compressed to: {}, compression: {}",
+                "Chunk {}, '{}', offset: {}, size: {}, compressed to: {}",
                 total_unique_chunks,
                 HexSlice::new(&hash),
                 comp_chunk.offset,
                 size_to_str(comp_chunk.data.len()),
-                size_to_str(comp_chunk.cdata.len()),
-                use_compression
+                size_to_str(store_data.len()),
             );
 
             total_unique_chunks += 1;
             total_unique_chunk_size += comp_chunk.data.len();
-            total_compressed_size += chunk_data.len();
+            total_compressed_size += store_data.len();
 
             // Store a chunk descriptor which referes to the compressed data
             chunk_descriptors.push(chunk_dictionary::ChunkDescriptor {
                 checksum: hash.to_vec(),
-                source_size: comp_chunk.data.len() as u64,
+                source_size: comp_chunk.data.len() as u32,
                 archive_offset,
-                archive_size: chunk_data.len() as u64,
-                compression: protobuf::SingularPtrField::from_option(Some(use_compression.into())),
+                archive_size: store_data.len() as u32,
                 unknown_fields: std::default::Default::default(),
                 cached_size: std::default::Default::default(),
             });
 
-            chunk_file.write_all(chunk_data).expect("write chunk");
-            archive_offset += chunk_data.len() as u64;
+            chunk_file.write_all(store_data).expect("write chunk");
+            archive_offset += store_data.len() as u64;
         };
 
         if let Some(ref input_path) = config.input {
@@ -147,7 +144,7 @@ fn chunk_into_file(
         total_unique_chunks,
         size_to_str(total_unique_chunk_size),
         size_to_str(total_unique_chunk_size / total_unique_chunks),
-        size_to_str(total_compressed_size)
+        size_to_str(total_compressed_size),
     );
 
     Ok(ChunkFileDescriptor {
@@ -193,7 +190,7 @@ pub fn run(config: &CompressConfig, pool: &ThreadPool) -> Result<()> {
         application_version: crate::PKG_VERSION.to_string(),
         chunk_descriptors: RepeatedField::from_vec(chunk_file_descriptor.chunk_descriptors),
         source_checksum: chunk_file_descriptor.file_hash,
-        chunk_data_location: SingularPtrField::none(),
+        chunk_compression: protobuf::SingularPtrField::from_option(Some(config.compression.into())),
         source_total_size: chunk_file_descriptor.total_file_size as u64,
         chunker_params: SingularPtrField::some(chunk_dictionary::ChunkerParameters {
             chunk_filter_bits: config.chunk_filter_bits,

@@ -2,31 +2,18 @@ syntax = "proto3";
 
 package chunk_dictionary;
 
-message ChunkCompression
-{
-    enum CompressionType {
-        NONE = 0;
-        LZMA = 1;
-        ZSTD = 2;
-    }
-    CompressionType compression = 2;
-    uint32 compression_level = 3;
-}
-
 message ChunkDescriptor
 {
     // Hash of (uncompressed) chunk
     bytes checksum = 1;
 
-    // Archive chunk data compression type and level.
-    ChunkCompression compression = 2;
-
     // Chunk data placement in archive.
-    uint64 archive_size = 3;
-    uint64 archive_offset = 4;
+    // If the archive_size = source_size then the chunk is uncompresed.
+    fixed32 archive_size = 3;
+    fixed64 archive_offset = 4;
 
     // Size of uncompressed chunk data
-    uint64 source_size = 5;
+    fixed32 source_size = 5;
 }
 
 message ChunkerParameters
@@ -38,21 +25,15 @@ message ChunkerParameters
     uint32 chunk_hash_length = 5;
 }
 
-message ChunkDataLocation {
-    enum Type {
-        // Chunk data is inside archive
-        INTERNAL = 0;
-
-        // Chunk data lives in external file
-        EXTERNAL = 1;
-
-        // Each chunk is in a separate file with file name based on chunk hash
-        PER_CHUNK = 2;
+message ChunkCompression
+{
+    enum CompressionType {
+        NONE = 0;
+        LZMA = 1;
+        ZSTD = 2;
     }
-    Type location_type = 1;
-
-    // Path to be used if chunks are external to archive
-    string location_path = 2;
+    CompressionType compression = 2;
+    uint32 compression_level = 3;
 }
 
 message ChunkDictionary
@@ -66,11 +47,11 @@ message ChunkDictionary
     // Total size of the source file
     uint64 source_total_size = 3;
 
-    // Where chunk data lives
-    ChunkDataLocation chunk_data_location = 4;
-
     // Chunker parameters used when building archive
-    ChunkerParameters chunker_params = 5;
+    ChunkerParameters chunker_params = 4;
+
+    // Chunk compression used for all chunks in archive
+    ChunkCompression chunk_compression = 5;
 
     // Array of chunk descriptor indexes describing howto rebuild the source
     repeated uint32 rebuild_order = 6;

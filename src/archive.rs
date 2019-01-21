@@ -4,7 +4,6 @@ use blake2::{Blake2b, Digest};
 use std::fmt;
 
 use crate::chunk_dictionary;
-use crate::chunk_dictionary::{ChunkDataLocation, ChunkDataLocation_Type};
 use crate::chunker_utils::HashBuf;
 use crate::compression::Compression;
 use crate::errors::*;
@@ -12,31 +11,18 @@ use crate::string_utils::*;
 
 pub struct ChunkDescriptor {
     pub checksum: HashBuf,
-    pub compression: Compression,
-    pub archive_size: u64,
+    pub archive_size: u32,
     pub archive_offset: u64,
-    pub source_size: u64,
+    pub source_size: u32,
 }
 
 impl From<chunk_dictionary::ChunkDescriptor> for ChunkDescriptor {
     fn from(dict: chunk_dictionary::ChunkDescriptor) -> Self {
-        let compression = dict.get_compression().clone();
         ChunkDescriptor {
             checksum: dict.checksum,
-            compression: compression.into(),
             archive_size: dict.archive_size,
             archive_offset: dict.archive_offset,
             source_size: dict.source_size,
-        }
-    }
-}
-
-impl fmt::Display for ChunkDataLocation {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.location_type {
-            ChunkDataLocation_Type::INTERNAL => write!(f, "internal"),
-            ChunkDataLocation_Type::EXTERNAL => write!(f, "external ({})", self.location_path),
-            ChunkDataLocation_Type::PER_CHUNK => write!(f, "chunkvise"),
         }
     }
 }
@@ -45,12 +31,12 @@ impl fmt::Display for chunk_dictionary::ChunkDictionary {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "version: {}, chunks: {}, source hash: {}, source size: {}, data location: {}",
+            "version: {}, chunks: {}, source hash: {}, source size: {}, compression: {}",
             self.application_version,
             self.chunk_descriptors.len(),
             HexSlice::new(&self.source_checksum),
             size_to_str(self.source_total_size),
-            self.get_chunk_data_location()
+            Compression::from(self.get_chunk_compression().clone())
         )
     }
 }
@@ -77,20 +63,6 @@ pub fn vec_to_size(sv: &[u8]) -> u64 {
         | (u64::from(sv[5]) << 16)
         | (u64::from(sv[6]) << 8)
         | u64::from(sv[7])
-}
-
-impl fmt::Display for chunk_dictionary::ChunkCompression {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.compression {
-            chunk_dictionary::ChunkCompression_CompressionType::NONE => write!(f, "NONE"),
-            chunk_dictionary::ChunkCompression_CompressionType::LZMA => {
-                write!(f, "LZMA({})", self.compression_level)
-            }
-            chunk_dictionary::ChunkCompression_CompressionType::ZSTD => {
-                write!(f, "ZSTD({})", self.compression_level)
-            }
-        }
-    }
 }
 
 pub fn build_header(dictionary: &chunk_dictionary::ChunkDictionary) -> Result<Vec<u8>> {
