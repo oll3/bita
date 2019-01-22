@@ -9,18 +9,18 @@ message ChunkDescriptor
 
     // Chunk data placement in archive.
     // If the archive_size = source_size then the chunk is uncompresed.
-    fixed32 archive_size = 3;
-    fixed64 archive_offset = 4;
+    uint32 archive_size = 3;
+    uint64 archive_offset = 4;
 
     // Size of uncompressed chunk data
-    fixed32 source_size = 5;
+    uint32 source_size = 5;
 }
 
 message ChunkerParameters
 {
     uint32 chunk_filter_bits = 1;
-    uint64 min_chunk_size = 2;
-    uint64 max_chunk_size = 3;
+    uint32 min_chunk_size = 2;
+    uint32 max_chunk_size = 3;
     uint32 hash_window_size = 4;
     uint32 chunk_hash_length = 5;
 }

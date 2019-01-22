@@ -222,7 +222,7 @@ fn parse_opts() -> Result<Config> {
         Ok(Config::Clone(CloneConfig {
             base: base_config,
             input: input.to_string(),
-            output: output.to_string(),
+            output: CloneOutput::Unpack(Path::new(output).to_path_buf()),
             seed_files,
             seed_stdin: false,
         }))

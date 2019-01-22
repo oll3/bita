@@ -23,7 +23,7 @@ fn chunk_seed<T, F>(
     chunker_params: &ChunkerParams,
     hash_length: usize,
     chunk_hash_set: &mut HashSet<HashBuf>,
-    mut result: F,
+    mut chunk_callback: F,
     pool: &ThreadPool,
 ) -> Result<()>
 where
@@ -50,7 +50,7 @@ where
             unique_chunks(&mut chunker, hasher, &pool, false, |hashed_chunk| {
                 let hash = &hashed_chunk.hash[0..hash_length].to_vec();
                 if chunk_hash_set.contains(hash) {
-                    result(hash, &hashed_chunk.data);
+                    chunk_callback(hash, &hashed_chunk.data);
                     chunk_hash_set.remove(hash);
                 }
             })
@@ -76,7 +76,7 @@ where
                 &chunk_hash_set.clone(),
                 |chunk_descriptor, chunk_data| {
                     // Got chunk data for a matching chunk
-                    result(&chunk_descriptor.checksum, &chunk_data);
+                    chunk_callback(&chunk_descriptor.checksum, &chunk_data);
                     chunk_hash_set.remove(&chunk_descriptor.checksum);
                     Ok(())
                 },
@@ -101,8 +101,11 @@ where
         .write(true)
         .create(config.base.force_create)
         .create_new(!config.base.force_create)
-        .open(&config.output)
-        .chain_err(|| format!("failed to open output file ({})", config.output))?;
+        .open(match config.output {
+            CloneOutput::Unpack(ref path) => path,
+            CloneOutput::Archive(ref path) => path,
+        })
+        .chain_err(|| "failed to open output file")?;
 
     // Check if the given output file is a regular file or block device.
     // If it is a block device we should check its size against the target size before
@@ -144,14 +147,15 @@ where
 
     let mut total_read_from_seed = 0;
     let mut total_from_archive = 0;
-
+    let archive_total_read;
     {
         // Closure for writing chunks to output
-        let mut chunk_output = |hash: &HashBuf, chunk_data: &[u8]| {
+        let mut chunk_output = |chunk_source: &str, hash: &HashBuf, chunk_data: &[u8]| {
             println!(
-                "Chunk '{}', size {} used from seed",
+                "Chunk '{}', size {} used from {}",
                 HexSlice::new(hash),
                 size_to_str(chunk_data.len()),
+                chunk_source,
             );
             total_read_from_seed += chunk_data.len();
             for offset in archive.chunk_source_offsets(hash) {
@@ -174,7 +178,9 @@ where
                 &chunker_params,
                 archive.hash_length,
                 &mut chunks_left,
-                &mut chunk_output,
+                |checksum, chunk_data| {
+                    chunk_output("seed (stdin)", checksum, chunk_data);
+                },
                 &pool,
             )?;
             println!(
@@ -194,7 +200,13 @@ where
                     &chunker_params,
                     archive.hash_length,
                     &mut chunks_left,
-                    &mut chunk_output,
+                    |checksum, chunk_data| {
+                        chunk_output(
+                            &format!("seed ({})", seed_path.display()),
+                            checksum,
+                            chunk_data,
+                        );
+                    },
                     &pool,
                 )?;
                 println!(
@@ -204,33 +216,15 @@ where
                 );
             }
         }
-    }
 
-    // Fetch rest of the chunks from archive
-    let archive_total_read =
-        archive.read_chunk_data(input, &chunks_left, |chunk_descriptor, chunk_data| {
-            let offsets = &archive.chunk_source_offsets(&chunk_descriptor.checksum);
-            for offset in offsets {
+        // Fetch rest of the chunks from archive
+        archive_total_read =
+            archive.read_chunk_data(input, &chunks_left, |chunk_descriptor, chunk_data| {
                 total_from_archive += chunk_data.len();
-                output_file
-                    .seek(SeekFrom::Start(*offset as u64))
-                    .chain_err(|| "failed to seek output file")?;
-                output_file
-                    .write_all(&chunk_data)
-                    .chain_err(|| "failed to write output file")?;
-            }
-
-            println!(
-                "Chunk '{}', size {}, decompressed to {}, insert at {:?}",
-                HexSlice::new(&chunk_descriptor.checksum),
-                size_to_str(chunk_descriptor.archive_size),
-                size_to_str(chunk_data.len() * offsets.len()),
-                offsets
-            );
-
-            Ok(())
-        })?;
-
+                chunk_output("archive", &chunk_descriptor.checksum, chunk_data);
+                Ok(())
+            })?;
+    }
     println!(
         "Cloned using {} from seed and {} from archive.",
         size_to_str(total_read_from_seed),

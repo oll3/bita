@@ -254,7 +254,7 @@ impl ArchiveReader {
         &self,
         mut input: T,
         chunks: &HashSet<HashBuf>,
-        mut result: F,
+        mut chunk_callback: F,
     ) -> Result<u64>
     where
         T: ArchiveBackend,
@@ -310,7 +310,7 @@ impl ArchiveReader {
                     }
 
                     // For each offset where this chunk was found in source
-                    result(chunk_descriptor, &chunk_data)?;
+                    chunk_callback(chunk_descriptor, &chunk_data)?;
 
                     chunk_index += 1;
 
