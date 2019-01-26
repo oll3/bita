@@ -23,6 +23,7 @@ mod config;
 mod errors;
 mod file_archive_backend;
 mod ordered_mpsc;
+mod para_pipe;
 mod remote_archive_backend;
 mod string_utils;
 
