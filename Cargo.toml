@@ -11,13 +11,13 @@ keywords = ["update", "swupdate", "synchronization", "delta-update"]
 categories = ["command-line-utilities", "compression"]
 
 [dependencies]
-clap = "*"
-rust-lzma = "*"
+clap = "2.32.0"
+rust-lzma = "0.4.0"
 zstd = "0.4"
-threadpool = "*"
+threadpool = "1.7.1"
 num_cpus = "0.2"
-curl = "*"
-blake2 = "*"
-atty = "*"
-error-chain = "*"
-protobuf = "*"
+curl = "0.4.19"
+blake2 = "0.8.0"
+atty = "0.2.11"
+error-chain = "0.12.0"
+protobuf = "2.2.5"
