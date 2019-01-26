@@ -1,4 +1,3 @@
-use crate::ordered_mpsc::OrderedMPSC;
 use blake2::{Blake2b, Digest};
 use std::collections::{hash_map::Entry, HashMap};
 use std::io;
@@ -6,6 +5,7 @@ use std::io::prelude::*;
 use threadpool::ThreadPool;
 
 use crate::chunker::*;
+use crate::para_pipe::ParaPipe;
 
 pub type HashBuf = Vec<u8>;
 
@@ -47,7 +47,6 @@ where
     H: Fn(&[u8]) -> Vec<u8> + Send + 'static + Copy,
 {
     let mut chunks: Vec<ChunkSourceDescriptor> = Vec::new();
-    let mut chunk_channel = OrderedMPSC::new();
     let mut chunk_map: HashMap<Vec<u8>, usize> = HashMap::new();
     let mut unique_chunk_index = 0;
     let mut file_size = 0;
@@ -57,78 +56,60 @@ where
     } else {
         None
     };
-    chunker
-        .scan(|chunk_offset, chunk_data| {
-            // For each chunk in file
-            if let Some(ref mut hasher) = input_hasher_opt {
-                hasher.input(chunk_data)
-            }
-            //file_hash.input(chunk_data);
-            let chunk_data = chunk_data.to_vec();
-            file_size += chunk_data.len();
-            let chunk_tx = chunk_channel.new_tx();
-            pool.execute(move || {
+
+    {
+        let mut p = ParaPipe::new(
+            pool,
+            move |(chunk_offset, chunk_data): (usize, Vec<u8>)| {
+                // Generate checksun for each chunk
                 let hash = hash_chunk(&chunk_data);
-                chunk_tx
-                    .send((
-                        ChunkSourceDescriptor {
-                            unique_chunk_index: 0,
-                            hash: hash.clone(),
-                            offset: chunk_offset,
-                            size: chunk_data.len(),
-                        },
-                        HashedChunk {
-                            hash,
-                            offset: chunk_offset,
-                            data: chunk_data.to_vec(),
-                        },
-                    ))
-                    .expect("chunk_tx");
-            });
-
-            chunk_channel
-                .rx()
-                .try_iter()
-                .for_each(|(mut chunk_desc, hashed_chunk)| {
-                    match chunk_map.entry(hashed_chunk.hash.clone()) {
-                        Entry::Occupied(o) => {
-                            chunk_desc.unique_chunk_index = *o.into_mut();
-                        }
-                        Entry::Vacant(v) => {
-                            // Chunk is unique - Pass forward
-                            chunk_desc.unique_chunk_index = unique_chunk_index;
-                            v.insert(unique_chunk_index);
-                            result(hashed_chunk);
-                            unique_chunk_index += 1;
-                        }
+                (
+                    ChunkSourceDescriptor {
+                        unique_chunk_index: 0,
+                        hash: hash.clone(),
+                        offset: chunk_offset,
+                        size: chunk_data.len(),
+                    },
+                    HashedChunk {
+                        hash,
+                        offset: chunk_offset,
+                        data: chunk_data.to_vec(),
+                    },
+                )
+            },
+            |(mut chunk_desc, hashed_chunk): (ChunkSourceDescriptor, HashedChunk)| {
+                match chunk_map.entry(hashed_chunk.hash.clone()) {
+                    Entry::Occupied(o) => {
+                        chunk_desc.unique_chunk_index = *o.into_mut();
                     }
-                    chunks.push(chunk_desc);
-                });
-        })
-        .expect("chunker");
-
-    // Wait for threads to be done
-    pool.join();
-
-    // Forward the last hashed chunks
-    chunk_channel
-        .rx()
-        .try_iter()
-        .for_each(|(mut chunk_desc, hashed_chunk)| {
-            match chunk_map.entry(hashed_chunk.hash.clone()) {
-                Entry::Occupied(o) => {
-                    chunk_desc.unique_chunk_index = *o.into_mut();
+                    Entry::Vacant(v) => {
+                        // Chunk is unique - Pass forward
+                        chunk_desc.unique_chunk_index = unique_chunk_index;
+                        v.insert(unique_chunk_index);
+                        result(hashed_chunk);
+                        unique_chunk_index += 1;
+                    }
                 }
-                Entry::Vacant(v) => {
-                    // Chunk is unique - Pass forward
-                    chunk_desc.unique_chunk_index = unique_chunk_index;
-                    v.insert(unique_chunk_index);
-                    result(hashed_chunk);
-                    unique_chunk_index += 1;
+                chunks.push(chunk_desc);
+            },
+        );
+
+        chunker
+            .scan(|chunk_offset, chunk_data| {
+                // For each chunk in file
+                if let Some(ref mut hasher) = input_hasher_opt {
+                    hasher.input(chunk_data)
                 }
-            }
-            chunks.push(chunk_desc);
-        });
+                //file_hash.input(chunk_data);
+                let chunk_data = chunk_data.to_vec();
+                file_size += chunk_data.len();
+                p.process((chunk_offset, chunk_data));
+            })
+            .expect("chunker");
+
+        p.finish();
+    }
+
     let total_hash = match input_hasher_opt {
         Some(ref mut hasher) => hasher.clone().result().to_vec(),
         _ => vec![],
@@ -144,7 +125,7 @@ pub fn unique_compressed_chunks<T, F, C, H>(
     compress_chunk: C,
     pool: &ThreadPool,
     hash_input: bool,
-    mut result: F,
+    chunk_callback: F,
 ) -> io::Result<(usize, Vec<u8>, Vec<ChunkSourceDescriptor>)>
 where
     T: Read,
@@ -152,35 +133,25 @@ where
     C: Fn(&[u8]) -> Vec<u8> + Send + 'static + Copy,
     H: Fn(&[u8]) -> Vec<u8> + Send + 'static + Copy,
 {
-    let mut chunk_channel = OrderedMPSC::new();
+    let mut p = ParaPipe::new(
+        pool,
+        move |hashed_chunk: HashedChunk| {
+            let cdata = compress_chunk(&hashed_chunk.data);
+            CompressedChunk {
+                hash: hashed_chunk.hash,
+                offset: hashed_chunk.offset,
+                data: hashed_chunk.data,
+                cdata,
+            }
+        },
+        chunk_callback,
+    );
+
     let (file_size, file_hash, chunks) =
         unique_chunks(chunker, hash_chunk, &pool, hash_input, |hashed_chunk| {
-            // For each unique chunk
-            let chunk_tx = chunk_channel.new_tx();
-            pool.execute(move || {
-                // Compress the chunk (in thread context)
-                let cdata = compress_chunk(&hashed_chunk.data);
-                chunk_tx
-                    .send(CompressedChunk {
-                        hash: hashed_chunk.hash,
-                        offset: hashed_chunk.offset,
-                        data: hashed_chunk.data,
-                        cdata,
-                    })
-                    .expect("chunk_tx");
-            });
-
-            chunk_channel.rx().try_iter().for_each(|compressed_chunk| {
-                result(compressed_chunk);
-            });
+            p.process(hashed_chunk);
         })?;
 
-    // Wait for threads to be done
-    pool.join();
-
-    // Forward the compressed chunks
-    chunk_channel.rx().try_iter().for_each(|compressed_chunk| {
-        result(compressed_chunk);
-    });
+    p.finish();
     Ok((file_size, file_hash, chunks))
 }
