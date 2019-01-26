@@ -249,6 +249,35 @@ impl ArchiveReader {
         group_list
     }
 
+    pub fn decompress_and_verify(
+        hash_length: usize,
+        compression: Compression,
+        chunk_descriptor: &archive::ChunkDescriptor,
+        archive_data: Vec<u8>,
+    ) -> Result<Vec<u8>> {
+        let mut hasher = Blake2b::new();
+        let mut chunk_data = vec![];
+        if chunk_descriptor.archive_size == chunk_descriptor.source_size {
+            // Archive data is not compressed
+            chunk_data = archive_data;
+        } else {
+            compression.decompress(archive_data, &mut chunk_data)?;
+        }
+
+        // Verify data by hash
+        hasher.input(&chunk_data);
+        let checksum = hasher.result().to_vec();
+        if checksum[..hash_length] != chunk_descriptor.checksum[..hash_length] {
+            bail!(
+                "Chunk hash mismatch (expected: {}, got: {})",
+                HexSlice::new(&chunk_descriptor.checksum[0..hash_length]),
+                HexSlice::new(&checksum[0..hash_length])
+            );
+        }
+
+        Ok(chunk_data)
+    }
+
     // Get chunk data for all listed chunks if present in archive
     pub fn read_chunk_data<T, F>(
         &self,
@@ -272,9 +301,7 @@ impl ArchiveReader {
         // which are placed in sequence in archive.
         let grouped_chunks = Self::group_chunks_in_sequence(descriptors);
 
-        let mut hasher = Blake2b::new();
         let mut total_read = 0;
-        let mut chunk_data = vec![];
 
         for group in grouped_chunks {
             // For each group of chunks
@@ -287,32 +314,18 @@ impl ArchiveReader {
                     // For each chunk read from archive
                     let chunk_descriptor = &group[chunk_index];
 
-                    if chunk_descriptor.archive_size == chunk_descriptor.source_size {
-                        // Archive data is not compressed
-                        chunk_data = archive_data;
-                    } else {
-                        self.chunk_compression
-                            .decompress(archive_data, &mut chunk_data)?;
-                    }
-
-                    total_read += u64::from(chunk_descriptor.archive_size);
-
-                    // Verify data by hash
-                    hasher.input(&chunk_data);
-                    let checksum = hasher.result_reset().to_vec();
-                    if checksum[..self.hash_length] != chunk_descriptor.checksum[..self.hash_length]
-                    {
-                        bail!(
-                            "Chunk hash mismatch (expected: {}, got: {})",
-                            HexSlice::new(&chunk_descriptor.checksum[0..self.hash_length]),
-                            HexSlice::new(&checksum[0..self.hash_length])
-                        );
-                    }
+                    let chunk_data = Self::decompress_and_verify(
+                        self.hash_length,
+                        self.chunk_compression,
+                        chunk_descriptor,
+                        archive_data,
+                    )?;
 
                     // For each offset where this chunk was found in source
                     chunk_callback(chunk_descriptor, &chunk_data)?;
 
                     chunk_index += 1;
+                    total_read += u64::from(chunk_descriptor.archive_size);
 
                     Ok(())
                 })
@@ -328,15 +341,13 @@ impl ArchiveReader {
         mut input: T,
         mut current_input_offset: u64,
         chunks: &HashSet<HashBuf>,
-        mut result: F,
+        mut chunk_callback: F,
     ) -> Result<u64>
     where
         T: Read,
         F: FnMut(&archive::ChunkDescriptor, &[u8]) -> Result<()>,
     {
-        let mut hasher = Blake2b::new();
         let mut skip_buffer = vec![0; 1024 * 1024];
-        let mut chunk_data = vec![];
         let mut total_read = 0;
 
         // Sort list of chunks to be read in order of occurence in stream.
@@ -360,31 +371,19 @@ impl ArchiveReader {
                 .read_exact(&mut archive_data)
                 .chain_err(|| "failed to read from archive")?;
 
-            if chunk_descriptor.archive_size == chunk_descriptor.source_size {
-                // Archive data is not compressed
-                chunk_data = archive_data;
-            } else {
-                self.chunk_compression
-                    .decompress(archive_data, &mut chunk_data)?;
-            }
-
-            // Verify data by hash
-            hasher.input(&chunk_data);
-            let checksum = hasher.result_reset().to_vec();
-            if checksum[..self.hash_length] != chunk_descriptor.checksum[..self.hash_length] {
-                bail!(
-                    "Chunk hash mismatch (expected: {}, got: {})",
-                    HexSlice::new(&chunk_descriptor.checksum[0..self.hash_length]),
-                    HexSlice::new(&checksum[0..self.hash_length])
-                );
-            }
+            let chunk_data = Self::decompress_and_verify(
+                self.hash_length,
+                self.chunk_compression,
+                chunk_descriptor,
+                archive_data,
+            )?;
 
             current_input_offset += skip;
             current_input_offset += u64::from(chunk_descriptor.archive_size);
             total_read += u64::from(chunk_descriptor.archive_size);
 
             // For each offset where this chunk was found in source
-            result(chunk_descriptor, &chunk_data)?;
+            chunk_callback(chunk_descriptor, &chunk_data)?;
         }
 
         Ok(total_read)
