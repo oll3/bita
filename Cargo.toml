@@ -3,6 +3,12 @@ name = "bita"
 version = "0.1.0"
 authors = ["Olle Sandberg <olle@b3rg.se>"]
 license = "MIT"
+edition = '2018'
+description = "Tool for fast file synchronization over http."
+repository = "https://github.com/oll3/bita"
+readme = "README.md"
+keywords = ["update", "swupdate", "synchronization", "delta-update"]
+categories = ["command-line-utilities", "compression"]
 
 [dependencies]
 clap = "*"
