@@ -256,13 +256,14 @@ impl ArchiveReader {
         archive_data: Vec<u8>,
     ) -> Result<Vec<u8>> {
         let mut hasher = Blake2b::new();
-        let mut chunk_data = vec![];
-        if chunk_descriptor.archive_size == chunk_descriptor.source_size {
+        let chunk_data = if chunk_descriptor.archive_size == chunk_descriptor.source_size {
             // Archive data is not compressed
-            chunk_data = archive_data;
+            archive_data
         } else {
-            compression.decompress(archive_data, &mut chunk_data)?;
-        }
+            let mut decompress_buf = vec![];
+            compression.decompress(archive_data, &mut decompress_buf)?;
+            decompress_buf
+        };
 
         // Verify data by hash
         hasher.input(&chunk_data);

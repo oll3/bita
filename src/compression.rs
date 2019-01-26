@@ -70,7 +70,7 @@ impl Compression {
             }
             Compression::ZSTD(ref level) => {
                 let mut result = vec![];
-                let mut data = data.to_vec();
+                let data = data.to_vec();
                 zstd::stream::copy_encode(&data[..], &mut result, *level as i32)
                     .chain_err(|| "failed compress with zstd")?;
                 Ok(result)
