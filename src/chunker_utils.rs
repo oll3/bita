@@ -103,11 +103,9 @@ where
                 //file_hash.input(chunk_data);
                 let chunk_data = chunk_data.to_vec();
                 file_size += chunk_data.len();
-                p.process((chunk_offset, chunk_data));
+                p.input((chunk_offset, chunk_data));
             })
             .expect("chunker");
-
-        p.finish();
     }
 
     let total_hash = match input_hasher_opt {
@@ -149,9 +147,8 @@ where
 
     let (file_size, file_hash, chunks) =
         unique_chunks(chunker, hash_chunk, &pool, hash_input, |hashed_chunk| {
-            p.process(hashed_chunk);
+            p.input(hashed_chunk);
         })?;
 
-    p.finish();
     Ok((file_size, file_hash, chunks))
 }
