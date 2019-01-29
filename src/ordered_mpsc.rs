@@ -9,7 +9,8 @@ impl<T> OrderedSender<T> {
         self.tx.send(Some(obj))
     }
 
-    pub fn done(self) {
+    #[allow(dead_code)]
+    fn done(self) {
         // Will consume the sender and hence result in a drop
     }
 }
