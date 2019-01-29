@@ -71,13 +71,14 @@ where
             let current_input_offset = archive_header.len();
 
             archive.read_chunk_stream(
+                &pool,
                 seed_input,
                 current_input_offset as u64,
                 &chunk_hash_set.clone(),
-                |chunk_descriptor, chunk_data| {
+                |checksum, chunk_data| {
                     // Got chunk data for a matching chunk
-                    chunk_callback(&chunk_descriptor.checksum, &chunk_data);
-                    chunk_hash_set.remove(&chunk_descriptor.checksum);
+                    chunk_callback(&checksum, &chunk_data);
+                    chunk_hash_set.remove(&checksum);
                     Ok(())
                 },
             )?;
@@ -219,9 +220,9 @@ where
 
         // Fetch rest of the chunks from archive
         archive_total_read =
-            archive.read_chunk_data(input, &chunks_left, |chunk_descriptor, chunk_data| {
+            archive.read_chunk_data(&pool, input, &chunks_left, |checksum, chunk_data| {
                 total_from_archive += chunk_data.len();
-                chunk_output("archive", &chunk_descriptor.checksum, chunk_data);
+                chunk_output("archive", &checksum, chunk_data);
                 Ok(())
             })?;
     }
