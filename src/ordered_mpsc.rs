@@ -77,7 +77,7 @@ mod tests {
             tx3.send("5");
             tx3.send("6");
             tx3.send("7");
-            tx3.done();
+            drop(tx3);
             tx2.send("2");
             tx2.send("3");
             tx2.send("4");

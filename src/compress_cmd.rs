@@ -206,7 +206,7 @@ pub fn run(config: &CompressConfig, pool: &ThreadPool) -> Result<()> {
     };
 
     // Copy chunks from temporary chunk tile to the output one
-    let header_buf = archive::build_header(&file_header)?;
+    let header_buf = archive::build_header(&file_header, None)?;
     println!("Header size: {}", header_buf.len());
     output_file
         .write_all(&header_buf)

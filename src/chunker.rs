@@ -35,6 +35,7 @@ pub struct Chunk {
 pub struct ChunkerParams {
     pub buzhash: BuzHash,
     pub filter_mask: u32,
+    pub filter_bits: u32,
     pub min_chunk_size: usize,
     pub max_chunk_size: usize,
 }
@@ -47,6 +48,7 @@ impl ChunkerParams {
         buzhash: BuzHash,
     ) -> Self {
         ChunkerParams {
+            filter_bits: chunk_filter_bits,
             filter_mask: !0 >> (32 - chunk_filter_bits),
             min_chunk_size,
             max_chunk_size,

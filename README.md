@@ -40,8 +40,8 @@ As default bita compress chunk data using lzma at level 6. No compression and zs
 #### Compress a file
 `olle@host:~$ bita compress file.ext4 file.ext4.cba`
 
-#### Decompress using multiple seeds
-`olle@device:~$ gunzip -c old.tar.gz | bita clone --seed an_old.cba --seed another_old.tar http://host/file.cba file`
+#### Clone archive using multiple seeds
+`olle@device:~$ gunzip -c old.tar.gz | bita clone --seed an_old.cba --seed another_old.tar http://host/file.cba file.cba`
 
-#### Decompress using block device as seed and target
-`olle@device:~$ bita clone --seed /dev/disk/by-partlabel/rootfs-A http://host/file.ext4.cba /dev/disk/by-partlabel/rootfs-B`
+#### Clone and unpack using block device as seed and target
+`olle@device:~$ bita clone --unpack --seed /dev/disk/by-partlabel/rootfs-A http://host/file.ext4.cba /dev/disk/by-partlabel/rootfs-B`

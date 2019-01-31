@@ -66,8 +66,8 @@ impl fmt::Display for ArchiveReader {
             f,
             "build version: {}, chunks: {} (unique: {}), compression: {}, decompressed size: {}, source checksum: {}",
             self.created_by_app_version,
-            self.rebuild_order.len(),
-            self.chunk_descriptors.len(),
+            self.total_chunks(),
+            self.unique_chunks(),
             self.chunk_compression,
             size_to_str(self.source_total_size),
             HexSlice::new(&self.source_checksum),
@@ -208,6 +208,21 @@ impl ArchiveReader {
             hash_window_size: chunker_params.hash_window_size as usize,
             hash_length: chunker_params.chunk_hash_length as usize,
         })
+    }
+
+    pub fn source_rebuild_order(&self) -> Vec<HashBuf> {
+        self.rebuild_order
+            .iter()
+            .map(|index| self.chunk_descriptors[*index].checksum.clone())
+            .collect()
+    }
+
+    pub fn total_chunks(&self) -> usize {
+        self.rebuild_order.len()
+    }
+
+    pub fn unique_chunks(&self) -> usize {
+        self.chunk_descriptors.len()
     }
 
     // Get a set of all chunks present in archive

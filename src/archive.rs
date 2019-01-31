@@ -9,11 +9,25 @@ use crate::compression::Compression;
 use crate::errors::*;
 use crate::string_utils::*;
 
+#[derive(Clone)]
 pub struct ChunkDescriptor {
     pub checksum: HashBuf,
     pub archive_size: u32,
     pub archive_offset: u64,
     pub source_size: u32,
+}
+
+impl From<ChunkDescriptor> for chunk_dictionary::ChunkDescriptor {
+    fn from(dict: ChunkDescriptor) -> Self {
+        chunk_dictionary::ChunkDescriptor {
+            checksum: dict.checksum,
+            archive_size: dict.archive_size,
+            archive_offset: dict.archive_offset,
+            source_size: dict.source_size,
+            unknown_fields: std::default::Default::default(),
+            cached_size: std::default::Default::default(),
+        }
+    }
 }
 
 impl From<chunk_dictionary::ChunkDescriptor> for ChunkDescriptor {
@@ -101,13 +115,18 @@ pub fn max_dictionary_size(total_chunks: usize, unique_chunks: usize, hash_lengt
                 cached_size: std::default::Default::default(),
             };
             unique_chunks
-        ].into(),
+        ]
+        .into(),
         unknown_fields: std::default::Default::default(),
         cached_size: std::default::Default::default(),
-    }.compute_size()
+    }
+    .compute_size()
 }
 
-pub fn build_header(dictionary: &chunk_dictionary::ChunkDictionary) -> Result<Vec<u8>> {
+pub fn build_header(
+    dictionary: &chunk_dictionary::ChunkDictionary,
+    chunk_data_offset: Option<u64>,
+) -> Result<Vec<u8>> {
     let mut header: Vec<u8> = vec![];
     let mut hasher = Blake2b::new();
     let mut dictionary_buf: Vec<u8> = Vec::new();
@@ -128,20 +147,19 @@ pub fn build_header(dictionary: &chunk_dictionary::ChunkDictionary) -> Result<Ve
     // The chunk dictionary
     header.extend(dictionary_buf);
 
-    // Chunk data offset. 0 if not used.
-    // For now it will always start where the header hash ends, that is current size
-    // of header buffer + 8 for this size value + 64 for header hash value
-    {
-        let offset = header.len() + 8 + 64;
-        println!("Chunk data offset: {}", offset);
-        header.extend(&size_vec(offset as u64));
-    }
+    // Start of archive chunk data, absolute to the archive start
+    let offset = match chunk_data_offset {
+        Some(o) => o,
+        None => header.len() as u64 + 8 + 64,
+    };
+    println!("Chunk data offset: {}", offset);
+    header.extend(&size_vec(offset));
 
     // Create and set hash of full header
     hasher.input(&header);
-    let hash = hasher.result().to_vec();
-    println!("Header hash: {}", HexSlice::new(&hash));
-    header.extend(hash);
+    let checksum = hasher.result().to_vec();
+    println!("Header checksum: {}", HexSlice::new(&checksum));
+    header.extend(checksum);
 
     Ok(header)
 }
