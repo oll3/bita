@@ -1,6 +1,5 @@
+use crossbeam_channel::{bounded, Receiver};
 use threadpool::ThreadPool;
-
-use crate::ordered_mpsc::OrderedMPSC;
 
 // Generic parallel data processing pipe
 pub struct ParaPipe<'a, O, P, U>
@@ -10,7 +9,7 @@ where
     pool: &'a ThreadPool,
     processor: P,
     outlet: U,
-    channel: OrderedMPSC<O>,
+    waiting_result: Vec<Receiver<O>>,
 }
 
 impl<'a, O, P, U> ParaPipe<'a, O, P, U>
@@ -28,7 +27,7 @@ where
             pool,
             processor,
             outlet,
-            channel: OrderedMPSC::new(),
+            waiting_result: Vec::new(),
         }
     }
 
@@ -38,16 +37,39 @@ where
         O: Send + 'static,
         P: Fn(I) -> O + Send + 'static + Copy,
     {
-        let channel_tx = self.channel.new_tx();
+        if self.waiting_result.len() > (self.pool.max_count() * 4) {
+            // When the waiting queue is long then wait for some result before continuing
+            let outlet = &mut self.outlet;
+            outlet(self.waiting_result[0].recv().expect("recv"));
+            self.waiting_result.remove(0);
+        }
+
+        let (tx, rx) = bounded::<O>(1);
+        self.waiting_result.push(rx);
         let processor = self.processor;
-        // TODO: Limit the number of queued jobs by blocking?
         self.pool.execute(move || {
-            channel_tx.send(processor(data)).expect("forward");
+            tx.send(processor(data)).expect("forward");
         });
+
+        // Forward finished results
+        self.pass_on();
+    }
+
+    fn pass_on(&mut self) {
         let outlet = &mut self.outlet;
-        self.channel.rx().try_iter().for_each(|out| {
-            outlet(out);
-        });
+        let mut done = false;
+        while !done && !self.waiting_result.is_empty() {
+            let mut count = 0;
+            self.waiting_result[0].try_iter().for_each(|out| {
+                outlet(out);
+                count += 1;
+            });
+            if count > 0 {
+                self.waiting_result.remove(0);
+            } else {
+                done = true;
+            }
+        }
     }
 }
 
@@ -56,10 +78,12 @@ where
     U: FnMut(O),
 {
     fn drop(&mut self) {
-        self.pool.join();
-        let outlet = &mut self.outlet;
-        self.channel.rx().try_iter().for_each(|out| {
-            outlet(out);
-        });
+        while !self.waiting_result.is_empty() {
+            let outlet = &mut self.outlet;
+            outlet(self.waiting_result[0].recv().expect("recv"));
+            self.waiting_result.remove(0);
+        }
+        //self.pool.join();
+        //self.pass_on();
     }
 }
