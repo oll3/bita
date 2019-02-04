@@ -195,7 +195,7 @@ fn parse_opts() -> Result<Config> {
             _ => bail!("invalid compression"),
         };
 
-        let chunk_filter_bits = avg_chunk_size.leading_zeros();
+        let chunk_filter_bits = (avg_chunk_size as u32).leading_zeros();
         if min_chunk_size > avg_chunk_size {
             bail!("min-chunk-size > avg-chunk-size");
         }
