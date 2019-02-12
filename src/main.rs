@@ -48,7 +48,6 @@ fn parse_size(size_str: &str) -> usize {
         return size_val;
     }
     match size_unit.as_str() {
-        "TiB" => 1024 * 1024 * 1024 * 1024 * size_val,
         "GiB" => 1024 * 1024 * 1024 * size_val,
         "MiB" => 1024 * 1024 * size_val,
         "KiB" => 1024 * size_val,
