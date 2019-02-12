@@ -92,7 +92,7 @@ where
 
 fn clone_to_output<T, F>(
     pool: &ThreadPool,
-    input: T,
+    archive_backend: T,
     archive: &ArchiveReader,
     seed_files: &[PathBuf],
     chunker_params: ChunkerParams,
@@ -160,11 +160,16 @@ where
 
     let mut total_from_archive = 0;
     // Fetch rest of the chunks from archive
-    archive.read_chunk_data(&pool, input, &chunks_left, |checksum, chunk_data| {
-        total_from_archive += chunk_data.len();
-        chunk_output("archive", &checksum, chunk_data);
-        Ok(())
-    })?;
+    archive.read_chunk_data(
+        &pool,
+        archive_backend,
+        &chunks_left,
+        |checksum, chunk_data| {
+            total_from_archive += chunk_data.len();
+            chunk_output("archive", &checksum, chunk_data);
+            Ok(())
+        },
+    )?;
 
     println!(
         "Cloned using {} from seed and {} from archive.",
@@ -203,11 +208,15 @@ fn prepare_unpack_output(output_file: &mut File, source_file_size: u64) -> Resul
     Ok(())
 }
 
-fn clone_input<T>(mut input: T, config: &config::CloneConfig, pool: &ThreadPool) -> Result<()>
+fn clone_archive<T>(
+    mut archive_backend: T,
+    config: &config::CloneConfig,
+    pool: &ThreadPool,
+) -> Result<()>
 where
     T: ArchiveBackend,
 {
-    let archive = ArchiveReader::try_init(&mut input, &mut Vec::new())?;
+    let archive = ArchiveReader::try_init(&mut archive_backend, &mut Vec::new())?;
     let chunks_left = archive.chunk_hash_set();
 
     println!("Cloning archive ({})", archive);
@@ -243,7 +252,7 @@ where
             let mut output = BufWriter::new(output_file);
             clone_to_output(
                 pool,
-                input,
+                archive_backend,
                 &archive,
                 &config.seed_files,
                 chunker_params,
@@ -268,7 +277,7 @@ where
 
             clone_to_output(
                 pool,
-                input,
+                archive_backend,
                 &archive,
                 &config.seed_files,
                 chunker_params,
@@ -297,11 +306,11 @@ where
 pub fn run(config: &config::CloneConfig, pool: &ThreadPool) -> Result<()> {
     if &config.input[0..7] == "http://" || &config.input[0..8] == "https://" {
         let remote_source = RemoteReader::new(&config.input);
-        clone_input(remote_source, config, pool)?;
+        clone_archive(remote_source, config, pool)?;
     } else {
         let local_file =
             File::open(&config.input).chain_err(|| format!("unable to open {}", config.input))?;
-        clone_input(local_file, config, pool)?;
+        clone_archive(local_file, config, pool)?;
     }
 
     Ok(())
