@@ -9,6 +9,8 @@ use crate::compression::Compression;
 use crate::errors::*;
 use crate::string_utils::*;
 
+pub const PRE_HEADER_SIZE: usize = 14;
+
 #[derive(Clone)]
 pub struct ChunkDescriptor {
     pub checksum: HashBuf,
@@ -55,28 +57,10 @@ impl fmt::Display for chunk_dictionary::ChunkDictionary {
     }
 }
 
-fn size_vec(s: u64) -> [u8; 8] {
-    [
-        ((s >> 56) & 0xff) as u8,
-        ((s >> 48) & 0xff) as u8,
-        ((s >> 40) & 0xff) as u8,
-        ((s >> 32) & 0xff) as u8,
-        ((s >> 24) & 0xff) as u8,
-        ((s >> 16) & 0xff) as u8,
-        ((s >> 8) & 0xff) as u8,
-        (s & 0xff) as u8,
-    ]
-}
-
-pub fn vec_to_size(sv: &[u8]) -> u64 {
-    (u64::from(sv[0]) << 56)
-        | (u64::from(sv[1]) << 48)
-        | (u64::from(sv[2]) << 40)
-        | (u64::from(sv[3]) << 32)
-        | (u64::from(sv[4]) << 24)
-        | (u64::from(sv[5]) << 16)
-        | (u64::from(sv[6]) << 8)
-        | u64::from(sv[7])
+pub fn u64_from_le_slice(v: &[u8]) -> u64 {
+    let mut tmp: [u8; 8] = Default::default();;
+    tmp.copy_from_slice(v);
+    u64::from_le_bytes(tmp)
 }
 
 pub fn build_header(
@@ -91,14 +75,11 @@ pub fn build_header(
         .write_to_vec(&mut dictionary_buf)
         .chain_err(|| "failed to serialize header")?;
 
-    // header magic
-    header.extend(b"bita");
-
-    // Major archive version
-    header.push(0);
+    // File magic indicating bita archive version 1
+    header.extend(b"\0BITA1");
 
     // Chunk dictionary size
-    header.extend(&size_vec(dictionary_buf.len() as u64));
+    header.extend(&(dictionary_buf.len() as u64).to_le_bytes());
 
     // The chunk dictionary
     header.extend(dictionary_buf);
@@ -108,14 +89,11 @@ pub fn build_header(
         Some(o) => o,
         None => header.len() as u64 + 8 + 64,
     };
-    println!("Chunk data offset: {}", offset);
-    header.extend(&size_vec(offset));
+    header.extend(&(offset as u64).to_le_bytes());
 
-    // Create and set hash of full header
+    // Create and store hash of full header
     hasher.input(&header);
-    let checksum = hasher.result().to_vec();
-    println!("Header checksum: {}", HexSlice::new(&checksum));
-    header.extend(checksum);
+    header.extend(&hasher.result());
 
     Ok(header)
 }

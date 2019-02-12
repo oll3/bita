@@ -96,17 +96,12 @@ where
 
 impl ArchiveReader {
     pub fn verify_pre_header(pre_header: &[u8]) -> Result<()> {
-        if pre_header.len() < 5 {
+        if pre_header.len() < 6 {
             bail!("failed to read header of archive")
         }
-        if &pre_header[0..4] != b"bita" {
+        if &pre_header[0..6] != b"\0BITA1" {
             return Err(Error::from_kind(ErrorKind::NotAnArchive(
-                "missing magic".to_string(),
-            )));
-        }
-        if pre_header[4] != 0 {
-            return Err(Error::from_kind(ErrorKind::NotAnArchive(
-                "unknown archive version".to_string(),
+                "invalid file magic".to_string(),
             )));
         }
         Ok(())
@@ -116,9 +111,8 @@ impl ArchiveReader {
     where
         R: Read,
     {
-        // Read the pre-header (file magic, version and size)
-        //let mut header_buf = vec![0; 13];
-        header_buf.resize(13, 0);
+        // Read the pre-header (file magic and size)
+        header_buf.resize(archive::PRE_HEADER_SIZE, 0);
         input
             .read_exact(header_buf)
             .or_else(|err| {
@@ -127,19 +121,20 @@ impl ArchiveReader {
             })
             .chain_err(|| "unable to read archive")?;
 
-        Self::verify_pre_header(&header_buf[0..13])?;
+        Self::verify_pre_header(&header_buf[0..archive::PRE_HEADER_SIZE])?;
 
-        let dictionary_size = archive::vec_to_size(&header_buf[5..13]) as usize;
+        let dictionary_size =
+            archive::u64_from_le_slice(&header_buf[6..archive::PRE_HEADER_SIZE]) as usize;
 
         // Read the dictionary, chunk data offset and header hash
-        header_buf.resize(13 + dictionary_size + 8 + 64, 0);
+        header_buf.resize(archive::PRE_HEADER_SIZE + dictionary_size + 8 + 64, 0);
         input
-            .read_exact(&mut header_buf[13..])
+            .read_exact(&mut header_buf[archive::PRE_HEADER_SIZE..])
             .chain_err(|| "unable to read archive")?;
 
         // Verify the header against the header hash
         let mut hasher = Blake2b::new();
-        let offs = 13 + dictionary_size + 8;
+        let offs = archive::PRE_HEADER_SIZE + dictionary_size + 8;
         hasher.input(&header_buf[..offs]);
         if header_buf[offs..(offs + 64)] != hasher.result().to_vec()[..] {
             //bail!("Corrupt archive header")
@@ -149,14 +144,14 @@ impl ArchiveReader {
         }
 
         // Deserialize the chunk dictionary
-        let offs = 13;
+        let offs = archive::PRE_HEADER_SIZE;
         let dictionary: chunk_dictionary::ChunkDictionary =
             protobuf::parse_from_bytes(&header_buf[offs..(offs + dictionary_size)])
                 .chain_err(|| "unable to unpack archive header")?;
 
         // Get chunk data offset
-        let offs = 13 + dictionary_size;
-        let chunk_data_offset = archive::vec_to_size(&header_buf[offs..(offs + 8)]) as usize;
+        let offs = archive::PRE_HEADER_SIZE + dictionary_size;
+        let chunk_data_offset = archive::u64_from_le_slice(&header_buf[offs..(offs + 8)]) as usize;
 
         // println!("{}", dictionary);
 
