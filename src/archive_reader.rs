@@ -210,13 +210,6 @@ impl ArchiveReader {
         })
     }
 
-    pub fn source_rebuild_order(&self) -> Vec<HashBuf> {
-        self.rebuild_order
-            .iter()
-            .map(|index| self.chunk_descriptors[*index].checksum.clone())
-            .collect()
-    }
-
     pub fn total_chunks(&self) -> usize {
         self.rebuild_order.len()
     }

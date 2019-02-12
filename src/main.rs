@@ -18,7 +18,6 @@ mod chunk_dictionary;
 mod chunker;
 mod chunker_utils;
 mod clone_cmd;
-mod clone_output;
 mod compress_cmd;
 mod compression;
 mod config;
@@ -130,7 +129,7 @@ fn parse_opts() -> Result<Config> {
         )
         .subcommand(
             SubCommand::with_name("clone")
-                .about("Clone a remote (or local archive). The local archive is not an actual clone but a rebuilt and re-compressed archive.")
+                .about("Clone a remote (or local archive). The archive is unpacked while beeing cloned.")
                 .arg(
                     Arg::with_name("INPUT")
                         .value_name("INPUT")
@@ -150,12 +149,6 @@ fn parse_opts() -> Result<Config> {
                         .help("File to use as seed while cloning.")
                         .multiple(true),
                 )
-                .arg(
-                    Arg::with_name("unpack")
-                        .short("u")
-                        .long("unpack")
-                        .help("Unpack the archive while cloning."),
-                ),
         )
         .get_matches();
 
@@ -226,16 +219,11 @@ fn parse_opts() -> Result<Config> {
             .unwrap_or_default()
             .map(|s| Path::new(s).to_path_buf())
             .collect();
-        let unpack = matches.is_present("unpack");
 
         Ok(Config::Clone(CloneConfig {
             base: base_config,
             input: input.to_string(),
-            output: if unpack {
-                CloneOutput::Unpack(Path::new(output).to_path_buf())
-            } else {
-                CloneOutput::Archive(Path::new(output).to_path_buf())
-            },
+            output: Path::new(output).to_path_buf(),
             seed_files,
         }))
     } else {

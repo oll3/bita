@@ -79,50 +79,6 @@ pub fn vec_to_size(sv: &[u8]) -> u64 {
         | u64::from(sv[7])
 }
 
-// Calculation of the maximum possible size of a dictionary with the given number of chunks in.
-// TODO: Create a more naive implementation with more assumptions on size, or try to use more of
-// protobufs own size computation functions.
-pub fn max_dictionary_size(total_chunks: usize, unique_chunks: usize, hash_length: usize) -> u32 {
-    // Assuming that setting every field to the max possible value results in the
-    // longest possible encoded value.
-    chunk_dictionary::ChunkDictionary {
-        application_version: "an unreasonable long version string".to_string(),
-        source_checksum: vec![0xff; 64],
-        source_total_size: std::u64::MAX,
-        chunker_params: protobuf::SingularPtrField::some(chunk_dictionary::ChunkerParameters {
-            chunk_filter_bits: std::u32::MAX,
-            min_chunk_size: std::u32::MAX,
-            max_chunk_size: std::u32::MAX,
-            hash_window_size: std::u32::MAX,
-            chunk_hash_length: std::u32::MAX,
-            unknown_fields: std::default::Default::default(),
-            cached_size: std::default::Default::default(),
-        }),
-        chunk_compression: protobuf::SingularPtrField::some(chunk_dictionary::ChunkCompression {
-            compression: chunk_dictionary::ChunkCompression_CompressionType::ZSTD,
-            compression_level: std::u32::MAX,
-            unknown_fields: std::default::Default::default(),
-            cached_size: std::default::Default::default(),
-        }),
-        rebuild_order: vec![unique_chunks as u32; total_chunks],
-        chunk_descriptors: vec![
-            chunk_dictionary::ChunkDescriptor {
-                checksum: vec![0xff; hash_length],
-                archive_size: std::u32::MAX,
-                archive_offset: std::u64::MAX,
-                source_size: std::u32::MAX,
-                unknown_fields: std::default::Default::default(),
-                cached_size: std::default::Default::default(),
-            };
-            unique_chunks
-        ]
-        .into(),
-        unknown_fields: std::default::Default::default(),
-        cached_size: std::default::Default::default(),
-    }
-    .compute_size()
-}
-
 pub fn build_header(
     dictionary: &chunk_dictionary::ChunkDictionary,
     chunk_data_offset: Option<u64>,

@@ -4,8 +4,6 @@
 
 ### Probably
 
-  * When cloning to an archive with the same compression as the source archive we could re-use the compressed data.
-
  * Allow for fixed block size while chunking.
 
 ### Maybe

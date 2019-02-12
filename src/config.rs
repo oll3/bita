@@ -25,17 +25,11 @@ pub struct CompressConfig {
 }
 
 #[derive(Debug)]
-pub enum CloneOutput {
-    Archive(PathBuf),
-    Unpack(PathBuf),
-}
-
-#[derive(Debug)]
 pub struct CloneConfig {
     pub base: BaseConfig,
 
     pub input: String,
-    pub output: CloneOutput,
+    pub output: PathBuf,
     pub seed_files: Vec<PathBuf>,
 }
 

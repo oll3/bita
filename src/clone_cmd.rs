@@ -18,7 +18,6 @@ use crate::config;
 use crate::errors::*;
 use crate::remote_archive_backend::RemoteReader;
 use crate::string_utils::*;
-use crate::{clone_output, clone_output::CloneOutput};
 
 fn chunk_seed<T, F>(
     mut seed_input: T,
@@ -234,71 +233,40 @@ where
         .write(true)
         .create(config.base.force_create)
         .create_new(!config.base.force_create)
-        .open(match config.output {
-            config::CloneOutput::Unpack(ref path) => path,
-            config::CloneOutput::Archive(ref path) => path,
-        })
+        .open(&config.output)
         .chain_err(|| "failed to open output file")?;
 
-    match config.output {
-        config::CloneOutput::Unpack(_) => {
-            // Clone and unpack archive
+    // Clone and unpack archive
 
-            // Check if the given output file is a regular file or block device.
-            // If it is a block device we should check its size against the target size before
-            // writing. If a regular file then resize that file to target size.
-            prepare_unpack_output(&mut output_file, archive.source_total_size)?;
+    // Check if the given output file is a regular file or block device.
+    // If it is a block device we should check its size against the target size before
+    // writing. If a regular file then resize that file to target size.
+    prepare_unpack_output(&mut output_file, archive.source_total_size)?;
 
-            let mut output = BufWriter::new(output_file);
-            clone_to_output(
-                pool,
-                archive_backend,
-                &archive,
-                &config.seed_files,
-                chunker_params,
-                chunks_left,
-                |chunk_source: &str, hash: &HashBuf, chunk_data: &[u8]| {
-                    println!(
-                        "Chunk '{}', size {} used from {}",
-                        HexSlice::new(hash),
-                        size_to_str(chunk_data.len()),
-                        chunk_source,
-                    );
-                    output
-                        .write_chunk(hash, &archive.chunk_source_offsets(hash), chunk_data)
-                        .expect("write chunk");
-                },
-            )?;
-        }
-        config::CloneOutput::Archive(_) => {
-            // Clone to archive
-            let mut output =
-                clone_output::ArchiveOutput::new(output_file, &archive, chunker_params.clone());
+    let mut output_file = BufWriter::new(output_file);
+    clone_to_output(
+        pool,
+        archive_backend,
+        &archive,
+        &config.seed_files,
+        chunker_params,
+        chunks_left,
+        |chunk_source: &str, hash: &HashBuf, chunk_data: &[u8]| {
+            println!(
+                "Chunk '{}', size {} used from {}",
+                HexSlice::new(hash),
+                size_to_str(chunk_data.len()),
+                chunk_source,
+            );
 
-            clone_to_output(
-                pool,
-                archive_backend,
-                &archive,
-                &config.seed_files,
-                chunker_params,
-                chunks_left,
-                |chunk_source: &str, hash: &HashBuf, chunk_data: &[u8]| {
-                    println!(
-                        "Chunk '{}', size {} used from {}",
-                        HexSlice::new(hash),
-                        size_to_str(chunk_data.len()),
-                        chunk_source,
-                    );
-                    output
-                        .write_chunk(hash, &archive.chunk_source_offsets(hash), chunk_data)
-                        .expect("write chunk");
-                },
-            )?;
-
-            // Write the header
-            output.write_header()?;
-        }
-    }
+            for offset in &archive.chunk_source_offsets(hash) {
+                output_file
+                    .seek(SeekFrom::Start(*offset))
+                    .expect("seek output");
+                output_file.write_all(chunk_data).expect("write output");
+            }
+        },
+    )?;
 
     Ok(())
 }
