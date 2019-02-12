@@ -58,25 +58,8 @@ where
     };
 
     {
-        let mut p = ParaPipe::new(
+        let mut pipe = ParaPipe::new_output(
             pool,
-            move |(chunk_offset, chunk_data): (usize, Vec<u8>)| {
-                // Generate checksun for each chunk
-                let hash = hash_chunk(&chunk_data);
-                (
-                    ChunkSourceDescriptor {
-                        unique_chunk_index: 0,
-                        hash: hash.clone(),
-                        offset: chunk_offset,
-                        size: chunk_data.len(),
-                    },
-                    HashedChunk {
-                        hash,
-                        offset: chunk_offset,
-                        data: chunk_data.to_vec(),
-                    },
-                )
-            },
             |(mut chunk_desc, hashed_chunk): (ChunkSourceDescriptor, HashedChunk)| {
                 match chunk_map.entry(hashed_chunk.hash.clone()) {
                     Entry::Occupied(o) => {
@@ -103,7 +86,26 @@ where
                 //file_hash.input(chunk_data);
                 let chunk_data = chunk_data.to_vec();
                 file_size += chunk_data.len();
-                p.input((chunk_offset, chunk_data));
+                pipe.input(
+                    (chunk_offset, chunk_data),
+                    move |(chunk_offset, chunk_data): (usize, Vec<u8>)| {
+                        // Generate checksun for each chunk
+                        let hash = hash_chunk(&chunk_data);
+                        (
+                            ChunkSourceDescriptor {
+                                unique_chunk_index: 0,
+                                hash: hash.clone(),
+                                offset: chunk_offset,
+                                size: chunk_data.len(),
+                            },
+                            HashedChunk {
+                                hash,
+                                offset: chunk_offset,
+                                data: chunk_data.to_vec(),
+                            },
+                        )
+                    },
+                );
             })
             .expect("chunker");
     }
@@ -131,23 +133,19 @@ where
     C: Fn(&[u8]) -> Vec<u8> + Send + 'static + Copy,
     H: Fn(&[u8]) -> Vec<u8> + Send + 'static + Copy,
 {
-    let mut p = ParaPipe::new(
-        pool,
-        move |hashed_chunk: HashedChunk| {
-            let cdata = compress_chunk(&hashed_chunk.data);
-            CompressedChunk {
-                hash: hashed_chunk.hash,
-                offset: hashed_chunk.offset,
-                data: hashed_chunk.data,
-                cdata,
-            }
-        },
-        chunk_callback,
-    );
+    let mut pipe = ParaPipe::new_output(pool, chunk_callback);
 
     let (file_size, file_hash, chunks) =
         unique_chunks(chunker, hash_chunk, &pool, hash_input, |hashed_chunk| {
-            p.input(hashed_chunk);
+            pipe.input(hashed_chunk, move |hashed_chunk: HashedChunk| {
+                let cdata = compress_chunk(&hashed_chunk.data);
+                CompressedChunk {
+                    hash: hashed_chunk.hash,
+                    offset: hashed_chunk.offset,
+                    data: hashed_chunk.data,
+                    cdata,
+                }
+            });
         })?;
 
     Ok((file_size, file_hash, chunks))

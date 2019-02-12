@@ -322,26 +322,10 @@ impl ArchiveReader {
         // Setup a parallel pipe for decompression and verify chunk data
         let hash_length = self.hash_length;
         let chunk_compression = self.chunk_compression;
-        let mut pipe = ParaPipe::new(
-            pool,
-            move |(checksum, source_size, archive_data): (HashBuf, usize, Vec<u8>)| {
-                (
-                    Self::decompress_and_verify(
-                        hash_length,
-                        chunk_compression,
-                        &checksum,
-                        source_size,
-                        archive_data,
-                    )
-                    .expect("decompression failed"),
-                    checksum,
-                )
-            },
-            |(chunk_data, checksum)| {
-                // For each offset where this chunk was found in source
-                chunk_callback(checksum, &chunk_data).expect("forward chunk");
-            },
-        );
+        let mut pipe = ParaPipe::new_output(pool, |(chunk_data, checksum): (Vec<u8>, HashBuf)| {
+            // For each offset where this chunk was found in source
+            chunk_callback(checksum, &chunk_data).expect("forward chunk");
+        });
 
         // Create groups of chunks so that we can make a single request for all chunks
         // which are placed in sequence in archive.
@@ -358,11 +342,26 @@ impl ArchiveReader {
                     // For each chunk read from archive
                     let chunk_descriptor = &group[chunk_index];
                     total_read += u64::from(chunk_descriptor.archive_size);
-                    pipe.input((
-                        chunk_descriptor.checksum.clone(),
-                        chunk_descriptor.source_size as usize,
-                        archive_data,
-                    ));
+                    pipe.input(
+                        (
+                            chunk_descriptor.checksum.clone(),
+                            chunk_descriptor.source_size as usize,
+                            archive_data,
+                        ),
+                        move |(checksum, source_size, archive_data): (HashBuf, usize, Vec<u8>)| {
+                            (
+                                Self::decompress_and_verify(
+                                    hash_length,
+                                    chunk_compression,
+                                    &checksum,
+                                    source_size,
+                                    archive_data,
+                                )
+                                .expect("decompression failed"),
+                                checksum,
+                            )
+                        },
+                    );
 
                     chunk_index += 1;
 
@@ -399,26 +398,10 @@ impl ArchiveReader {
         // Setup a parallel pipe for decompression and verify chunk data
         let hash_length = self.hash_length;
         let chunk_compression = self.chunk_compression;
-        let mut pipe = ParaPipe::new(
-            pool,
-            move |(checksum, source_size, archive_data): (HashBuf, usize, Vec<u8>)| {
-                (
-                    Self::decompress_and_verify(
-                        hash_length,
-                        chunk_compression,
-                        &checksum,
-                        source_size,
-                        archive_data,
-                    )
-                    .expect("decompression failed"),
-                    checksum,
-                )
-            },
-            |(chunk_data, checksum)| {
-                // For each offset where this chunk was found in source
-                chunk_callback(checksum, &chunk_data).expect("forward chunk");
-            },
-        );
+        let mut pipe = ParaPipe::new_output(pool, |(chunk_data, checksum): (Vec<u8>, HashBuf)| {
+            // For each offset where this chunk was found in source
+            chunk_callback(checksum, &chunk_data).expect("forward chunk");
+        });
 
         for chunk_descriptor in descriptors {
             // Read through the stream and pick the chunk data requsted.
@@ -435,11 +418,26 @@ impl ArchiveReader {
                 .read_exact(&mut archive_data)
                 .chain_err(|| "failed to read from archive")?;
 
-            pipe.input((
-                chunk_descriptor.checksum.clone(),
-                chunk_descriptor.source_size as usize,
-                archive_data,
-            ));
+            pipe.input(
+                (
+                    chunk_descriptor.checksum.clone(),
+                    chunk_descriptor.source_size as usize,
+                    archive_data,
+                ),
+                move |(checksum, source_size, archive_data): (HashBuf, usize, Vec<u8>)| {
+                    (
+                        Self::decompress_and_verify(
+                            hash_length,
+                            chunk_compression,
+                            &checksum,
+                            source_size,
+                            archive_data,
+                        )
+                        .expect("decompression failed"),
+                        checksum,
+                    )
+                },
+            );
 
             current_input_offset += skip;
             current_input_offset += u64::from(chunk_descriptor.archive_size);
