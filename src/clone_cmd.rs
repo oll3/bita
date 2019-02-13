@@ -94,6 +94,7 @@ fn clone_to_output<T, F>(
     archive_backend: T,
     archive: &ArchiveReader,
     seed_files: &[PathBuf],
+    seed_stdin: bool,
     chunker_params: ChunkerParams,
     mut chunks_left: HashSet<HashBuf>,
     mut chunk_output: F,
@@ -106,7 +107,7 @@ where
 
     // Run input seed files through chunker and use chunks which are in the target file.
     // Start with scanning stdin, if not a tty.
-    if !atty::is(Stream::Stdin) {
+    if seed_stdin && !atty::is(Stream::Stdin) {
         let stdin = io::stdin();
         let chunks_missing = chunks_left.len();
         let stdin = stdin.lock();
@@ -249,6 +250,7 @@ where
         archive_backend,
         &archive,
         &config.seed_files,
+        config.seed_stdin,
         chunker_params,
         chunks_left,
         |chunk_source: &str, hash: &HashBuf, chunk_data: &[u8]| {

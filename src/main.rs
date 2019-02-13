@@ -145,7 +145,7 @@ fn parse_opts() -> Result<Config> {
                     Arg::with_name("seed")
                         .value_name("FILE")
                         .long("seed")
-                        .help("File to use as seed while cloning.")
+                        .help("File to use as seed while cloning or '-' to read from stdin.")
                         .multiple(true),
                 )
         )
@@ -213,9 +213,18 @@ fn parse_opts() -> Result<Config> {
     } else if let Some(matches) = matches.subcommand_matches("clone") {
         let input = matches.value_of("INPUT").unwrap();
         let output = matches.value_of("OUTPUT").unwrap_or("");
+        let mut seed_stdin = false;
         let seed_files = matches
             .values_of("seed")
             .unwrap_or_default()
+            .filter(|s| {
+                if *s == "-" {
+                    seed_stdin = true;
+                    false
+                } else {
+                    true
+                }
+            })
             .map(|s| Path::new(s).to_path_buf())
             .collect();
 
@@ -224,6 +233,7 @@ fn parse_opts() -> Result<Config> {
             input: input.to_string(),
             output: Path::new(output).to_path_buf(),
             seed_files,
+            seed_stdin,
         }))
     } else {
         println!("Unknown command");

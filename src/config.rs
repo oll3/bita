@@ -30,6 +30,7 @@ pub struct CloneConfig {
 
     pub input: String,
     pub output: PathBuf,
+    pub seed_stdin: bool,
     pub seed_files: Vec<PathBuf>,
 }
 

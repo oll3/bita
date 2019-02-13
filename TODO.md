@@ -1,10 +1,8 @@
 ### Should
 
- * The parallel chunk processing shoudld handle back pressure. This to avoid unecesarry memory usage.
-
 ### Probably
 
- * Allow for fixed block size while chunking.
+ * On compress - Allow for fixed block size.
 
 ### Maybe
 
