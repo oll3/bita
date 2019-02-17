@@ -101,8 +101,12 @@ where
         let mut buf_index = 0;
         let mut chunk_start = 0;
 
-        // Assuming min chunk size is less than buzhash window size
-        let buzhash_input_limit = self.min_chunk_size - self.buzhash.window_size();
+        // Allow for chunk size less than buzhash window
+        let buzhash_input_limit = if self.min_chunk_size >= self.buzhash.window_size() {
+            self.min_chunk_size - self.buzhash.window_size()
+        } else {
+            0
+        };
 
         loop {
             // Fill buffer from source input
@@ -116,7 +120,6 @@ where
                 }
                 return Ok(());
             }
-
             while !self.buzhash.valid() && buf_index < self.source_buf.len() {
                 // Initialize the buzhash
                 self.buzhash.init(self.source_buf[buf_index]);
