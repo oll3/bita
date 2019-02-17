@@ -1,0 +1,10 @@
+language: rust
+rust:
+  - 1.32.0
+  - stable
+  - beta
+  - nightly
+env:
+  - RUST_BACKTRACE=1
+script:
+- cargo test --verbose
