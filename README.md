@@ -1,6 +1,8 @@
-## What
+# bita
+[![Build Status](https://travis-ci.org/oll3/bita.svg?branch=master)](https://travis-ci.org/oll3/bita)
+[![](http://meritbadge.herokuapp.com/bita)](https://crates.io/crates/bita)
 
-bita is a tool aiming for fast file synchronization over http.
+bita is a tool aiming for fast and low bandwidth file synchronization over http.
 
 The application works by searching for similar chunks of data in the remote archive and local seed files, and only download the chunks not present locally.
 
