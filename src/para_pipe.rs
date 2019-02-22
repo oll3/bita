@@ -74,3 +74,32 @@ impl<'a, O> Drop for ParaPipe<'a, O> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ParaPipe;
+    use std::{thread, time};
+    use threadpool::ThreadPool;
+    #[test]
+    fn preserve_input_order() {
+        // Ensure that the order of the output data is the same as
+        // the input order.
+        let pool = ThreadPool::new(2);
+        let mut output_data = Vec::new();
+        let input_data = [(0, 200), (1, 10), (2, 30), (3, 500), (4, 10)];
+        let mut pipe = ParaPipe::new_output(&pool, |(out_data, work_delay)| {
+            output_data.push((out_data, work_delay));
+        });
+
+        for value in &input_data {
+            pipe.input(value.clone(), |(input_data, work_delay): (u32, u32)| {
+                // Delay each work with the given delay
+                thread::sleep(time::Duration::from_millis(work_delay as u64));
+                (input_data, work_delay)
+            });
+        }
+        drop(pipe); // <- Should block until all input has been processed
+
+        assert_eq!(output_data, input_data);
+    }
+}
