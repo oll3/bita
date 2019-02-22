@@ -10,6 +10,7 @@ use std::os::linux::fs::MetadataExt;
 use std::path::PathBuf;
 use threadpool::ThreadPool;
 
+use crate::archive;
 use crate::archive_reader::*;
 use crate::buzhash::BuzHash;
 use crate::chunker::{Chunker, ChunkerParams};
@@ -226,7 +227,7 @@ where
         archive.chunk_filter_bits,
         archive.min_chunk_size,
         archive.max_chunk_size,
-        BuzHash::new(archive.hash_window_size as usize, crate::BUZHASH_SEED),
+        BuzHash::new(archive.hash_window_size as usize, archive::BUZHASH_SEED),
     );
 
     // Create or open output file.

@@ -16,6 +16,8 @@ use crate::chunker_utils::*;
 use crate::config::CompressConfig;
 use crate::errors::*;
 
+pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 struct ChunkFileDescriptor {
     total_file_size: usize,
     file_hash: HashBuf,
@@ -33,7 +35,7 @@ fn chunk_into_file(
         config.chunk_filter_bits,
         config.min_chunk_size,
         config.max_chunk_size,
-        BuzHash::new(config.hash_window_size as usize, crate::BUZHASH_SEED),
+        BuzHash::new(config.hash_window_size as usize, archive::BUZHASH_SEED),
     );
 
     // Compress a chunk
@@ -187,7 +189,7 @@ pub fn run(config: &CompressConfig, pool: &ThreadPool) -> Result<()> {
             .iter()
             .map(|source_descriptor| source_descriptor.unique_chunk_index as u32)
             .collect(),
-        application_version: crate::PKG_VERSION.to_string(),
+        application_version: PKG_VERSION.to_string(),
         chunk_descriptors: RepeatedField::from_vec(chunk_file_descriptor.chunk_descriptors),
         source_checksum: chunk_file_descriptor.file_hash,
         chunk_compression: SingularPtrField::some(config.compression.into()),

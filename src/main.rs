@@ -1,44 +1,23 @@
 #[macro_use]
 extern crate error_chain;
-extern crate atty;
-extern crate blake2;
+extern crate bita;
 extern crate clap;
-extern crate crossbeam_channel;
-extern crate curl;
-extern crate lzma;
 extern crate num_cpus;
-extern crate protobuf;
 extern crate threadpool;
-extern crate zstd;
-
-mod archive;
-mod archive_reader;
-mod buzhash;
-mod chunk_dictionary;
-mod chunker;
-mod chunker_utils;
-mod clone_cmd;
-mod compress_cmd;
-mod compression;
-mod config;
-mod errors;
-mod file_archive_backend;
-mod para_pipe;
-mod remote_archive_backend;
-mod string_utils;
 
 use clap::{App, Arg, SubCommand};
 use std::path::Path;
 use std::process;
 use threadpool::ThreadPool;
 
-use crate::compression::Compression;
-use crate::config::*;
-use crate::errors::*;
+use bita::clone_cmd;
+use bita::compress_cmd;
+use bita::compression::Compression;
+use bita::config::*;
+use bita::errors::*;
 
-pub const BUZHASH_SEED: u32 = 0x1032_4195;
-pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");
+pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn parse_size(size_str: &str) -> usize {
     let size_val: String = size_str.chars().filter(|a| a.is_numeric()).collect();

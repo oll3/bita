@@ -10,6 +10,7 @@ use crate::errors::*;
 use crate::string_utils::*;
 
 pub const PRE_HEADER_SIZE: usize = 14;
+pub const BUZHASH_SEED: u32 = 0x1032_4195;
 
 #[derive(Clone)]
 pub struct ChunkDescriptor {

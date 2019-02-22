@@ -169,6 +169,7 @@ where
 mod tests {
     use super::Chunker;
     use super::ChunkerParams;
+    use crate::archive::BUZHASH_SEED;
     use crate::buzhash::BuzHash;
     #[test]
     fn consistency_small_min_chunk() {
@@ -204,7 +205,7 @@ mod tests {
 
         let mut src: &[u8] = &src;
         let mut chunker = Chunker::new(
-            ChunkerParams::new(5, 3, 640, BuzHash::new(5, crate::BUZHASH_SEED)),
+            ChunkerParams::new(5, 3, 640, BuzHash::new(5, BUZHASH_SEED)),
             &mut src,
         );
 
@@ -296,7 +297,7 @@ mod tests {
 
         let mut src: &[u8] = &src;
         let mut chunker = Chunker::new(
-            ChunkerParams::new(6, 64, 1024, BuzHash::new(20, crate::BUZHASH_SEED)),
+            ChunkerParams::new(6, 64, 1024, BuzHash::new(20, BUZHASH_SEED)),
             &mut src,
         );
 
