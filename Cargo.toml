@@ -1,6 +1,6 @@
 [package]
 name = "bita"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Olle Sandberg <olle@b3rg.se>"]
 license = "MIT"
 edition = '2018'
