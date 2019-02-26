@@ -7,6 +7,7 @@ use std::io::prelude::*;
 
 use crate::archive;
 use crate::chunk_dictionary;
+use crate::chunker::ChunkerParams;
 use crate::chunker_utils::HashBuf;
 use crate::compression::Compression;
 use crate::errors::*;
@@ -53,10 +54,7 @@ pub struct ArchiveReader {
     pub source_checksum: HashBuf,
 
     // Chunker parameters used when this archive was created
-    pub chunk_filter_bits: u32,
-    pub min_chunk_size: usize,
-    pub max_chunk_size: usize,
-    pub hash_window_size: usize,
+    pub chunker_params: ChunkerParams,
     pub hash_length: usize,
 }
 
@@ -197,10 +195,13 @@ impl ArchiveReader {
                 .map(|s| s as usize)
                 .collect(),
             archive_chunks_offset: chunk_data_offset as u64,
-            chunk_filter_bits: chunker_params.chunk_filter_bits,
-            min_chunk_size: chunker_params.min_chunk_size as usize,
-            max_chunk_size: chunker_params.max_chunk_size as usize,
-            hash_window_size: chunker_params.hash_window_size as usize,
+            chunker_params: ChunkerParams::new(
+                chunker_params.chunk_filter_bits,
+                chunker_params.min_chunk_size as usize,
+                chunker_params.max_chunk_size as usize,
+                chunker_params.hash_window_size as usize,
+                archive::BUZHASH_SEED,
+            ),
             hash_length: chunker_params.chunk_hash_length as usize,
         })
     }

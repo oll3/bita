@@ -33,11 +33,11 @@ pub struct Chunk {
 
 #[derive(Clone)]
 pub struct ChunkerParams {
-    pub buzhash: BuzHash,
-    pub filter_mask: u32,
     pub filter_bits: u32,
     pub min_chunk_size: usize,
     pub max_chunk_size: usize,
+    pub buzhash_window_size: usize,
+    pub buzhash_seed: u32,
 }
 
 impl ChunkerParams {
@@ -45,15 +45,20 @@ impl ChunkerParams {
         chunk_filter_bits: u32,
         min_chunk_size: usize,
         max_chunk_size: usize,
-        buzhash: BuzHash,
+        buzhash_window_size: usize,
+        buzhash_seed: u32,
     ) -> Self {
         ChunkerParams {
             filter_bits: chunk_filter_bits,
-            filter_mask: !0 >> (32 - chunk_filter_bits),
             min_chunk_size,
             max_chunk_size,
-            buzhash,
+            buzhash_window_size,
+            buzhash_seed,
         }
+    }
+
+    pub fn filter_mask(&self) -> u32 {
+        !0 >> (32 - self.filter_bits)
     }
 }
 
@@ -77,10 +82,10 @@ where
 {
     pub fn new(params: ChunkerParams, source: &'a mut T) -> Self {
         Chunker {
-            filter_mask: params.filter_mask,
+            filter_mask: params.filter_mask(),
             min_chunk_size: params.min_chunk_size,
             max_chunk_size: params.max_chunk_size,
-            buzhash: params.buzhash,
+            buzhash: BuzHash::new(params.buzhash_window_size, params.buzhash_seed),
             source_buf: Vec::new(),
             scan_time: Duration::new(0, 0),
             read_time: Duration::new(0, 0),
@@ -170,7 +175,6 @@ mod tests {
     use super::Chunker;
     use super::ChunkerParams;
     use crate::archive::BUZHASH_SEED;
-    use crate::buzhash::BuzHash;
     #[test]
     fn consistency_small_min_chunk() {
         let expected_chunk_offsets = [
@@ -204,10 +208,7 @@ mod tests {
             .collect::<Vec<u8>>();
 
         let mut src: &[u8] = &src;
-        let mut chunker = Chunker::new(
-            ChunkerParams::new(5, 3, 640, BuzHash::new(5, BUZHASH_SEED)),
-            &mut src,
-        );
+        let mut chunker = Chunker::new(ChunkerParams::new(5, 3, 640, 5, BUZHASH_SEED), &mut src);
 
         let mut chunk_offsets: Vec<usize> = Vec::new();
         chunker
@@ -296,10 +297,7 @@ mod tests {
             .collect::<Vec<u8>>();
 
         let mut src: &[u8] = &src;
-        let mut chunker = Chunker::new(
-            ChunkerParams::new(6, 64, 1024, BuzHash::new(20, BUZHASH_SEED)),
-            &mut src,
-        );
+        let mut chunker = Chunker::new(ChunkerParams::new(6, 64, 1024, 20, BUZHASH_SEED), &mut src);
 
         let mut chunk_offsets: Vec<usize> = Vec::new();
         chunker

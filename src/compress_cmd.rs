@@ -9,7 +9,6 @@ use std::io::{Seek, SeekFrom, Write};
 use threadpool::ThreadPool;
 
 use crate::archive;
-use crate::buzhash::BuzHash;
 use crate::chunk_dictionary;
 use crate::chunker::*;
 use crate::chunker_utils::*;
@@ -35,7 +34,8 @@ fn chunk_into_file(
         config.chunk_filter_bits,
         config.min_chunk_size,
         config.max_chunk_size,
-        BuzHash::new(config.hash_window_size as usize, archive::BUZHASH_SEED),
+        config.hash_window_size,
+        archive::BUZHASH_SEED,
     );
 
     // Compress a chunk

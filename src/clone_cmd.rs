@@ -10,9 +10,7 @@ use std::os::linux::fs::MetadataExt;
 use std::path::PathBuf;
 use threadpool::ThreadPool;
 
-use crate::archive;
 use crate::archive_reader::*;
-use crate::buzhash::BuzHash;
 use crate::chunker::{Chunker, ChunkerParams};
 use crate::chunker_utils::*;
 use crate::config;
@@ -223,12 +221,7 @@ where
     println!("Cloning archive ({})", archive);
 
     // Setup chunker to use when chunking seed input
-    let chunker_params = ChunkerParams::new(
-        archive.chunk_filter_bits,
-        archive.min_chunk_size,
-        archive.max_chunk_size,
-        BuzHash::new(archive.hash_window_size as usize, archive::BUZHASH_SEED),
-    );
+    let chunker_params = archive.chunker_params.clone();
 
     // Create or open output file.
     let mut output_file = OpenOptions::new()
