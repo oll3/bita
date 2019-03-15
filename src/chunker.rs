@@ -1,7 +1,6 @@
 use crate::buzhash::BuzHash;
 use std::io;
 use std::io::prelude::*;
-use std::time::{Duration, Instant};
 
 const CHUNKER_BUF_SIZE: usize = 1024 * 1024;
 
@@ -71,9 +70,12 @@ where
     min_chunk_size: usize,
     max_chunk_size: usize,
     source_buf: Vec<u8>,
-    pub scan_time: Duration,
-    pub read_time: Duration,
     source: &'a mut T,
+    buzhash_input_limit: usize,
+    source_index: u64,
+    buf_index: usize,
+    chunk_start: u64,
+    last_chunk_size: usize,
 }
 
 impl<'a, T> Chunker<'a, T>
@@ -81,15 +83,25 @@ where
     T: Read,
 {
     pub fn new(params: ChunkerParams, source: &'a mut T) -> Self {
+        // Allow for chunk size less than buzhash window
+        let buzhash_input_limit = if params.min_chunk_size >= params.buzhash_window_size {
+            params.min_chunk_size - params.buzhash_window_size
+        } else {
+            0
+        };
+
         Chunker {
             filter_mask: params.filter_mask(),
             min_chunk_size: params.min_chunk_size,
             max_chunk_size: params.max_chunk_size,
             buzhash: BuzHash::new(params.buzhash_window_size, params.buzhash_seed),
             source_buf: Vec::new(),
-            scan_time: Duration::new(0, 0),
-            read_time: Duration::new(0, 0),
             source,
+            buzhash_input_limit,
+            source_index: 0,
+            buf_index: 0,
+            chunk_start: 0,
+            last_chunk_size: 0,
         }
     }
 
@@ -98,52 +110,49 @@ where
         self.source_buf.extend(data);
     }
 
-    pub fn scan<F>(&mut self, mut result: F) -> io::Result<()>
-    where
-        F: FnMut(usize, &[u8]),
-    {
-        let mut source_index: usize = 0;
-        let mut buf_index = 0;
-        let mut chunk_start = 0;
-
-        // Allow for chunk size less than buzhash window
-        let buzhash_input_limit = if self.min_chunk_size >= self.buzhash.window_size() {
-            self.min_chunk_size - self.buzhash.window_size()
-        } else {
-            0
-        };
+    // Scan source for chunks.
+    // Each call returns a chunk with offset or None if EOF was reached.
+    pub fn scan<'b>(&'b mut self) -> io::Result<Option<(u64, &'b [u8])>> {
+        if self.last_chunk_size > 0 {
+            self.source_buf.drain(..self.last_chunk_size);
+            self.last_chunk_size = 0;
+            self.buf_index = 0;
+        }
 
         loop {
-            // Fill buffer from source input
-            let read_start_time = Instant::now();
-            let rc = append_to_buf(self.source, &mut self.source_buf, CHUNKER_BUF_SIZE)?;
-            self.read_time += read_start_time.elapsed();
-            if rc == 0 {
-                // EOF
-                if !self.source_buf.is_empty() {
-                    result(chunk_start, &self.source_buf[..]);
+            if self.buf_index >= self.source_buf.len() {
+                // Fill buffer from source input
+                let rc = append_to_buf(self.source, &mut self.source_buf, CHUNKER_BUF_SIZE)?;
+                if rc == 0 {
+                    // EOF
+                    if !self.source_buf.is_empty() {
+                        println!("Last chunk");
+                        self.last_chunk_size = self.source_buf.len();
+                        return Ok(Some((self.chunk_start, &self.source_buf[..])));
+                    } else {
+                        println!("EOF");
+                        return Ok(None);
+                    }
                 }
-                return Ok(());
-            }
-            while !self.buzhash.valid() && buf_index < self.source_buf.len() {
-                // Initialize the buzhash
-                self.buzhash.init(self.source_buf[buf_index]);
-                buf_index += 1;
-                source_index += 1;
+                while !self.buzhash.valid() && self.buf_index < self.source_buf.len() {
+                    // Initialize the buzhash
+                    self.buzhash.init(self.source_buf[self.buf_index]);
+                    self.buf_index += 1;
+                    self.source_index += 1;
+                }
             }
 
-            let mut start_scan_time = Instant::now();
-            while buf_index < self.source_buf.len() {
-                let val = self.source_buf[buf_index];
-                let chunk_end = source_index + 1;
-                let chunk_length = chunk_end - chunk_start;
+            while self.buf_index < self.source_buf.len() {
+                let val = self.source_buf[self.buf_index];
+                let chunk_end = self.source_index + 1;
+                let chunk_length = (chunk_end - self.chunk_start) as usize;
 
-                if chunk_length >= buzhash_input_limit {
+                if chunk_length >= self.buzhash_input_limit {
                     self.buzhash.input(val);
                 }
 
-                buf_index += 1;
-                source_index += 1;
+                self.buf_index += 1;
+                self.source_index += 1;
 
                 if chunk_length >= self.min_chunk_size {
                     let mut got_chunk = chunk_length >= self.max_chunk_size;
@@ -155,17 +164,13 @@ where
 
                     if got_chunk {
                         // Match or big chunk - Report it
-                        //let chunk_data = buf.drain(..chunk_length).collect();
-                        self.scan_time += start_scan_time.elapsed();
-                        result(chunk_start, &self.source_buf[..chunk_length]);
-                        start_scan_time = Instant::now();
-                        self.source_buf.drain(..chunk_length);
-                        buf_index = 0;
-                        chunk_start = chunk_end;
+                        self.last_chunk_size = chunk_length;
+                        let chunk_start = self.chunk_start;
+                        self.chunk_start = chunk_end;
+                        return Ok(Some((chunk_start, &self.source_buf[..chunk_length])));
                     }
                 }
             }
-            self.scan_time += start_scan_time.elapsed();
         }
     }
 }
@@ -210,12 +215,11 @@ mod tests {
         let mut src: &[u8] = &src;
         let mut chunker = Chunker::new(ChunkerParams::new(5, 3, 640, 5, BUZHASH_SEED), &mut src);
 
-        let mut chunk_offsets: Vec<usize> = Vec::new();
-        chunker
-            .scan(|offset, _data| {
-                chunk_offsets.push(offset);
-            })
-            .expect("scan");
+        let mut chunk_offsets: Vec<u64> = Vec::new();
+        while let Some((offset, data)) = chunker.scan().expect("scan") {
+            chunk_offsets.push(offset);
+        }
+
         assert_eq!(expected_chunk_offsets[..], chunk_offsets[..]);
     }
     #[test]
@@ -299,12 +303,10 @@ mod tests {
         let mut src: &[u8] = &src;
         let mut chunker = Chunker::new(ChunkerParams::new(6, 64, 1024, 20, BUZHASH_SEED), &mut src);
 
-        let mut chunk_offsets: Vec<usize> = Vec::new();
-        chunker
-            .scan(|offset, _data| {
-                chunk_offsets.push(offset);
-            })
-            .expect("scan");
+        let mut chunk_offsets: Vec<u64> = Vec::new();
+        while let Some((offset, data)) = chunker.scan().expect("scan") {
+            chunk_offsets.push(offset);
+        }
         assert_eq!(expected_chunk_offsets[..], chunk_offsets[..]);
     }
 }

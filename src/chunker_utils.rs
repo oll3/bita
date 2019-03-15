@@ -77,37 +77,35 @@ where
             },
         );
 
-        chunker
-            .scan(|chunk_offset, chunk_data| {
-                // For each chunk in file
-                if let Some(ref mut hasher) = input_hasher_opt {
-                    hasher.input(chunk_data)
-                }
-                //file_hash.input(chunk_data);
-                let chunk_data = chunk_data.to_vec();
-                file_size += chunk_data.len();
-                pipe.input(
-                    (chunk_offset, chunk_data),
-                    move |(chunk_offset, chunk_data): (usize, Vec<u8>)| {
-                        // Generate checksun for each chunk
-                        let hash = hash_chunk(&chunk_data);
-                        (
-                            ChunkSourceDescriptor {
-                                unique_chunk_index: 0,
-                                hash: hash.clone(),
-                                offset: chunk_offset,
-                                size: chunk_data.len(),
-                            },
-                            HashedChunk {
-                                hash,
-                                offset: chunk_offset,
-                                data: chunk_data.to_vec(),
-                            },
-                        )
-                    },
-                );
-            })
-            .expect("chunker");
+        while let Some((chunk_offset, chunk_data)) = chunker.scan().expect("scan") {
+            // For each chunk in file
+            if let Some(ref mut hasher) = input_hasher_opt {
+                hasher.input(chunk_data)
+            }
+            //file_hash.input(chunk_data);
+            let chunk_data = chunk_data.to_vec();
+            file_size += chunk_data.len();
+            pipe.input(
+                (chunk_offset as usize, chunk_data),
+                move |(chunk_offset, chunk_data): (usize, Vec<u8>)| {
+                    // Generate checksun for each chunk
+                    let hash = hash_chunk(&chunk_data);
+                    (
+                        ChunkSourceDescriptor {
+                            unique_chunk_index: 0,
+                            hash: hash.clone(),
+                            offset: chunk_offset,
+                            size: chunk_data.len(),
+                        },
+                        HashedChunk {
+                            hash,
+                            offset: chunk_offset,
+                            data: chunk_data.to_vec(),
+                        },
+                    )
+                },
+            );
+        }
     }
 
     let total_hash = match input_hasher_opt {

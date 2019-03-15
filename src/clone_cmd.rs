@@ -56,13 +56,6 @@ where
             })
             .chain_err(|| "failed to get unique chunks")?;
 
-            println!(
-                "Chunker - scan time: {}.{:03} s, read time: {}.{:03} s",
-                chunker.scan_time.as_secs(),
-                chunker.scan_time.subsec_millis(),
-                chunker.read_time.as_secs(),
-                chunker.read_time.subsec_millis()
-            );
             Ok(())
         }
         Err(err) => Err(err),
