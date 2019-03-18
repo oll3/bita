@@ -105,11 +105,6 @@ where
         }
     }
 
-    // Can be called before scan to preload scan buffer
-    pub fn preload(&mut self, data: &[u8]) {
-        self.source_buf.extend(data);
-    }
-
     // Scan source for chunks.
     // Each call returns a chunk with offset or None if EOF was reached.
     pub fn scan<'b>(&'b mut self) -> io::Result<Option<(u64, &'b [u8])>> {

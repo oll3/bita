@@ -14,22 +14,6 @@ use crate::errors::*;
 use crate::para_pipe::ParaPipe;
 use crate::string_utils::*;
 
-// Skip forward in a file/stream which is non seekable
-fn skip_bytes<T>(input: &mut T, skip_bytes: u64, skip_buffer: &mut [u8]) -> Result<()>
-where
-    T: Read,
-{
-    let mut total_read = 0;
-    while total_read < skip_bytes {
-        let read_bytes = std::cmp::min(skip_buffer.len(), (skip_bytes - total_read) as usize);
-        input
-            .read_exact(&mut skip_buffer[0..read_bytes])
-            .chain_err(|| "failed to skip")?;
-        total_read += read_bytes as u64;
-    }
-    Ok(())
-}
-
 pub struct ArchiveReader {
     // Go from chunk hash to archive chunk index (chunks vector)
     chunk_map: HashMap<HashBuf, usize>,
@@ -348,80 +332,6 @@ impl ArchiveReader {
                     Ok(())
                 })
                 .expect("read chunks");
-        }
-
-        Ok(total_read)
-    }
-
-    // Get chunk data for all listed chunks if present in archive
-    pub fn read_chunk_stream<T, F>(
-        &mut self,
-        pool: &ThreadPool,
-        mut input: T,
-        mut current_input_offset: u64,
-        chunks: &HashSet<HashBuf>,
-        mut chunk_callback: F,
-    ) -> Result<u64>
-    where
-        T: Read,
-        F: FnMut(HashBuf, &[u8]) -> Result<()>,
-    {
-        let mut skip_buffer = vec![0; 1024 * 1024];
-        let mut total_read = 0;
-
-        // Sort list of chunks to be read in order of occurence in stream.
-        let descriptors = self
-            .chunk_descriptors
-            .iter()
-            .filter(|chunk| chunks.contains(&chunk.checksum));
-
-        // Setup a parallel pipe for decompression and verify chunk data
-        let hash_length = self.hash_length;
-        let chunk_compression = self.chunk_compression;
-        let mut pipe = ParaPipe::new_output(pool, |(chunk_data, checksum): (Vec<u8>, HashBuf)| {
-            // For each offset where this chunk was found in source
-            chunk_callback(checksum, &chunk_data).expect("forward chunk");
-        });
-
-        for chunk_descriptor in descriptors {
-            // Read through the stream and pick the chunk data requsted.
-
-            let mut archive_data = vec![0; chunk_descriptor.archive_size as usize];
-            let abs_chunk_offset = self.archive_chunks_offset + chunk_descriptor.archive_offset;
-
-            // Skip until chunk
-            let skip = abs_chunk_offset - current_input_offset;
-            skip_bytes(&mut input, skip, &mut skip_buffer)?;
-
-            // Read chunk data
-            input
-                .read_exact(&mut archive_data)
-                .chain_err(|| "failed to read from archive")?;
-
-            pipe.input(
-                (
-                    chunk_descriptor.checksum.clone(),
-                    chunk_descriptor.source_size as usize,
-                    archive_data,
-                ),
-                move |(checksum, source_size, archive_data): (HashBuf, usize, Vec<u8>)| {
-                    (
-                        Self::decompress_and_verify(
-                            hash_length,
-                            chunk_compression,
-                            &checksum,
-                            source_size,
-                            archive_data,
-                        )
-                        .expect("decompression failed"),
-                        checksum,
-                    )
-                },
-            );
-
-            current_input_offset += skip;
-            current_input_offset += u64::from(chunk_descriptor.archive_size);
-            total_read += u64::from(chunk_descriptor.archive_size);
         }
 
         Ok(total_read)

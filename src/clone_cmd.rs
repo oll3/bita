@@ -30,55 +30,28 @@ where
     T: Read,
     F: FnMut(&HashBuf, &[u8]),
 {
-    // Test if the given seed can be read as a bita archive.
-    let mut archive_header = Vec::new();
-    match ArchiveReader::try_init(&mut seed_input, &mut archive_header) {
-        Err(Error(ErrorKind::NotAnArchive(_), _)) => {
-            // As the input file was not an archive we feed the data read so
-            // far into the chunker.
-            let mut chunker = Chunker::new(chunker_params.clone(), &mut seed_input);
-            chunker.preload(&archive_header);
+    // As the input file was not an archive we feed the data read so
+    // far into the chunker.
+    let mut chunker = Chunker::new(chunker_params.clone(), &mut seed_input);
 
-            // If input is an archive also check if chunker parameter
-            // matches, otherwise error or warn user?
-            // Generate strong hash for a chunk
-            let hasher = |data: &[u8]| {
-                let mut hasher = Blake2b::new();
-                hasher.input(data);
-                hasher.result().to_vec()
-            };
-            unique_chunks(&mut chunker, hasher, &pool, false, |hashed_chunk| {
-                let hash = &hashed_chunk.hash[0..hash_length].to_vec();
-                if chunk_hash_set.contains(hash) {
-                    chunk_callback(hash, &hashed_chunk.data);
-                    chunk_hash_set.remove(hash);
-                }
-            })
-            .chain_err(|| "failed to get unique chunks")?;
-
-            Ok(())
+    // If input is an archive also check if chunker parameter
+    // matches, otherwise error or warn user?
+    // Generate strong hash for a chunk
+    let hasher = |data: &[u8]| {
+        let mut hasher = Blake2b::new();
+        hasher.input(data);
+        hasher.result().to_vec()
+    };
+    unique_chunks(&mut chunker, hasher, &pool, false, |hashed_chunk| {
+        let hash = &hashed_chunk.hash[0..hash_length].to_vec();
+        if chunk_hash_set.contains(hash) {
+            chunk_callback(hash, &hashed_chunk.data);
+            chunk_hash_set.remove(hash);
         }
-        Err(err) => Err(err),
-        Ok(ref mut archive) => {
-            // Is an archive
-            let current_input_offset = archive_header.len();
+    })
+    .chain_err(|| "failed to get unique chunks")?;
 
-            archive.read_chunk_stream(
-                &pool,
-                seed_input,
-                current_input_offset as u64,
-                &chunk_hash_set.clone(),
-                |checksum, chunk_data| {
-                    // Got chunk data for a matching chunk
-                    chunk_callback(&checksum, &chunk_data);
-                    chunk_hash_set.remove(&checksum);
-                    Ok(())
-                },
-            )?;
-
-            Ok(())
-        }
-    }
+    Ok(())
 }
 
 fn clone_to_output<T, F>(

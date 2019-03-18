@@ -4,15 +4,17 @@
 
 bita is a tool aiming for fast and low bandwidth file synchronization over http.
 
-The application works by searching for similar chunks of data in the remote archive and local seed files, and only download the chunks not present locally.
+The application search for similar chunks of data in the remote archive and in the local seed files and only fetch the chunks that are not present locally.
 
 On compression the source is scanned for chunks using a rolling hash for deciding where chunks starts and ends.
 Chunks are compressed and duplicated chunks are removed.
 A dictionary which describes how to rebuild the source file is also created.
 
-On clone the chunk dictionary is first downloaded, then bita scans the given seed files for chunks which are in the dictionary.
+On clone the chunk dictionary is first downloaded. Then bita scans the given seed files for chunks which are in the dictionary.
 Any matching chunk found in a seed will be inserted into the output file.
-When all seeds has been consumed the chunks still missing is downloaded from the remote archive.
+When all seeds has been consumed the chunks still missing is downloaded from the remote archive, unpacked and inserted into the output file.
+
+Each chunk is verified before written to the output.
 
 ---
 
@@ -42,8 +44,8 @@ As default bita compress chunk data using lzma at level 6. No compression and zs
 #### Compress a file
 `olle@host:~$ bita compress file.ext4 file.ext4.cba`
 
-#### Clone archive using multiple seeds (an_old.cba, another_old.tar and stdin (-))
-`olle@device:~$ gunzip -c old.tar.gz | bita clone --seed an_old.cba --seed another_old.tar --seed - http://host/file.cba file.cba`
+#### Clone using multiple seeds (another_old.tar and stdin (-))
+`olle@device:~$ gunzip -c old.tar.gz | bita clone --seed another_old.tar --seed - http://host/new.tar.cba new.tar`
 
-#### Clone and unpack using block device as seed and target
-`olle@device:~$ bita clone --unpack --seed /dev/disk/by-partlabel/rootfs-A http://host/file.ext4.cba /dev/disk/by-partlabel/rootfs-B`
+#### Clone using block device as seed and target
+`olle@device:~$ bita clone --seed /dev/disk/by-partlabel/rootfs-A http://host/file.ext4.cba /dev/disk/by-partlabel/rootfs-B`

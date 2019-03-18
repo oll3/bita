@@ -69,10 +69,6 @@ impl BuzHash {
         self.window_full
     }
 
-    pub fn window_size(&self) -> usize {
-        self.window
-    }
-
     pub fn init(&mut self, in_val: u8) {
         if !self.window_full {
             let in_val = self.buzhash_table[in_val as usize];
