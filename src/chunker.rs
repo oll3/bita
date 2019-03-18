@@ -126,11 +126,9 @@ where
                 if rc == 0 {
                     // EOF
                     if !self.source_buf.is_empty() {
-                        println!("Last chunk");
                         self.last_chunk_size = self.source_buf.len();
                         return Ok(Some((self.chunk_start, &self.source_buf[..])));
                     } else {
-                        println!("EOF");
                         return Ok(None);
                     }
                 }
@@ -142,34 +140,52 @@ where
                 }
             }
 
-            while self.buf_index < self.source_buf.len() {
-                let val = self.source_buf[self.buf_index];
-                let chunk_end = self.source_index + 1;
-                let chunk_length = (chunk_end - self.chunk_start) as usize;
-
-                if chunk_length >= self.buzhash_input_limit {
-                    self.buzhash.input(val);
-                }
-
-                self.buf_index += 1;
-                self.source_index += 1;
-
-                if chunk_length >= self.min_chunk_size {
-                    let mut got_chunk = chunk_length >= self.max_chunk_size;
-
-                    if !got_chunk {
-                        let hash = self.buzhash.sum();
-                        got_chunk = hash | self.filter_mask == hash;
+            // Skip past the minimum chunk size to minimize the number of hash inputs
+            let mut buf_index =
+                if self.buf_index < self.buzhash_input_limit && self.buzhash_input_limit > 0 {
+                    let skip_to = self.buzhash_input_limit - 1;
+                    if skip_to >= self.source_buf.len() {
+                        self.source_buf.len()
+                    } else {
+                        skip_to
                     }
+                } else {
+                    self.buf_index
+                };
 
-                    if got_chunk {
-                        // Match or big chunk - Report it
-                        self.last_chunk_size = chunk_length;
-                        let chunk_start = self.chunk_start;
-                        self.chunk_start = chunk_end;
-                        return Ok(Some((chunk_start, &self.source_buf[..chunk_length])));
+            let mut got_chunk = false;
+            if self.min_chunk_size > 0 {
+                for val in self.source_buf[buf_index..].iter() {
+                    buf_index += 1;
+                    self.buzhash.input(*val);
+                    if buf_index >= (self.min_chunk_size - 1) {
+                        break;
                     }
                 }
+            }
+
+            // Scan for chunk boundary
+            for val in self.source_buf[buf_index..].iter() {
+                buf_index += 1;
+                self.buzhash.input(*val);
+
+                got_chunk = buf_index >= self.max_chunk_size;
+                if !got_chunk {
+                    let hash = self.buzhash.sum();
+                    got_chunk = hash | self.filter_mask == hash;
+                }
+                if got_chunk {
+                    break;
+                }
+            }
+            self.source_index += (buf_index - self.buf_index) as u64;
+            self.buf_index = buf_index;
+
+            if got_chunk {
+                self.last_chunk_size = self.buf_index;
+                let chunk_start = self.chunk_start;
+                self.chunk_start = self.source_index;
+                return Ok(Some((chunk_start, &self.source_buf[..self.buf_index])));
             }
         }
     }
@@ -216,7 +232,7 @@ mod tests {
         let mut chunker = Chunker::new(ChunkerParams::new(5, 3, 640, 5, BUZHASH_SEED), &mut src);
 
         let mut chunk_offsets: Vec<u64> = Vec::new();
-        while let Some((offset, data)) = chunker.scan().expect("scan") {
+        while let Some((offset, _data)) = chunker.scan().expect("scan") {
             chunk_offsets.push(offset);
         }
 
@@ -304,7 +320,7 @@ mod tests {
         let mut chunker = Chunker::new(ChunkerParams::new(6, 64, 1024, 20, BUZHASH_SEED), &mut src);
 
         let mut chunk_offsets: Vec<u64> = Vec::new();
-        while let Some((offset, data)) = chunker.scan().expect("scan") {
+        while let Some((offset, _data)) = chunker.scan().expect("scan") {
             chunk_offsets.push(offset);
         }
         assert_eq!(expected_chunk_offsets[..], chunk_offsets[..]);
