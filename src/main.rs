@@ -15,6 +15,7 @@ use bita::compress_cmd;
 use bita::compression::Compression;
 use bita::config::*;
 use bita::errors::*;
+use bita::info_cmd;
 
 pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -111,7 +112,7 @@ fn parse_opts() -> Result<Config> {
                 .arg(
                     Arg::with_name("INPUT")
                         .value_name("INPUT")
-                        .help("Input file. Can be a local cba file or a URL.")
+                        .help("Input file. Can be a local archive or a URL.")
                         .required(true),
                 )
                 .arg(
@@ -126,6 +127,16 @@ fn parse_opts() -> Result<Config> {
                         .long("seed")
                         .help("File to use as seed while cloning or '-' to read from stdin.")
                         .multiple(true),
+                )
+        )
+        .subcommand(
+            SubCommand::with_name("info")
+                .about("Print archive details.")
+                .arg(
+                    Arg::with_name("INPUT")
+                        .value_name("INPUT")
+                        .help("Input file. Can be a local archive or a URL.")
+                        .required(true),
                 )
         )
         .get_matches();
@@ -214,6 +225,11 @@ fn parse_opts() -> Result<Config> {
             seed_files,
             seed_stdin,
         }))
+    } else if let Some(matches) = matches.subcommand_matches("info") {
+        let input = matches.value_of("INPUT").unwrap();
+        Ok(Config::Info(InfoConfig {
+            input: input.to_string(),
+        }))
     } else {
         println!("Unknown command");
         process::exit(1);
@@ -227,6 +243,7 @@ fn main() {
     let result = match parse_opts() {
         Ok(Config::Compress(config)) => compress_cmd::run(&config, &pool),
         Ok(Config::Clone(config)) => clone_cmd::run(&config, &pool),
+        Ok(Config::Info(config)) => info_cmd::run(&config),
         Err(e) => Err(e),
     };
     if let Err(ref e) = result {

@@ -27,6 +27,12 @@ pub struct ArchiveReader {
     // The order of chunks in source
     rebuild_order: Vec<usize>,
 
+    // The total archive header size
+    pub header_size: usize,
+
+    // Checksum (blake2) of header.
+    pub header_checksum: Vec<u8>,
+
     // Compression used for all chunks
     pub chunk_compression: Compression,
 
@@ -118,7 +124,8 @@ impl ArchiveReader {
         let mut hasher = Blake2b::new();
         let offs = archive::PRE_HEADER_SIZE + dictionary_size + 8;
         hasher.input(&header_buf[..offs]);
-        if header_buf[offs..(offs + 64)] != hasher.result().to_vec()[..] {
+        let header_checksum = header_buf[offs..(offs + 64)].to_vec();
+        if header_checksum != hasher.result().to_vec() {
             return Err(Error::from_kind(ErrorKind::NotAnArchive(
                 "corrupt archive header".to_string(),
             )));
@@ -160,6 +167,8 @@ impl ArchiveReader {
             chunk_map,
             chunk_descriptors,
             chunk_offsets,
+            header_checksum,
+            header_size: header_buf.len(),
             source_total_size: dictionary.source_total_size,
             source_checksum: dictionary.source_checksum,
             created_by_app_version: dictionary.application_version,
@@ -187,6 +196,13 @@ impl ArchiveReader {
 
     pub fn unique_chunks(&self) -> usize {
         self.chunk_descriptors.len()
+    }
+
+    pub fn compressed_size(&self) -> u64 {
+        self.chunk_descriptors
+            .iter()
+            .map(|c| c.archive_size as u64)
+            .sum()
     }
 
     // Get a set of all chunks present in archive

@@ -35,7 +35,13 @@ pub struct CloneConfig {
 }
 
 #[derive(Debug)]
+pub struct InfoConfig {
+    pub input: String,
+}
+
+#[derive(Debug)]
 pub enum Config {
     Compress(CompressConfig),
     Clone(CloneConfig),
+    Info(InfoConfig),
 }

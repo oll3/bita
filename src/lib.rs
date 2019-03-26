@@ -25,3 +25,4 @@ pub mod compress_cmd;
 pub mod compression;
 pub mod config;
 pub mod errors;
+pub mod info_cmd;
