@@ -36,7 +36,6 @@ where
         archive.unique_chunks()
     );
     println!("Chunk compression: {}", archive.chunk_compression);
-    //println!("Unique chunks: {}", archive.unique_chunks());
     println!(
         "Source total size: {}",
         size_to_str(archive.source_total_size)

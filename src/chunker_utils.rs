@@ -12,14 +12,14 @@ pub type HashBuf = Vec<u8>;
 #[derive(Debug, Clone)]
 pub struct HashedChunk {
     pub hash: HashBuf,
-    pub offset: usize,
+    pub offset: u64,
     pub data: Vec<u8>,
 }
 
 #[derive(Debug, Clone)]
 pub struct CompressedChunk {
     pub hash: HashBuf,
-    pub offset: usize,
+    pub offset: u64,
     pub data: Vec<u8>,
     pub cdata: Vec<u8>,
 }
@@ -27,7 +27,7 @@ pub struct CompressedChunk {
 #[derive(Debug, Clone)]
 pub struct ChunkSourceDescriptor {
     pub unique_chunk_index: usize,
-    pub offset: usize,
+    pub offset: u64,
     pub size: usize,
     pub hash: HashBuf,
 }
@@ -86,8 +86,8 @@ where
             let chunk_data = chunk_data.to_vec();
             file_size += chunk_data.len();
             pipe.input(
-                (chunk_offset as usize, chunk_data),
-                move |(chunk_offset, chunk_data): (usize, Vec<u8>)| {
+                (chunk_offset, chunk_data),
+                move |(chunk_offset, chunk_data): (u64, Vec<u8>)| {
                     // Generate checksun for each chunk
                     let hash = hash_chunk(&chunk_data);
                     (

@@ -201,7 +201,7 @@ impl ArchiveReader {
     pub fn compressed_size(&self) -> u64 {
         self.chunk_descriptors
             .iter()
-            .map(|c| c.archive_size as u64)
+            .map(|c| u64::from(c.archive_size))
             .sum()
     }
 
