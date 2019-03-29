@@ -184,6 +184,12 @@ fn parse_opts() -> Result<Config> {
         if max_chunk_size < avg_chunk_size {
             bail!("max-chunk-size < avg-chunk-size");
         }
+        println!(
+            "avg_chunk_size={}, chunk_filter_bits={}, {:b}",
+            avg_chunk_size, chunk_filter_bits, chunk_filter_bits
+        );
+
+        println!("Back to size: {}", (1 << (31 - chunk_filter_bits)));
 
         Ok(Config::Compress(CompressConfig {
             base: base_config,

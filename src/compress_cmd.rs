@@ -140,12 +140,19 @@ fn chunk_into_file(
     }
     pool.join();
 
+    let avg_chunk_size = total_unique_chunk_size
+        / if total_unique_chunks == 0 {
+            1
+        } else {
+            total_unique_chunks
+        };
+
     println!(
-        "Total chunks: {}, unique: {}, size: {}, avg chunk size: {}, compressed into: {}",
+        "Total chunks: {}, unique: {}, size: {}, average chunk size: {}, compressed into: {}",
         chunk_order.len(),
         total_unique_chunks,
         size_to_str(total_unique_chunk_size),
-        size_to_str(total_unique_chunk_size / total_unique_chunks),
+        size_to_str(avg_chunk_size),
         size_to_str(total_compressed_size),
     );
 

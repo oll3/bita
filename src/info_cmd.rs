@@ -11,37 +11,49 @@ where
     T: ArchiveBackend,
 {
     let archive = ArchiveReader::try_init(&mut archive_backend, &mut Vec::new())?;
+    println!("Archive parameters: ");
+    println!("  Version: {}", archive.created_by_app_version);
     println!(
-        "Created with bita version: {}",
-        archive.created_by_app_version
+        "  Chunk minimum size: {}",
+        size_to_str(archive.chunker_params.min_chunk_size),
+    );
+
+    println!(
+        "  Chunk maximum size: {}",
+        size_to_str(archive.chunker_params.max_chunk_size),
     );
     println!(
-        "Chunk target - min: {}, max: {}, filter mask: {:#b}, hash window size: {}",
-        archive.chunker_params.min_chunk_size,
-        archive.chunker_params.max_chunk_size,
+        "  Chunk average target size: {} (mask: {:#b})",
+        size_to_str((1 << (31 - archive.chunker_params.filter_bits)) as u32),
         archive.chunker_params.filter_bits,
-        archive.chunker_params.buzhash_window_size
     );
     println!(
-        "Header checksum: {}",
+        "  Hash window size: {}",
+        size_to_str(archive.chunker_params.buzhash_window_size)
+    );
+
+    println!("Archive data:");
+    println!(
+        "  Header checksum: {}",
         HexSlice::new(&archive.header_checksum)
     );
     println!(
-        "Source checksum: {}",
+        "  Source checksum: {}",
         HexSlice::new(&archive.source_checksum)
     );
+    println!("  Chunk hash length: {} bytes", archive.hash_length);
     println!(
-        "Chunks in source: {} (unique: {})",
+        "  Chunks in source: {} (unique: {})",
         archive.total_chunks(),
         archive.unique_chunks()
     );
-    println!("Chunk compression: {}", archive.chunk_compression);
+    println!("  Chunk compression: {}", archive.chunk_compression);
     println!(
-        "Source total size: {}",
+        "  Source total size: {}",
         size_to_str(archive.source_total_size)
     );
     println!(
-        "Compressed size: {}",
+        "  Compressed size: {}",
         size_to_str(archive.compressed_size() + archive.header_size as u64)
     );
 
