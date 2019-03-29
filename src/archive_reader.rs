@@ -84,10 +84,14 @@ where
 
 impl ArchiveReader {
     pub fn verify_pre_header(pre_header: &[u8]) -> Result<()> {
-        if pre_header.len() < 6 {
+        if pre_header.len() < archive::FILE_MAGIC.len() {
             bail!("failed to read header of archive")
         }
-        if &pre_header[0..6] != b"\0BITA1" {
+        // Allow both leagacy type file magic (prefixed with \0 but no null
+        // termination) and new type 'BITA\0'.
+        if &pre_header[0..archive::FILE_MAGIC.len()] != archive::FILE_MAGIC
+            && &pre_header[0..archive::FILE_MAGIC.len()] != b"\0BITA1"
+        {
             return Err(Error::from_kind(ErrorKind::NotAnArchive(
                 "invalid file magic".to_string(),
             )));
@@ -111,8 +115,9 @@ impl ArchiveReader {
 
         Self::verify_pre_header(&header_buf[0..archive::PRE_HEADER_SIZE])?;
 
-        let dictionary_size =
-            archive::u64_from_le_slice(&header_buf[6..archive::PRE_HEADER_SIZE]) as usize;
+        let dictionary_size = archive::u64_from_le_slice(
+            &header_buf[archive::FILE_MAGIC.len()..archive::PRE_HEADER_SIZE],
+        ) as usize;
 
         // Read the dictionary, chunk data offset and header hash
         header_buf.resize(archive::PRE_HEADER_SIZE + dictionary_size + 8 + 64, 0);

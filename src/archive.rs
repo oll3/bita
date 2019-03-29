@@ -2,6 +2,7 @@ use protobuf::Message;
 
 use blake2::{Blake2b, Digest};
 use std::fmt;
+use std::mem;
 
 use crate::chunk_dictionary;
 use crate::chunker_utils::HashBuf;
@@ -9,8 +10,13 @@ use crate::compression::Compression;
 use crate::errors::*;
 use crate::string_utils::*;
 
-pub const PRE_HEADER_SIZE: usize = 14;
 pub const BUZHASH_SEED: u32 = 0x1032_4195;
+
+// Bita archive file magic
+pub const FILE_MAGIC: &[u8; 6] = b"BITA1\0";
+
+// Pre header is the file magic + the size of the dictionary length value (u64)
+pub const PRE_HEADER_SIZE: usize = 6 + mem::size_of::<u64>();
 
 #[derive(Clone)]
 pub struct ChunkDescriptor {
@@ -77,7 +83,7 @@ pub fn build_header(
         .chain_err(|| "failed to serialize header")?;
 
     // File magic indicating bita archive version 1
-    header.extend(b"\0BITA1");
+    header.extend(FILE_MAGIC);
 
     // Chunk dictionary size
     header.extend(&(dictionary_buf.len() as u64).to_le_bytes());
