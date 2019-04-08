@@ -1,5 +1,6 @@
 use atty::Stream;
 use blake2::{Blake2b, Digest};
+use log::*;
 use std::collections::HashSet;
 use std::fs::{File, OpenOptions};
 use std::io;
@@ -11,6 +12,7 @@ use std::path::PathBuf;
 use threadpool::ThreadPool;
 
 use crate::config;
+use crate::info_cmd;
 use bita::archive_reader::{ArchiveBackend, ArchiveReader};
 use bita::chunker::{Chunker, ChunkerParams};
 use bita::chunker_utils::*;
@@ -76,7 +78,7 @@ where
         let stdin = io::stdin();
         let chunks_missing = chunks_left.len();
         let stdin = stdin.lock();
-        println!("Scanning stdin for chunks...");
+        info!("Scanning stdin for chunks...");
         chunk_seed(
             stdin,
             &chunker_params,
@@ -88,7 +90,7 @@ where
             },
             &pool,
         )?;
-        println!(
+        info!(
             "Used {} chunks from stdin",
             chunks_missing - chunks_left.len()
         );
@@ -99,7 +101,7 @@ where
             let chunks_missing = chunks_left.len();
             let seed_file = File::open(&seed_path)
                 .chain_err(|| format!("failed to open seed file ({})", seed_path.display()))?;
-            println!("Scanning {} for chunks...", seed_path.display());
+            info!("Scanning {} for chunks...", seed_path.display());
             chunk_seed(
                 seed_file,
                 &chunker_params,
@@ -115,7 +117,7 @@ where
                 },
                 &pool,
             )?;
-            println!(
+            info!(
                 "Used {} chunks from seed file {}",
                 chunks_missing - chunks_left.len(),
                 seed_path.display(),
@@ -123,23 +125,21 @@ where
         }
     }
 
-    let mut total_from_archive = 0;
     // Fetch rest of the chunks from archive
-    archive.read_chunk_data(
+    let total_from_archive = archive.read_chunk_data(
         &pool,
         archive_backend,
         &chunks_left,
         |checksum, chunk_data| {
-            total_from_archive += chunk_data.len();
             chunk_output("archive", &checksum, chunk_data);
             Ok(())
         },
     )?;
 
-    println!(
-        "Cloned using {} from seed and {} from archive.",
-        size_to_str(total_read_from_seed),
-        size_to_str(total_from_archive)
+    info!(
+        "Successfully cloned archive using {} from remote and {} from seeds.",
+        size_to_str(total_from_archive),
+        size_to_str(total_read_from_seed)
     );
 
     Ok(())
@@ -184,7 +184,13 @@ where
     let archive = ArchiveReader::try_init(&mut archive_backend, &mut Vec::new())?;
     let chunks_left = archive.chunk_hash_set();
 
-    println!("Cloning archive ({})", archive);
+    info!(
+        "Cloning archive {} to {}...",
+        config.input,
+        config.output.display()
+    );
+    info_cmd::print_archive(&archive);
+    println!();
 
     // Setup chunker to use when chunking seed input
     let chunker_params = archive.chunker_params.clone();
@@ -192,8 +198,8 @@ where
     // Create or open output file.
     let mut output_file = OpenOptions::new()
         .write(true)
-        .create(config.base.force_create)
-        .create_new(!config.base.force_create)
+        .create(config.force_create)
+        .create_new(!config.force_create)
         .open(&config.output)
         .chain_err(|| "failed to open output file")?;
 
@@ -214,7 +220,7 @@ where
         chunker_params,
         chunks_left,
         |chunk_source: &str, hash: &HashBuf, chunk_data: &[u8]| {
-            println!(
+            debug!(
                 "Chunk '{}', size {} used from {}",
                 HexSlice::new(hash),
                 size_to_str(chunk_data.len()),

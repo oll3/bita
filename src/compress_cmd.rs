@@ -1,6 +1,7 @@
 use crate::string_utils::*;
 use atty::Stream;
 use blake2::{Blake2b, Digest};
+use log::*;
 use protobuf::{RepeatedField, SingularPtrField};
 use std::fs;
 use std::fs::{File, OpenOptions};
@@ -9,6 +10,7 @@ use std::io::{Seek, SeekFrom, Write};
 use threadpool::ThreadPool;
 
 use crate::config::CompressConfig;
+use crate::info_cmd;
 use bita::archive;
 use bita::chunk_dictionary;
 use bita::chunker::{Chunker, ChunkerParams};
@@ -65,15 +67,11 @@ fn chunk_into_file(
 
             let store_data = if comp_chunk.cdata.len() > comp_chunk.data.len() {
                 &comp_chunk.data
-            /*println!(
-                "Wasted {} bytes by compressing chunk",
-                comp_chunk.cdata.len() - comp_chunk.data.len()
-            );*/
             } else {
                 &comp_chunk.cdata
             };
 
-            println!(
+            debug!(
                 "Chunk {}, '{}', offset: {}, size: {}, compressed to: {}",
                 total_unique_chunks,
                 HexSlice::new(&hash),
@@ -140,22 +138,6 @@ fn chunk_into_file(
     }
     pool.join();
 
-    let avg_chunk_size = total_unique_chunk_size
-        / if total_unique_chunks == 0 {
-            1
-        } else {
-            total_unique_chunks
-        };
-
-    println!(
-        "Total chunks: {}, unique: {}, size: {}, average chunk size: {}, compressed into: {}",
-        chunk_order.len(),
-        total_unique_chunks,
-        size_to_str(total_unique_chunk_size),
-        size_to_str(avg_chunk_size),
-        size_to_str(total_compressed_size),
-    );
-
     Ok(ChunkFileDescriptor {
         total_file_size,
         file_hash,
@@ -167,9 +149,10 @@ fn chunk_into_file(
 pub fn run(config: &CompressConfig, pool: &ThreadPool) -> Result<()> {
     let mut output_file = OpenOptions::new()
         .write(true)
-        .create(config.base.force_create)
-        .truncate(config.base.force_create)
-        .create_new(!config.base.force_create)
+        .read(true)
+        .create(config.force_create)
+        .truncate(config.force_create)
+        .create_new(!config.force_create)
         .open(&config.output)
         .chain_err(|| format!("unable to create output file ({})", config.output.display()))?;
 
@@ -183,11 +166,6 @@ pub fn run(config: &CompressConfig, pool: &ThreadPool) -> Result<()> {
 
     // Generate chunks and store to a temp file
     let chunk_file_descriptor = chunk_into_file(&config, pool, &mut tmp_chunk_file)?;
-
-    println!(
-        "Source hash: {}",
-        HexSlice::new(&chunk_file_descriptor.file_hash)
-    );
 
     // Store header to output file
     let file_header = chunk_dictionary::ChunkDictionary {
@@ -216,7 +194,7 @@ pub fn run(config: &CompressConfig, pool: &ThreadPool) -> Result<()> {
 
     // Copy chunks from temporary chunk tile to the output one
     let header_buf = archive::build_header(&file_header, None)?;
-    println!("Header size: {}", header_buf.len());
+
     output_file
         .write_all(&header_buf)
         .chain_err(|| "failed to write header")?;
@@ -227,6 +205,14 @@ pub fn run(config: &CompressConfig, pool: &ThreadPool) -> Result<()> {
         .chain_err(|| "failed to write chunk data to output file")?;
     drop(tmp_chunk_file);
     fs::remove_file(&config.temp_file).chain_err(|| "unable to remove temporary file")?;
+
+    output_file
+        .seek(SeekFrom::Start(0))
+        .chain_err(|| "failed to seek")?;
+
+    info!("Created archive {}", config.output.display());
+    info_cmd::print_archive_backend(output_file)
+        .chain_err(|| "failed to print archive information")?;
 
     Ok(())
 }

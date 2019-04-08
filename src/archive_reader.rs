@@ -19,7 +19,7 @@ pub struct ArchiveReader {
     chunk_map: HashMap<HashBuf, usize>,
 
     // Array of chunk descriptors
-    chunk_descriptors: Vec<archive::ChunkDescriptor>,
+    pub chunk_descriptors: Vec<archive::ChunkDescriptor>,
 
     // Go from archive chunk index to array of source offsets
     chunk_offsets: Vec<Vec<u64>>,

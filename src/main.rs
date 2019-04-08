@@ -1,7 +1,10 @@
 #[macro_use]
 extern crate error_chain;
 extern crate bita;
+extern crate chrono;
 extern crate clap;
+extern crate fern;
+extern crate log;
 extern crate num_cpus;
 extern crate threadpool;
 
@@ -12,6 +15,7 @@ mod info_cmd;
 mod string_utils;
 
 use clap::{App, Arg, SubCommand};
+use log::*;
 use std::path::Path;
 use std::process;
 use threadpool::ThreadPool;
@@ -39,15 +43,39 @@ fn parse_size(size_str: &str) -> usize {
     }
 }
 
+fn init_log(level: log::LevelFilter) -> Result<()> {
+    let local_level = level;
+    fern::Dispatch::new()
+        .format(move |out, message, record| {
+            if local_level > log::LevelFilter::Info {
+                // Add some extra info to each message in debug
+                out.finish(format_args!(
+                    "[{}]({})({}) {}",
+                    chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.3f"),
+                    record.target(),
+                    record.level(),
+                    message
+                ))
+            } else {
+                out.finish(format_args!("{}", message))
+            }
+        })
+        .level(level)
+        .chain(std::io::stdout())
+        .apply()
+        .chain_err(|| "unable to initialize log")?;
+    Ok(())
+}
+
 fn parse_opts() -> Result<Config> {
     let matches = App::new(PKG_NAME)
         .version(PKG_VERSION)
         .arg(
-            Arg::with_name("force-create")
-                .short("f")
-                .long("force-create")
-                .help("Overwrite output files if they exist.")
-                .global(true),
+            Arg::with_name("verbose")
+                .short("v")
+                .multiple(true)
+                .global(true)
+                .help("verbosity level"),
         )
         .subcommand(
             SubCommand::with_name("compress")
@@ -107,6 +135,12 @@ fn parse_opts() -> Result<Config> {
                         .long("compression")
                         .value_name("TYPE")
                         .help("Set the chunk data compression type (LZMA, ZSTD, NONE) [default: LZMA]."),
+                )
+                .arg(
+                    Arg::with_name("force-create")
+                        .short("f")
+                        .long("force-create")
+                        .help("Overwrite output files if they exist."),
                 ),
         )
         .subcommand(
@@ -131,6 +165,12 @@ fn parse_opts() -> Result<Config> {
                         .help("File to use as seed while cloning or '-' to read from stdin.")
                         .multiple(true),
                 )
+                .arg(
+                    Arg::with_name("force-create")
+                        .short("f")
+                        .long("force-create")
+                        .help("Overwrite output files if they exist."),
+                ),
         )
         .subcommand(
             SubCommand::with_name("info")
@@ -144,9 +184,12 @@ fn parse_opts() -> Result<Config> {
         )
         .get_matches();
 
-    let base_config = BaseConfig {
-        force_create: matches.is_present("force-create"),
-    };
+    // Set log level
+    init_log(match matches.occurrences_of("verbose") {
+        0 => log::LevelFilter::Info,
+        1 => log::LevelFilter::Debug,
+        2 | _ => log::LevelFilter::Trace,
+    })?;
 
     if let Some(matches) = matches.subcommand_matches("compress") {
         let output = Path::new(matches.value_of("OUTPUT").unwrap());
@@ -189,12 +232,12 @@ fn parse_opts() -> Result<Config> {
         }
 
         Ok(Config::Compress(CompressConfig {
-            base: base_config,
             input,
             output: output.to_path_buf(),
             hash_length: hash_length
                 .parse()
                 .chain_err(|| "invalid hash length value")?,
+            force_create: matches.is_present("force-create"),
             temp_file,
             chunk_filter_bits,
             min_chunk_size,
@@ -222,9 +265,9 @@ fn parse_opts() -> Result<Config> {
             .collect();
 
         Ok(Config::Clone(CloneConfig {
-            base: base_config,
             input: input.to_string(),
             output: Path::new(output).to_path_buf(),
+            force_create: matches.is_present("force-create"),
             seed_files,
             seed_stdin,
         }))
@@ -234,7 +277,7 @@ fn parse_opts() -> Result<Config> {
             input: input.to_string(),
         }))
     } else {
-        println!("Unknown command");
+        error!("Unknown command");
         process::exit(1);
     }
 }
@@ -250,17 +293,14 @@ fn main() {
         Err(e) => Err(e),
     };
     if let Err(ref e) = result {
-        println!("error: {}", e);
+        error!("error: {}", e);
 
         for e in e.iter().skip(1) {
-            println!("Caused by: {}", e);
+            error!("Caused by: {}", e);
         }
-        // The backtrace is not always generated. Try to run this example
-        // with `RUST_BACKTRACE=1`.
         if let Some(backtrace) = e.backtrace() {
-            println!("backtrace: {:?}", backtrace);
+            error!("backtrace: {:?}", backtrace);
         }
-
         ::std::process::exit(1);
     }
 }

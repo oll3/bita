@@ -3,13 +3,8 @@ use std::path::PathBuf;
 use bita::compression::Compression;
 
 #[derive(Debug)]
-pub struct BaseConfig {
-    pub force_create: bool,
-}
-
-#[derive(Debug)]
 pub struct CompressConfig {
-    pub base: BaseConfig,
+    pub force_create: bool,
 
     // Use stdin if input not given
     pub input: Option<PathBuf>,
@@ -26,8 +21,7 @@ pub struct CompressConfig {
 
 #[derive(Debug)]
 pub struct CloneConfig {
-    pub base: BaseConfig,
-
+    pub force_create: bool,
     pub input: String,
     pub output: PathBuf,
     pub seed_stdin: bool,
