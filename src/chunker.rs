@@ -191,6 +191,46 @@ mod tests {
     use super::Chunker;
     use super::ChunkerParams;
     use crate::archive::BUZHASH_SEED;
+
+    #[test]
+    fn zero_data() {
+        let expected_chunk_offsets: [u64; 0] = [0; 0];
+        let src = vec![];
+        let mut src: &[u8] = &src;
+        let mut chunker = Chunker::new(ChunkerParams::new(5, 3, 640, 5, BUZHASH_SEED), &mut src);
+        let mut chunk_offsets: Vec<u64> = Vec::new();
+        while let Some((offset, data)) = chunker.scan().expect("scan") {
+            chunk_offsets.push(offset);
+            assert_eq!(data.len(), 0);
+        }
+        assert_eq!(expected_chunk_offsets[..], chunk_offsets[..]);
+    }
+    #[test]
+    fn source_smaller_than_hash_window() {
+        let expected_chunk_offsets: [u64; 1] = [0; 1];
+        let src = vec![0x1f, 0x55, 0x39, 0x5e, 0xfa];
+        let mut src: &[u8] = &src;
+        let mut chunker = Chunker::new(ChunkerParams::new(5, 0, 40, 10, BUZHASH_SEED), &mut src);
+        let mut chunk_offsets: Vec<u64> = Vec::new();
+        while let Some((offset, data)) = chunker.scan().expect("scan") {
+            chunk_offsets.push(offset);
+            assert_eq!(data, [0x1f, 0x55, 0x39, 0x5e, 0xfa]);
+        }
+        assert_eq!(expected_chunk_offsets[..], chunk_offsets[..]);
+    }
+    #[test]
+    fn source_smaller_than_min_chunk() {
+        let expected_chunk_offsets: [u64; 1] = [0; 1];
+        let src = vec![0x1f, 0x55, 0x39, 0x5e, 0xfa];
+        let mut src: &[u8] = &src;
+        let mut chunker = Chunker::new(ChunkerParams::new(5, 10, 40, 5, BUZHASH_SEED), &mut src);
+        let mut chunk_offsets: Vec<u64> = Vec::new();
+        while let Some((offset, data)) = chunker.scan().expect("scan") {
+            chunk_offsets.push(offset);
+            assert_eq!(data.len(), 5);
+        }
+        assert_eq!(expected_chunk_offsets[..], chunk_offsets[..]);
+    }
     #[test]
     fn consistency_small_min_chunk() {
         let expected_chunk_offsets = [
