@@ -57,7 +57,11 @@ impl ChunkerParams {
     }
 
     pub fn filter_mask(&self) -> u32 {
-        !0 >> (32 - self.filter_bits)
+        (!0 as u32) >> (32 - self.filter_bits)
+    }
+
+    pub fn chunk_target_average(&self) -> u32 {
+        1 << (self.filter_bits + 1)
     }
 }
 

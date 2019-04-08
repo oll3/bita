@@ -180,19 +180,13 @@ fn parse_opts() -> Result<Config> {
             _ => bail!("invalid compression"),
         };
 
-        let chunk_filter_bits = (avg_chunk_size as u32).leading_zeros();
+        let chunk_filter_bits = 30 - (avg_chunk_size as u32).leading_zeros();
         if min_chunk_size > avg_chunk_size {
             bail!("min-chunk-size > avg-chunk-size");
         }
         if max_chunk_size < avg_chunk_size {
             bail!("max-chunk-size < avg-chunk-size");
         }
-        println!(
-            "avg_chunk_size={}, chunk_filter_bits={}, {:b}",
-            avg_chunk_size, chunk_filter_bits, chunk_filter_bits
-        );
-
-        println!("Back to size: {}", (1 << (31 - chunk_filter_bits)));
 
         Ok(Config::Compress(CompressConfig {
             base: base_config,
