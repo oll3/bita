@@ -5,17 +5,20 @@ extern crate clap;
 extern crate num_cpus;
 extern crate threadpool;
 
+mod clone_cmd;
+mod compress_cmd;
+mod config;
+mod info_cmd;
+mod string_utils;
+
 use clap::{App, Arg, SubCommand};
 use std::path::Path;
 use std::process;
 use threadpool::ThreadPool;
 
-use bita::clone_cmd;
-use bita::compress_cmd;
+use crate::config::*;
 use bita::compression::Compression;
-use bita::config::*;
 use bita::errors::*;
-use bita::info_cmd;
 
 pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");

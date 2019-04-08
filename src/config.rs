@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::compression::Compression;
+use bita::compression::Compression;
 
 #[derive(Debug)]
 pub struct BaseConfig {

@@ -8,12 +8,12 @@ use std::io;
 use std::io::{Seek, SeekFrom, Write};
 use threadpool::ThreadPool;
 
-use crate::archive;
-use crate::chunk_dictionary;
-use crate::chunker::*;
-use crate::chunker_utils::*;
 use crate::config::CompressConfig;
-use crate::errors::*;
+use bita::archive;
+use bita::chunk_dictionary;
+use bita::chunker::{Chunker, ChunkerParams};
+use bita::chunker_utils::*;
+use bita::errors::*;
 
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 

@@ -1,10 +1,10 @@
 use std::fs::File;
 
-use crate::archive_reader::*;
 use crate::config;
-use crate::errors::*;
-use crate::remote_archive_backend::RemoteReader;
-use crate::string_utils::*;
+use bita::archive_reader::{ArchiveBackend, ArchiveReader};
+use bita::errors::*;
+use bita::remote_archive_backend::RemoteReader;
+use bita::string_utils::*;
 
 fn print_archive_info<T>(mut archive_backend: T) -> Result<()>
 where

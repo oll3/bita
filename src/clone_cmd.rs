@@ -10,13 +10,13 @@ use std::os::linux::fs::MetadataExt;
 use std::path::PathBuf;
 use threadpool::ThreadPool;
 
-use crate::archive_reader::*;
-use crate::chunker::{Chunker, ChunkerParams};
-use crate::chunker_utils::*;
 use crate::config;
-use crate::errors::*;
-use crate::remote_archive_backend::RemoteReader;
-use crate::string_utils::*;
+use bita::archive_reader::{ArchiveBackend, ArchiveReader};
+use bita::chunker::{Chunker, ChunkerParams};
+use bita::chunker_utils::*;
+use bita::errors::*;
+use bita::remote_archive_backend::RemoteReader;
+use bita::string_utils::*;
 
 fn chunk_seed<T, F>(
     mut seed_input: T,
