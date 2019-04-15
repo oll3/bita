@@ -76,7 +76,7 @@ fn parse_opts() -> Result<Config> {
                 .short("v")
                 .multiple(true)
                 .global(true)
-                .help("verbosity level"),
+                .help("Set verbosity level"),
         )
         .subcommand(
             SubCommand::with_name("compress")
@@ -86,62 +86,62 @@ fn parse_opts() -> Result<Config> {
                         .short("i")
                         .long("input")
                         .value_name("FILE")
-                        .help("Input file. If none is given the stdin will be used.")
+                        .help("Input file, if none is given stdin is used")
                         .required(false),
                 )
                 .arg(
                     Arg::with_name("OUTPUT")
                         .value_name("OUTPUT")
-                        .help("Output file.")
+                        .help("Output file")
                         .required(true),
                 )
                 .arg(
                     Arg::with_name("avg-chunk-size")
                         .long("avg-chunk-size")
                         .value_name("SIZE")
-                        .help("Indication of target chunk size [default: 64KiB]."),
+                        .help("Indication of target chunk size [default: 64KiB]"),
                 )
                 .arg(
                     Arg::with_name("min-chunk-size")
                         .long("min-chunk-size")
                         .value_name("SIZE")
-                        .help("Minimal size of chunks [default: 16KiB]."),
+                        .help("Set minimal size of chunks [default: 16KiB]"),
                 )
                 .arg(
                     Arg::with_name("max-chunk-size")
                         .long("max-chunk-size")
                         .value_name("SIZE")
-                        .help("Maximal size of chunks [default: 16MiB]."),
+                        .help("Set maximal size of chunks [default: 16MiB]"),
                 )
                 .arg(
                     Arg::with_name("buzhash-window")
                         .long("buzhash-window")
                         .value_name("SIZE")
-                        .help("Size of the buzhash window [default: 16B]."),
+                        .help("Set size of the buzhash window [default: 16B]"),
                 )
                 .arg(
                     Arg::with_name("hash-length")
                         .long("hash-length")
                         .value_name("LENGTH")
-                        .help("Truncate the length of the stored strong hash [default: 64]."),
+                        .help("Truncate the length of the stored strong hash [default: 64]"),
                 )
                 .arg(
                     Arg::with_name("compression-level")
                         .long("compression-level")
                         .value_name("LEVEL")
-                        .help("Set the chunk data compression level (0-9) [default: 6]."),
+                        .help("Set the chunk data compression level (0-9) [default: 6]"),
                 )
                 .arg(
                     Arg::with_name("compression")
                         .long("compression")
                         .value_name("TYPE")
-                        .help("Set the chunk data compression type (LZMA, ZSTD, NONE) [default: LZMA]."),
+                        .help("Set the chunk data compression type (LZMA, ZSTD, NONE) [default: LZMA]"),
                 )
                 .arg(
                     Arg::with_name("force-create")
                         .short("f")
                         .long("force-create")
-                        .help("Overwrite output files if they exist."),
+                        .help("Overwrite output files if they exist"),
                 ),
         )
         .subcommand(
@@ -150,27 +150,27 @@ fn parse_opts() -> Result<Config> {
                 .arg(
                     Arg::with_name("INPUT")
                         .value_name("INPUT")
-                        .help("Input file. Can be a local archive or a URL.")
+                        .help("Input file (can be a local archive or a URL)")
                         .required(true),
                 )
                 .arg(
                     Arg::with_name("OUTPUT")
                         .value_name("OUTPUT")
-                        .help("Output file.")
+                        .help("Output file")
                         .required(true),
                 )
                 .arg(
                     Arg::with_name("seed")
                         .value_name("FILE")
                         .long("seed")
-                        .help("File to use as seed while cloning or '-' to read from stdin.")
+                        .help("File to use as seed while cloning or '-' to read from stdin")
                         .multiple(true),
                 )
                 .arg(
                     Arg::with_name("force-create")
                         .short("f")
                         .long("force-create")
-                        .help("Overwrite output files if they exist."),
+                        .help("Overwrite output files if they exist"),
                 ).arg(
                     Arg::with_name("verify-header")
                         .long("verify-header")
@@ -184,7 +184,7 @@ fn parse_opts() -> Result<Config> {
                 .arg(
                     Arg::with_name("INPUT")
                         .value_name("INPUT")
-                        .help("Input file. Can be a local archive or a URL.")
+                        .help("Input file (can be a local archive or a URL)")
                         .required(true),
                 )
         )
