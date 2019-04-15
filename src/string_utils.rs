@@ -1,4 +1,5 @@
 use std::fmt;
+use std::num::ParseIntError;
 use std::ops::{Add, Div, Sub};
 
 pub trait Int:
@@ -48,4 +49,15 @@ pub fn size_to_str<T: Int + fmt::Display>(size: T) -> String {
     } else {
         format!("{} bytes", size)
     }
+}
+
+pub fn hex_str_to_vec(hex_str: &str) -> Result<Vec<u8>, ParseIntError> {
+    let mut hex_str = hex_str.to_string();
+    if hex_str.len() % 2 == 1 {
+        hex_str = "0".to_string() + &hex_str;
+    }
+    (0..hex_str.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex_str[i..i + 2], 16))
+        .collect()
 }

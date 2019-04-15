@@ -1,6 +1,6 @@
-use std::path::PathBuf;
-
+use bita::chunker_utils::HashBuf;
 use bita::compression::Compression;
+use std::path::PathBuf;
 
 #[derive(Debug)]
 pub struct CompressConfig {
@@ -26,6 +26,7 @@ pub struct CloneConfig {
     pub output: PathBuf,
     pub seed_stdin: bool,
     pub seed_files: Vec<PathBuf>,
+    pub header_checksum: Option<HashBuf>,
 }
 
 #[derive(Debug)]

@@ -21,6 +21,7 @@ use std::process;
 use threadpool::ThreadPool;
 
 use crate::config::*;
+use crate::string_utils::hex_str_to_vec;
 use bita::compression::Compression;
 use bita::errors::*;
 
@@ -170,6 +171,11 @@ fn parse_opts() -> Result<Config> {
                         .short("f")
                         .long("force-create")
                         .help("Overwrite output files if they exist."),
+                ).arg(
+                    Arg::with_name("verify-header")
+                        .long("verify-header")
+                        .value_name("CHECKSUM")
+                        .help("Verify that the archive header checksum is the one given"),
                 ),
         )
         .subcommand(
@@ -264,10 +270,15 @@ fn parse_opts() -> Result<Config> {
             .map(|s| Path::new(s).to_path_buf())
             .collect();
 
+        let verify_header = matches
+            .value_of("verify-header")
+            .map(|c| hex_str_to_vec(c).expect("failed to parse checksum"));
+
         Ok(Config::Clone(CloneConfig {
             input: input.to_string(),
             output: Path::new(output).to_path_buf(),
             force_create: matches.is_present("force-create"),
+            header_checksum: verify_header,
             seed_files,
             seed_stdin,
         }))

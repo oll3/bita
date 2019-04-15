@@ -184,13 +184,22 @@ where
     let archive = ArchiveReader::try_init(&mut archive_backend, &mut Vec::new())?;
     let chunks_left = archive.chunk_hash_set();
 
+    info_cmd::print_archive(&archive);
+    println!();
+
+    // Verify the header checksum if requested
+    if let Some(ref expected_checksum) = config.header_checksum {
+        if *expected_checksum != archive.header_checksum {
+            bail!("Header checksum mismatch!");
+        } else {
+            info!("Header checksum verified OK");
+        }
+    }
     info!(
         "Cloning archive {} to {}...",
         config.input,
         config.output.display()
     );
-    info_cmd::print_archive(&archive);
-    println!();
 
     // Setup chunker to use when chunking seed input
     let chunker_params = archive.chunker_params.clone();
