@@ -15,7 +15,7 @@ use bita::archive;
 use bita::chunk_dictionary;
 use bita::chunker::{Chunker, ChunkerParams};
 use bita::chunker_utils::*;
-use bita::errors::*;
+use bita::error::Error;
 
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -30,7 +30,7 @@ fn chunk_into_file(
     config: &CompressConfig,
     pool: &ThreadPool,
     chunk_file: &mut File,
-) -> Result<ChunkFileDescriptor> {
+) -> Result<ChunkFileDescriptor, Error> {
     // Setup the chunker
     let chunker_params = ChunkerParams::new(
         config.chunk_filter_bits,
@@ -100,8 +100,12 @@ fn chunk_into_file(
 
         if let Some(ref input_path) = config.input {
             // Read source from file
-            let mut src_file = File::open(&input_path)
-                .chain_err(|| format!("unable to open input file ({})", input_path.display()))?;
+            let mut src_file = File::open(&input_path).map_err(|e| {
+                (
+                    format!("unable to open input file ({})", input_path.display()),
+                    e,
+                )
+            })?;
             let mut chunker = Chunker::new(chunker_params.clone(), &mut src_file);
             let (tmp_file_size, tmp_file_hash, tmp_chunks) = unique_compressed_chunks(
                 &mut chunker,
@@ -110,8 +114,7 @@ fn chunk_into_file(
                 &pool,
                 true,
                 process_chunk,
-            )
-            .chain_err(|| "unable to compress chunk")?;
+            )?;
             total_file_size = tmp_file_size;
             file_hash = tmp_file_hash;
             chunk_order = tmp_chunks;
@@ -127,13 +130,12 @@ fn chunk_into_file(
                 &pool,
                 true,
                 process_chunk,
-            )
-            .chain_err(|| "unable to compress chunk")?;
+            )?;
             total_file_size = tmp_file_size;
             file_hash = tmp_file_hash;
             chunk_order = tmp_chunks;
         } else {
-            bail!("Missing input file")
+            panic!("Missing input file")
         }
     }
     pool.join();
@@ -146,7 +148,7 @@ fn chunk_into_file(
     })
 }
 
-pub fn run(config: &CompressConfig, pool: &ThreadPool) -> Result<()> {
+pub fn run(config: &CompressConfig, pool: &ThreadPool) -> Result<(), Error> {
     let mut output_file = OpenOptions::new()
         .write(true)
         .read(true)
@@ -154,7 +156,12 @@ pub fn run(config: &CompressConfig, pool: &ThreadPool) -> Result<()> {
         .truncate(config.force_create)
         .create_new(!config.force_create)
         .open(&config.output)
-        .chain_err(|| format!("unable to create output file ({})", config.output.display()))?;
+        .map_err(|e| {
+            (
+                format!("unable to create output file ({})", config.output.display()),
+                e,
+            )
+        })?;
 
     let mut tmp_chunk_file = OpenOptions::new()
         .write(true)
@@ -162,7 +169,15 @@ pub fn run(config: &CompressConfig, pool: &ThreadPool) -> Result<()> {
         .truncate(true)
         .create(true)
         .open(&config.temp_file)
-        .chain_err(|| "unable to create temporary chunk file")?;
+        .map_err(|e| {
+            (
+                format!(
+                    "unable to create temporary chunk file ({})",
+                    config.temp_file.display(),
+                ),
+                e,
+            )
+        })?;
 
     // Generate chunks and store to a temp file
     let chunk_file_descriptor = chunk_into_file(&config, pool, &mut tmp_chunk_file)?;
@@ -197,22 +212,21 @@ pub fn run(config: &CompressConfig, pool: &ThreadPool) -> Result<()> {
 
     output_file
         .write_all(&header_buf)
-        .chain_err(|| "failed to write header")?;
+        .map_err(|e| ("failed to write header", e))?;
     tmp_chunk_file
         .seek(SeekFrom::Start(0))
-        .chain_err(|| "failed to seek")?;
+        .map_err(|e| ("failed to seek", e))?;
     io::copy(&mut tmp_chunk_file, &mut output_file)
-        .chain_err(|| "failed to write chunk data to output file")?;
+        .map_err(|e| ("failed to write chunk data to output file", e))?;
     drop(tmp_chunk_file);
-    fs::remove_file(&config.temp_file).chain_err(|| "unable to remove temporary file")?;
+    fs::remove_file(&config.temp_file).map_err(|e| ("unable to remove temporary file", e))?;
 
     output_file
         .seek(SeekFrom::Start(0))
-        .chain_err(|| "failed to seek")?;
+        .map_err(|e| ("failed to seek", e))?;
 
     info!("Created archive {}", config.output.display());
-    info_cmd::print_archive_backend(output_file)
-        .chain_err(|| "failed to print archive information")?;
+    info_cmd::print_archive_backend(output_file)?;
 
     Ok(())
 }

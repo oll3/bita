@@ -2,7 +2,7 @@ use curl::easy::Easy;
 use std::io;
 
 use crate::archive_reader::ArchiveBackend;
-use crate::errors::*;
+use crate::error::Error;
 
 pub struct RemoteReader {
     url: String,
@@ -21,23 +21,18 @@ impl RemoteReader {
     }
 }
 
-impl From<Error> for io::Error {
-    fn from(error: Error) -> Self {
-        io::Error::new(io::ErrorKind::Other, format!("{}", error))
-    }
-}
-
 impl io::Read for RemoteReader {
     fn read(&mut self, buf: &mut [u8]) -> std::result::Result<usize, io::Error> {
         let read_offset = self.read_offset;
-        self.read_at(read_offset, buf)?;
+        self.read_at(read_offset, buf)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         self.read_offset += buf.len() as u64;
         Ok(buf.len())
     }
 }
 
 impl ArchiveBackend for RemoteReader {
-    fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> Result<()> {
+    fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> Result<(), Error> {
         if buf.is_empty() {
             return Ok(());
         }
@@ -47,13 +42,13 @@ impl ArchiveBackend for RemoteReader {
 
         self.handle
             .url(&self.url)
-            .chain_err(|| "unable to set url")?;
+            .map_err(|e| ("unable to set url", e))?;
         self.handle
             .fail_on_error(true)
-            .chain_err(|| "unable to set fail on error option")?;
+            .map_err(|e| ("unable to set fail on error option", e))?;
         self.handle
             .range(&format!("{}-{}", offset, end_offset))
-            .chain_err(|| "unable to set range")?;
+            .map_err(|e| ("unable to set range", e))?;
 
         {
             let mut transfer = self.handle.transfer();
@@ -62,23 +57,23 @@ impl ArchiveBackend for RemoteReader {
                     data.extend_from_slice(new_data);
                     Ok(new_data.len())
                 })
-                .chain_err(|| "transfer write failed")?;
+                .map_err(|e| ("transfer write failed", e))?;
 
             transfer
                 .perform()
-                .chain_err(|| "failed to execute transfer")?;
+                .map_err(|e| ("failed to execute transfer", e))?;
         }
 
         buf[..data.len()].clone_from_slice(&data[..]);
         Ok(())
     }
 
-    fn read_in_chunks<F: FnMut(Vec<u8>) -> Result<()>>(
+    fn read_in_chunks<F: FnMut(Vec<u8>) -> Result<(), Error>>(
         &mut self,
         start_offset: u64,
         chunk_sizes: &[u64],
         mut chunk_callback: F,
-    ) -> Result<()> {
+    ) -> Result<(), Error> {
         let tot_size: u64 = chunk_sizes.iter().sum();
 
         // Create get request
@@ -88,14 +83,14 @@ impl ArchiveBackend for RemoteReader {
 
         self.handle
             .url(&self.url)
-            .chain_err(|| "unable to set url")?;
+            .map_err(|e| ("unable to set url", e))?;
 
         self.handle
             .fail_on_error(true)
-            .chain_err(|| "unable to set fail on error option")?;
+            .map_err(|e| ("unable to set fail on error option", e))?;
         self.handle
             .range(&format!("{}-{}", start_offset, end_offset))
-            .chain_err(|| "unable to set range")?;
+            .map_err(|e| ("unable to set range", e))?;
 
         let mut transfer_result = Ok(());
         {
@@ -119,10 +114,10 @@ impl ArchiveBackend for RemoteReader {
                     }
                     Ok(new_data.len())
                 })
-                .chain_err(|| "transfer write failed")?;
+                .map_err(|e| ("transfer write failed", e))?;
             transfer
                 .perform()
-                .chain_err(|| "failed to execute transfer")?;
+                .map_err(|e| ("failed to execute transfer", e))?;
         }
 
         transfer_result

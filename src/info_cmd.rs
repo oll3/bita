@@ -3,11 +3,11 @@ use std::fs::File;
 
 use crate::config;
 use bita::archive_reader::{ArchiveBackend, ArchiveReader};
-use bita::errors::*;
+use bita::error::Error;
 use bita::remote_archive_backend::RemoteReader;
 use bita::string_utils::*;
 
-pub fn print_archive_backend<T>(mut archive_backend: T) -> Result<()>
+pub fn print_archive_backend<T>(mut archive_backend: T) -> Result<(), Error>
 where
     T: ArchiveBackend,
 {
@@ -71,13 +71,13 @@ pub fn print_archive(archive: &ArchiveReader) {
     info!("  Source size: {}", size_to_str(archive.source_total_size));
 }
 
-pub fn run(config: &config::InfoConfig) -> Result<()> {
+pub fn run(config: &config::InfoConfig) -> Result<(), Error> {
     if &config.input[0..7] == "http://" || &config.input[0..8] == "https://" {
         let remote_source = RemoteReader::new(&config.input);
         print_archive_backend(remote_source)?;
     } else {
-        let local_file =
-            File::open(&config.input).chain_err(|| format!("unable to open {}", config.input))?;
+        let local_file = File::open(&config.input)
+            .map_err(|e| (format!("unable to open {}", config.input), e))?;
         print_archive_backend(local_file)?;
     }
 

@@ -7,7 +7,7 @@ use std::mem;
 use crate::chunk_dictionary;
 use crate::chunker_utils::HashBuf;
 use crate::compression::Compression;
-use crate::errors::*;
+use crate::error::Error;
 use crate::string_utils::*;
 
 pub const BUZHASH_SEED: u32 = 0x1032_4195;
@@ -73,14 +73,14 @@ pub fn u64_from_le_slice(v: &[u8]) -> u64 {
 pub fn build_header(
     dictionary: &chunk_dictionary::ChunkDictionary,
     chunk_data_offset: Option<u64>,
-) -> Result<Vec<u8>> {
+) -> Result<Vec<u8>, Error> {
     let mut header: Vec<u8> = vec![];
     let mut hasher = Blake2b::new();
     let mut dictionary_buf: Vec<u8> = Vec::new();
 
     dictionary
         .write_to_vec(&mut dictionary_buf)
-        .chain_err(|| "failed to serialize header")?;
+        .map_err(|e| ("failed to serialize header", e))?;
 
     // File magic indicating bita archive version 1
     header.extend(FILE_MAGIC);

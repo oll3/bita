@@ -1,5 +1,3 @@
-#[macro_use]
-extern crate error_chain;
 extern crate bita;
 extern crate chrono;
 extern crate clap;
@@ -23,7 +21,8 @@ use threadpool::ThreadPool;
 use crate::config::*;
 use crate::string_utils::hex_str_to_vec;
 use bita::compression::Compression;
-use bita::errors::*;
+use bita::error::Error;
+//pub mod errors;
 
 pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -44,7 +43,7 @@ fn parse_size(size_str: &str) -> usize {
     }
 }
 
-fn init_log(level: log::LevelFilter) -> Result<()> {
+fn init_log(level: log::LevelFilter) {
     let local_level = level;
     fern::Dispatch::new()
         .format(move |out, message, record| {
@@ -64,11 +63,10 @@ fn init_log(level: log::LevelFilter) -> Result<()> {
         .level(level)
         .chain(std::io::stdout())
         .apply()
-        .chain_err(|| "unable to initialize log")?;
-    Ok(())
+        .expect("unable to initialize log");
 }
 
-fn parse_opts() -> Result<Config> {
+fn parse_opts() -> Result<Config, Error> {
     let matches = App::new(PKG_NAME)
         .version(PKG_VERSION)
         .arg(
@@ -195,7 +193,7 @@ fn parse_opts() -> Result<Config> {
         0 => log::LevelFilter::Info,
         1 => log::LevelFilter::Debug,
         2 | _ => log::LevelFilter::Trace,
-    })?;
+    });
 
     if let Some(matches) = matches.subcommand_matches("compress") {
         let output = Path::new(matches.value_of("OUTPUT").unwrap());
@@ -216,33 +214,31 @@ fn parse_opts() -> Result<Config> {
             .value_of("compression-level")
             .unwrap_or("6")
             .parse()
-            .chain_err(|| "invalid compression level value")?;
+            .expect("invalid compression level value");
 
         if compression_level < 1 || compression_level > 19 {
-            bail!("compression level not within range");
+            panic!("compression level not within range");
         }
 
         let compression = match matches.value_of("compression").unwrap_or("LZMA") {
             "LZMA" | "lzma" => Compression::LZMA(compression_level),
             "ZSTD" | "zstd" => Compression::ZSTD(compression_level),
             "NONE" | "none" => Compression::None,
-            _ => bail!("invalid compression"),
+            _ => panic!("invalid compression"),
         };
 
         let chunk_filter_bits = 30 - (avg_chunk_size as u32).leading_zeros();
         if min_chunk_size > avg_chunk_size {
-            bail!("min-chunk-size > avg-chunk-size");
+            panic!("min-chunk-size > avg-chunk-size");
         }
         if max_chunk_size < avg_chunk_size {
-            bail!("max-chunk-size < avg-chunk-size");
+            panic!("max-chunk-size < avg-chunk-size");
         }
 
         Ok(Config::Compress(CompressConfig {
             input,
             output: output.to_path_buf(),
-            hash_length: hash_length
-                .parse()
-                .chain_err(|| "invalid hash length value")?,
+            hash_length: hash_length.parse().expect("invalid hash length value"),
             force_create: matches.is_present("force-create"),
             temp_file,
             chunk_filter_bits,
@@ -305,13 +301,6 @@ fn main() {
     };
     if let Err(ref e) = result {
         error!("error: {}", e);
-
-        for e in e.iter().skip(1) {
-            error!("Caused by: {}", e);
-        }
-        if let Some(backtrace) = e.backtrace() {
-            error!("backtrace: {:?}", backtrace);
-        }
         ::std::process::exit(1);
     }
 }

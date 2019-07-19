@@ -1,10 +1,10 @@
 use blake2::{Blake2b, Digest};
 use std::collections::{hash_map::Entry, HashMap};
-use std::io;
 use std::io::prelude::*;
 use threadpool::ThreadPool;
 
 use crate::chunker::*;
+use crate::error::Error;
 use crate::para_pipe::ParaPipe;
 
 pub type HashBuf = Vec<u8>;
@@ -40,7 +40,7 @@ pub fn unique_chunks<T, F, H>(
     pool: &ThreadPool,
     hash_input: bool,
     mut result: F,
-) -> io::Result<(usize, HashBuf, Vec<ChunkSourceDescriptor>)>
+) -> Result<(usize, HashBuf, Vec<ChunkSourceDescriptor>), Error>
 where
     T: Read,
     F: FnMut(HashedChunk),
@@ -124,7 +124,7 @@ pub fn unique_compressed_chunks<T, F, C, H>(
     pool: &ThreadPool,
     hash_input: bool,
     chunk_callback: F,
-) -> io::Result<(usize, Vec<u8>, Vec<ChunkSourceDescriptor>)>
+) -> Result<(usize, Vec<u8>, Vec<ChunkSourceDescriptor>), Error>
 where
     T: Read,
     F: FnMut(CompressedChunk),

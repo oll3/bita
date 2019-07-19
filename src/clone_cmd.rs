@@ -16,7 +16,7 @@ use crate::info_cmd;
 use bita::archive_reader::{ArchiveBackend, ArchiveReader};
 use bita::chunker::{Chunker, ChunkerParams};
 use bita::chunker_utils::*;
-use bita::errors::*;
+use bita::error::Error;
 use bita::remote_archive_backend::RemoteReader;
 use bita::string_utils::*;
 
@@ -27,7 +27,7 @@ fn chunk_seed<T, F>(
     chunk_hash_set: &mut HashSet<HashBuf>,
     mut chunk_callback: F,
     pool: &ThreadPool,
-) -> Result<()>
+) -> Result<(), Error>
 where
     T: Read,
     F: FnMut(&HashBuf, &[u8]),
@@ -50,8 +50,7 @@ where
             chunk_callback(hash, &hashed_chunk.data);
             chunk_hash_set.remove(hash);
         }
-    })
-    .chain_err(|| "failed to get unique chunks")?;
+    })?;
 
     Ok(())
 }
@@ -65,7 +64,7 @@ fn clone_to_output<T, F>(
     chunker_params: ChunkerParams,
     mut chunks_left: HashSet<HashBuf>,
     mut chunk_output: F,
-) -> Result<()>
+) -> Result<(), Error>
 where
     T: ArchiveBackend,
     F: FnMut(&str, &HashBuf, &[u8]),
@@ -99,8 +98,12 @@ where
     for seed_path in seed_files {
         if !chunks_left.is_empty() {
             let chunks_missing = chunks_left.len();
-            let seed_file = File::open(&seed_path)
-                .chain_err(|| format!("failed to open seed file ({})", seed_path.display()))?;
+            let seed_file = File::open(&seed_path).map_err(|e| {
+                (
+                    format!("failed to open seed file ({})", seed_path.display()),
+                    e,
+                )
+            })?;
             info!("Scanning {} for chunks...", seed_path.display());
             chunk_seed(
                 seed_file,
@@ -145,15 +148,15 @@ where
     Ok(())
 }
 
-fn prepare_unpack_output(output_file: &mut File, source_file_size: u64) -> Result<()> {
+fn prepare_unpack_output(output_file: &mut File, source_file_size: u64) -> Result<(), Error> {
     let meta = output_file
         .metadata()
-        .chain_err(|| "unable to get file meta data")?;
+        .map_err(|e| ("unable to get file meta data", e))?;
     if meta.st_mode() & 0x6000 == 0x6000 {
         // Output is a block device
         let size = output_file
             .seek(SeekFrom::End(0))
-            .chain_err(|| "unable to seek output file")?;
+            .map_err(|e| ("unable to seek output file", e))?;
         if size != source_file_size {
             panic!(
                 "Size of output device ({}) differ from size of archive target file ({})",
@@ -163,12 +166,12 @@ fn prepare_unpack_output(output_file: &mut File, source_file_size: u64) -> Resul
         }
         output_file
             .seek(SeekFrom::Start(0))
-            .chain_err(|| "unable to seek output file")?;
+            .map_err(|e| ("unable to seek output file", e))?;
     } else {
         // Output is a reqular file
         output_file
             .set_len(source_file_size)
-            .chain_err(|| "unable to resize output file")?;
+            .map_err(|e| ("unable to resize output file", e))?;
     }
     Ok(())
 }
@@ -177,7 +180,7 @@ fn clone_archive<T>(
     mut archive_backend: T,
     config: &config::CloneConfig,
     pool: &ThreadPool,
-) -> Result<()>
+) -> Result<(), Error>
 where
     T: ArchiveBackend,
 {
@@ -190,7 +193,9 @@ where
     // Verify the header checksum if requested
     if let Some(ref expected_checksum) = config.header_checksum {
         if *expected_checksum != archive.header_checksum {
-            bail!("Header checksum mismatch!");
+            return Err(Error::ChecksumMismatch(
+                "Header checksum mismatch!".to_owned(),
+            ));
         } else {
             info!("Header checksum verified OK");
         }
@@ -210,7 +215,12 @@ where
         .create(config.force_create)
         .create_new(!config.force_create)
         .open(&config.output)
-        .chain_err(|| "failed to open output file")?;
+        .map_err(|e| {
+            (
+                format!("failed to open output file ({})", config.output.display()),
+                e,
+            )
+        })?;
 
     // Clone and unpack archive
 
@@ -248,13 +258,13 @@ where
     Ok(())
 }
 
-pub fn run(config: &config::CloneConfig, pool: &ThreadPool) -> Result<()> {
+pub fn run(config: &config::CloneConfig, pool: &ThreadPool) -> Result<(), Error> {
     if &config.input[0..7] == "http://" || &config.input[0..8] == "https://" {
         let remote_source = RemoteReader::new(&config.input);
         clone_archive(remote_source, config, pool)?;
     } else {
-        let local_file =
-            File::open(&config.input).chain_err(|| format!("unable to open {}", config.input))?;
+        let local_file = File::open(&config.input)
+            .map_err(|e| (format!("unable to open {}", config.input), e))?;
         clone_archive(local_file, config, pool)?;
     }
 

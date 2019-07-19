@@ -3,7 +3,7 @@ use std::io::prelude::*;
 
 use crate::chunk_dictionary;
 use crate::chunk_dictionary::ChunkCompression_CompressionType;
-use crate::errors::*;
+use crate::error::Error;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Compression {
@@ -54,17 +54,17 @@ impl From<Compression> for chunk_dictionary::ChunkCompression {
 
 impl Compression {
     // Compress a block of data with set compression
-    pub fn compress(self, data: &[u8]) -> Result<Vec<u8>> {
+    pub fn compress(self, data: &[u8]) -> Result<Vec<u8>, Error> {
         match self {
             Compression::LZMA(ref level) => {
                 let mut result = vec![];
                 {
                     let mut f = LzmaWriter::new_compressor(&mut result, *level)
-                        .chain_err(|| "failed to create lzma compressor")?;
+                        .map_err(|e| ("failed to create lzma compressor", e))?;
                     f.write_all(data)
-                        .chain_err(|| "failed compress with lzma")?;
+                        .map_err(|e| ("failed compress with lzma", e))?;
                     f.finish()
-                        .chain_err(|| "failed to finish lzma compression")?;
+                        .map_err(|e| ("failed to finish lzma compression", e))?;
                 }
                 Ok(result)
             }
@@ -72,7 +72,7 @@ impl Compression {
                 let mut result = vec![];
                 let data = data.to_vec();
                 zstd::stream::copy_encode(&data[..], &mut result, *level as i32)
-                    .chain_err(|| "failed compress with zstd")?;
+                    .map_err(|e| ("failed compress with zstd", e))?;
                 Ok(result)
             }
             Compression::None => Ok(data.to_vec()),
@@ -80,23 +80,23 @@ impl Compression {
     }
 
     // Decompress a block of data using the set compression
-    pub fn decompress(self, input: Vec<u8>, output: &mut Vec<u8>) -> Result<()> {
+    pub fn decompress(self, input: Vec<u8>, output: &mut Vec<u8>) -> Result<(), Error> {
         match self {
             Compression::LZMA(_) => {
                 // Archived chunk is compressed with lzma
                 output.clear();
                 let mut f = LzmaWriter::new_decompressor(output)
-                    .chain_err(|| "failed to create lzma decompressor")?;
+                    .map_err(|e| ("failed to create lzma decompressor", e))?;
                 f.write_all(&input)
-                    .chain_err(|| "failed to decompress using lzma")?;
+                    .map_err(|e| ("failed to decompress using lzma", e))?;
                 f.finish()
-                    .chain_err(|| "failed to finish lzma decompression")?;
+                    .map_err(|e| ("failed to finish lzma decompression", e))?;
             }
             Compression::ZSTD(_) => {
                 // Archived chunk is compressed with zstd
                 output.clear();
                 zstd::stream::copy_decode(&input[..], output)
-                    .chain_err(|| "failed to decompress using zstd")?;
+                    .map_err(|e| ("failed to decompress using zstd", e))?;
             }
             Compression::None => {
                 // Archived chunk is NOT compressed

@@ -10,7 +10,7 @@ use crate::chunk_dictionary;
 use crate::chunker::ChunkerParams;
 use crate::chunker_utils::HashBuf;
 use crate::compression::Compression;
-use crate::errors::*;
+use crate::error::Error;
 use crate::para_pipe::ParaPipe;
 use crate::string_utils::*;
 
@@ -71,47 +71,44 @@ where
     // Read from archive into the given buffer.
     // Should read the exact number of bytes of the given buffer and start read at
     // given offset.
-    fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> Result<()>;
+    fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> Result<(), Error>;
 
     // Read and return chunked data
-    fn read_in_chunks<F: FnMut(Vec<u8>) -> Result<()>>(
+    fn read_in_chunks<F: FnMut(Vec<u8>) -> Result<(), Error>>(
         &mut self,
         start_offset: u64,
         chunk_sizes: &[u64],
         chunk_callback: F,
-    ) -> Result<()>;
+    ) -> Result<(), Error>;
 }
 
 impl ArchiveReader {
-    pub fn verify_pre_header(pre_header: &[u8]) -> Result<()> {
+    pub fn verify_pre_header(pre_header: &[u8]) -> Result<(), Error> {
         if pre_header.len() < archive::FILE_MAGIC.len() {
-            bail!("failed to read header of archive")
+            return Err(Error::NotAnArchive(
+                "failed to read header of archive".to_owned(),
+            ));
         }
         // Allow both leagacy type file magic (prefixed with \0 but no null
         // termination) and new type 'BITA\0'.
         if &pre_header[0..archive::FILE_MAGIC.len()] != archive::FILE_MAGIC
             && &pre_header[0..archive::FILE_MAGIC.len()] != b"\0BITA1"
         {
-            return Err(Error::from_kind(ErrorKind::NotAnArchive(
-                "invalid file magic".to_string(),
-            )));
+            return Err(Error::NotAnArchive("invalid file magic".to_owned()));
         }
         Ok(())
     }
 
-    pub fn try_init<R>(input: &mut R, header_buf: &mut Vec<u8>) -> Result<Self>
+    pub fn try_init<R>(input: &mut R, header_buf: &mut Vec<u8>) -> Result<Self, Error>
     where
         R: Read,
     {
         // Read the pre-header (file magic and size)
         header_buf.resize(archive::PRE_HEADER_SIZE, 0);
-        input
-            .read_exact(header_buf)
-            .or_else(|err| {
-                header_buf.clear();
-                Err(err)
-            })
-            .chain_err(|| "unable to read archive")?;
+        input.read_exact(header_buf).or_else(|e| {
+            header_buf.clear();
+            Err(("unable to read archive", e))
+        })?;
 
         Self::verify_pre_header(&header_buf[0..archive::PRE_HEADER_SIZE])?;
 
@@ -123,7 +120,7 @@ impl ArchiveReader {
         header_buf.resize(archive::PRE_HEADER_SIZE + dictionary_size + 8 + 64, 0);
         input
             .read_exact(&mut header_buf[archive::PRE_HEADER_SIZE..])
-            .chain_err(|| "unable to read archive")?;
+            .map_err(|e| ("unable to read archive", e))?;
 
         // Verify the header against the header hash
         let mut hasher = Blake2b::new();
@@ -131,16 +128,14 @@ impl ArchiveReader {
         hasher.input(&header_buf[..offs]);
         let header_checksum = header_buf[offs..(offs + 64)].to_vec();
         if header_checksum != hasher.result().to_vec() {
-            return Err(Error::from_kind(ErrorKind::NotAnArchive(
-                "corrupt archive header".to_string(),
-            )));
+            return Err(Error::NotAnArchive("corrupt archive header".to_owned()));
         }
 
         // Deserialize the chunk dictionary
         let offs = archive::PRE_HEADER_SIZE;
         let dictionary: chunk_dictionary::ChunkDictionary =
             protobuf::parse_from_bytes(&header_buf[offs..(offs + dictionary_size)])
-                .chain_err(|| "unable to unpack archive header")?;
+                .map_err(|e| ("unable to unpack archive header", e))?;
 
         // Get chunk data offset
         let offs = archive::PRE_HEADER_SIZE + dictionary_size;
@@ -257,7 +252,7 @@ impl ArchiveReader {
         archive_checksum: &[u8],
         source_size: usize,
         archive_data: Vec<u8>,
-    ) -> Result<Vec<u8>> {
+    ) -> Result<Vec<u8>, Error> {
         let mut hasher = Blake2b::new();
         let chunk_data = if archive_data.len() == source_size {
             // Archive data is not compressed
@@ -272,7 +267,7 @@ impl ArchiveReader {
         hasher.input(&chunk_data);
         let checksum = hasher.result().to_vec();
         if checksum[..hash_length] != archive_checksum[..hash_length] {
-            bail!(
+            panic!(
                 "Chunk hash mismatch (expected: {}, got: {})",
                 HexSlice::new(&checksum[0..hash_length]),
                 HexSlice::new(&archive_checksum[0..hash_length])
@@ -289,10 +284,10 @@ impl ArchiveReader {
         mut input: T,
         chunks: &HashSet<HashBuf>,
         mut chunk_callback: F,
-    ) -> Result<u64>
+    ) -> Result<u64, Error>
     where
         T: ArchiveBackend,
-        F: FnMut(HashBuf, &[u8]) -> Result<()>,
+        F: FnMut(HashBuf, &[u8]) -> Result<(), Error>,
     {
         // Create list of chunks which are in archive. The order of the list should
         // be the same order as the chunk data in archive.
