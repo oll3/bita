@@ -30,8 +30,18 @@ olle@home:~$ cargo install bita
 
 ### Building from source
 ```console
-olle@home:~$ cargo build` or `$ cargo build --release
+olle@home:~$ cargo build
 ```
+#### Building in release mode
+```console
+olle@home:~$ cargo build --release
+```
+
+### Running tests
+```console
+olle@home:~$ cargo test
+```
+
 
 ### Example usage
 
