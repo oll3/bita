@@ -4,7 +4,7 @@ use threadpool::ThreadPool;
 // Generic parallel data processing pipe
 pub struct ParaPipe<'a, O> {
     pool: &'a ThreadPool,
-    output_callback: Box<FnMut(O) + 'a>,
+    output_callback: Box<dyn FnMut(O) + 'a>,
     waiting_result: Vec<Receiver<O>>,
 }
 

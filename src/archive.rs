@@ -51,7 +51,7 @@ impl From<chunk_dictionary::ChunkDescriptor> for ChunkDescriptor {
 }
 
 impl fmt::Display for chunk_dictionary::ChunkDictionary {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "version: {}, chunks: {}, source hash: {}, source size: {}, compression: {}",

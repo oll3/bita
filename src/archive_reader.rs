@@ -49,7 +49,7 @@ pub struct ArchiveReader {
 }
 
 impl fmt::Display for ArchiveReader {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "build version: {}, chunks: {} (unique: {}), compression: {}, decompressed size: {}, source checksum: {}",

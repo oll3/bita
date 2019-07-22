@@ -13,7 +13,7 @@ pub enum Compression {
 }
 
 impl std::fmt::Display for Compression {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Compression::LZMA(ref level) => write!(f, "LZMA({})", level),
             Compression::ZSTD(ref level) => write!(f, "ZSTD({})", level),

@@ -33,7 +33,7 @@ impl<'a> HexSlice<'a> {
     }
 }
 impl<'a> fmt::Display for HexSlice<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for byte in self.0 {
             write!(f, "{:02x}", byte)?;
         }

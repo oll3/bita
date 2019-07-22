@@ -35,7 +35,7 @@ pub struct ChunkSourceDescriptor {
 // Calculate a strong hash on every chunk and forward each chunk
 // Returns an array of chunk index.
 pub fn unique_chunks<T, F, H>(
-    chunker: &mut Chunker<T>,
+    chunker: &mut Chunker<'_, T>,
     hash_chunk: H,
     pool: &ThreadPool,
     hash_input: bool,
@@ -118,7 +118,7 @@ where
 
 // Iterate unique and compressed chunks
 pub fn unique_compressed_chunks<T, F, C, H>(
-    chunker: &mut Chunker<T>,
+    chunker: &mut Chunker<'_, T>,
     hash_chunk: H,
     compress_chunk: C,
     pool: &ThreadPool,

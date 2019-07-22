@@ -1,12 +1,3 @@
-extern crate atty;
-extern crate blake2;
-extern crate crossbeam_channel;
-extern crate curl;
-extern crate lzma;
-extern crate protobuf;
-extern crate threadpool;
-extern crate zstd;
-
 pub mod archive;
 pub mod archive_reader;
 pub mod buzhash;

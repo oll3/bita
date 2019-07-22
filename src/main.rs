@@ -1,10 +1,8 @@
-extern crate bita;
-extern crate chrono;
-extern crate clap;
-extern crate fern;
-extern crate log;
-extern crate num_cpus;
-extern crate threadpool;
+use chrono;
+
+use fern;
+use log;
+use num_cpus;
 
 mod clone_cmd;
 mod compress_cmd;
