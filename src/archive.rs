@@ -65,7 +65,7 @@ impl fmt::Display for chunk_dictionary::ChunkDictionary {
 }
 
 pub fn u64_from_le_slice(v: &[u8]) -> u64 {
-    let mut tmp: [u8; 8] = Default::default();;
+    let mut tmp: [u8; 8] = Default::default();
     tmp.copy_from_slice(v);
     u64::from_le_bytes(tmp)
 }

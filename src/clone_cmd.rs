@@ -259,14 +259,15 @@ where
     Ok(())
 }
 
-pub fn run(config: &config::CloneConfig, pool: &ThreadPool) -> Result<(), Error> {
+pub fn run(config: &config::CloneConfig) -> Result<(), Error> {
+    let pool = ThreadPool::new(num_cpus::get());
     if &config.input[0..7] == "http://" || &config.input[0..8] == "https://" {
         let remote_source = RemoteReader::new(&config.input);
-        clone_archive(remote_source, config, pool)?;
+        clone_archive(remote_source, config, &pool)?;
     } else {
         let local_file = File::open(&config.input)
             .map_err(|e| (format!("unable to open {}", config.input), e))?;
-        clone_archive(local_file, config, pool)?;
+        clone_archive(local_file, config, &pool)?;
     }
 
     Ok(())

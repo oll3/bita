@@ -2,7 +2,6 @@ use chrono;
 
 use fern;
 use log;
-use num_cpus;
 
 mod clone_cmd;
 mod compress_cmd;
@@ -14,13 +13,11 @@ use clap::{App, Arg, SubCommand};
 use log::*;
 use std::path::Path;
 use std::process;
-use threadpool::ThreadPool;
 
 use crate::config::*;
 use crate::string_utils::hex_str_to_vec;
 use bita::compression::Compression;
 use bita::error::Error;
-//pub mod errors;
 
 pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -288,12 +285,9 @@ fn parse_opts() -> Result<Config, Error> {
 }
 
 fn main() {
-    let num_threads = num_cpus::get();
-    let pool = ThreadPool::new(num_threads);
-
     let result = match parse_opts() {
-        Ok(Config::Compress(config)) => compress_cmd::run(&config, &pool),
-        Ok(Config::Clone(config)) => clone_cmd::run(&config, &pool),
+        Ok(Config::Compress(config)) => compress_cmd::run(&config),
+        Ok(Config::Clone(config)) => clone_cmd::run(&config),
         Ok(Config::Info(config)) => info_cmd::run(&config),
         Err(e) => Err(e),
     };

@@ -148,7 +148,8 @@ fn chunk_into_file(
     })
 }
 
-pub fn run(config: &CompressConfig, pool: &ThreadPool) -> Result<(), Error> {
+pub fn run(config: &CompressConfig) -> Result<(), Error> {
+    let pool = ThreadPool::new(num_cpus::get());
     let mut output_file = OpenOptions::new()
         .write(true)
         .read(true)
@@ -180,7 +181,7 @@ pub fn run(config: &CompressConfig, pool: &ThreadPool) -> Result<(), Error> {
         })?;
 
     // Generate chunks and store to a temp file
-    let chunk_file_descriptor = chunk_into_file(&config, pool, &mut tmp_chunk_file)?;
+    let chunk_file_descriptor = chunk_into_file(&config, &pool, &mut tmp_chunk_file)?;
 
     // Store header to output file
     let file_header = chunk_dictionary::ChunkDictionary {
