@@ -7,4 +7,9 @@ rust:
 env:
   - RUST_BACKTRACE=1
 script:
+- rustup component add clippy
+- rustup component add rustfmt
+- cargo fmt --all -- --check
+- cargo build
+- cargo clippy --all
 - cargo test --verbose
