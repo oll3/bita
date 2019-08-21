@@ -10,17 +10,20 @@ readme = "README.md"
 keywords = ["update", "swupdate", "synchronization", "delta-update"]
 categories = ["command-line-utilities", "compression"]
 
+[build-dependencies]
+protoc-rust = "2.8.0"
+
 [dependencies]
 clap = "2.33.0"
 rust-lzma = "0.4.0"
-zstd = "0.4.24"
+zstd = "0.4.28"
 threadpool = "1.7.1"
 num_cpus = "1.10.1"
 curl = "0.4.22"
 blake2 = "0.8.0"
 atty = "0.2.13"
-protobuf = "2.7.0"
-crossbeam-channel = "0.3.8"
-log = "0.4.7"
+protobuf = "2.8.0"
+crossbeam-channel = "0.3.9"
+log = "0.4.8"
 fern = "0.5.8"
 chrono = "0.4.7"

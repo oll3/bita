@@ -5,7 +5,10 @@ rust:
   - beta
   - nightly
 env:
-  - RUST_BACKTRACE=1
+  - RUST_BACKTRACE=1 PATH=$HOME/protoc/bin:$PATH
+install:
+  - curl -L https://github.com/google/protobuf/releases/download/v3.9.1/protoc-3.9.1-linux-x86_64.zip -o /tmp/protoc.zip
+  - unzip /tmp/protoc.zip -d $HOME/protoc
 script:
 - rustup component add clippy
 - rustup component add rustfmt

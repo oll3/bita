@@ -55,6 +55,7 @@ where
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn clone_to_output<T, F>(
     pool: &ThreadPool,
     archive_backend: T,
