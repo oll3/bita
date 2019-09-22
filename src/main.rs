@@ -308,9 +308,9 @@ fn parse_opts() -> Result<Config, Error> {
 
 fn main() {
     let result = match parse_opts() {
-        Ok(Config::Compress(config)) => compress_cmd::run(&config),
-        Ok(Config::Clone(config)) => clone_cmd::run(&config),
-        Ok(Config::Info(config)) => info_cmd::run(&config),
+        Ok(Config::Compress(config)) => compress_cmd::run(config),
+        Ok(Config::Clone(config)) => clone_cmd::run(config),
+        Ok(Config::Info(config)) => info_cmd::run(config),
         Err(e) => Err(e),
     };
     if let Err(ref e) = result {

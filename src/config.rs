@@ -2,7 +2,7 @@ use bita::chunker_utils::HashBuf;
 use bita::compression::Compression;
 use std::path::PathBuf;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CompressConfig {
     pub force_create: bool,
 
@@ -19,7 +19,7 @@ pub struct CompressConfig {
     pub compression: Compression,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CloneConfig {
     pub force_create: bool,
     pub input: String,
@@ -29,12 +29,12 @@ pub struct CloneConfig {
     pub header_checksum: Option<HashBuf>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct InfoConfig {
     pub input: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Config {
     Compress(CompressConfig),
     Clone(CloneConfig),

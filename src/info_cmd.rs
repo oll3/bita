@@ -71,7 +71,7 @@ pub fn print_archive(archive: &ArchiveReader) {
     info!("  Source size: {}", size_to_str(archive.source_total_size));
 }
 
-pub fn run(config: &config::InfoConfig) -> Result<(), Error> {
+pub fn run(config: config::InfoConfig) -> Result<(), Error> {
     if &config.input[0..7] == "http://" || &config.input[0..8] == "https://" {
         let remote_source = RemoteReader::new(&config.input);
         print_archive_backend(remote_source)?;
