@@ -38,6 +38,20 @@ fn parse_size(size_str: &str) -> usize {
     }
 }
 
+pub fn compression_names() -> String {
+    let mut s = "(brotli, ".to_owned();
+    #[cfg(feature = "lzma-compression")]
+    {
+        s += "lzma, ";
+    }
+    #[cfg(feature = "zstd-compression")]
+    {
+        s += "zstd, ";
+    }
+    s += "none) [default: brotli]";
+    s
+}
+
 fn init_log(level: log::LevelFilter) {
     let local_level = level;
     fern::Dispatch::new()
@@ -128,7 +142,7 @@ fn parse_opts() -> Result<Config, Error> {
                     Arg::with_name("compression")
                         .long("compression")
                         .value_name("TYPE")
-                        .help("Set the chunk data compression type (LZMA, ZSTD, NONE) [default: LZMA]"),
+                        .help(&format!("Set the chunk data compression type {}", compression_names())),
                 )
                 .arg(
                     Arg::with_name("force-create")
@@ -139,7 +153,7 @@ fn parse_opts() -> Result<Config, Error> {
         )
         .subcommand(
             SubCommand::with_name("clone")
-                .about("Clone a remote (or local archive). The archive is unpacked while beeing cloned.")
+                .about("Clone a remote (or local archive). The archive is unpacked while being cloned.")
                 .arg(
                     Arg::with_name("INPUT")
                         .value_name("INPUT")
@@ -215,11 +229,19 @@ fn parse_opts() -> Result<Config, Error> {
             panic!("compression level not within range");
         }
 
-        let compression = match matches.value_of("compression").unwrap_or("LZMA") {
-            "LZMA" | "lzma" => Compression::LZMA(compression_level),
-            "ZSTD" | "zstd" => Compression::ZSTD(compression_level),
-            "NONE" | "none" => Compression::None,
-            _ => panic!("invalid compression"),
+        let compression = match matches
+            .value_of("compression")
+            .unwrap_or("brotli")
+            .to_lowercase()
+            .as_ref()
+        {
+            #[cfg(feature = "lzma-compression")]
+            "lzma" => Compression::LZMA(compression_level),
+            #[cfg(feature = "zstd-compression")]
+            "zstd" => Compression::ZSTD(compression_level),
+            "brotli" => Compression::Brotli(compression_level),
+            "none" => Compression::None,
+            name => panic!("invalid compression {}", name),
         };
 
         let chunk_filter_bits = 30 - (avg_chunk_size as u32).leading_zeros();

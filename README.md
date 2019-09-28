@@ -50,7 +50,7 @@ olle@home:~$ cargo test
 Create a compressed archive file.cba from stdin stream:
 
 ```console
-olle@host:~$ gunzip -c file.gz | bita compress --compression ZSTD --compression-level 9 file.cba
+olle@host:~$ gunzip -c file.gz | bita compress --compression-level 9 file.cba
 ```
 
 Create an compressed archive file.ext4.cba from file file.ext4:

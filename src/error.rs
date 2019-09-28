@@ -3,11 +3,13 @@ pub enum Error {
     ChecksumMismatch(String),
     IO(String, std::io::Error),
     Protobuf(String, protobuf::ProtobufError),
+    #[cfg(feature = "lzma-compression")]
     LZMA(String, lzma::LzmaError),
     CURL(String, curl::Error),
     Other(String),
 }
 
+#[cfg(feature = "lzma-compression")]
 impl From<(&str, lzma::LzmaError)> for Error {
     fn from((desc, e): (&str, lzma::LzmaError)) -> Self {
         Error::LZMA(desc.to_owned(), e)
@@ -57,6 +59,7 @@ impl std::fmt::Display for Error {
             Error::ChecksumMismatch(ref desc) => write!(f, "{}", desc),
             Error::IO(ref desc, ref e) => write!(f, "{}: {}", desc, e),
             Error::Protobuf(ref desc, ref e) => write!(f, "{}: {}", desc, e),
+            #[cfg(feature = "lzma-compression")]
             Error::LZMA(ref desc, ref e) => write!(f, "{}: {}", desc, e),
             Error::CURL(ref desc, ref e) => write!(f, "{}: {}", desc, e),
             Error::Other(ref desc) => write!(f, "{}", desc),

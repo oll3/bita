@@ -31,6 +31,7 @@ message ChunkCompression
         NONE = 0;
         LZMA = 1;
         ZSTD = 2;
+        BROTLI = 3;
     }
     CompressionType compression = 2;
     uint32 compression_level = 3;
