@@ -65,19 +65,23 @@ fn chunk_into_file(
             // For each unique and compressed chunk
             let hash = &comp_chunk.hash[0..config.hash_length as usize];
 
-            let store_data = if comp_chunk.cdata.len() > comp_chunk.data.len() {
+            let store_data = if comp_chunk.cdata.len() >= comp_chunk.data.len() {
                 &comp_chunk.data
             } else {
                 &comp_chunk.cdata
             };
 
             debug!(
-                "Chunk {}, '{}', offset: {}, size: {}, compressed to: {}",
+                "Chunk {}, '{}', offset: {}, size: {}, {}",
                 total_unique_chunks,
                 HexSlice::new(&hash),
                 comp_chunk.offset,
                 size_to_str(comp_chunk.data.len()),
-                size_to_str(store_data.len()),
+                if comp_chunk.cdata.len() >= comp_chunk.data.len() {
+                    "left uncompressed".to_owned()
+                } else {
+                    format!("compressed to: {}", size_to_str(store_data.len()))
+                },
             );
 
             total_unique_chunks += 1;
