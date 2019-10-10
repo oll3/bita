@@ -7,7 +7,6 @@ use std::io;
 use std::io::prelude::*;
 use std::io::BufWriter;
 use std::io::SeekFrom;
-use std::os::linux::fs::MetadataExt;
 use std::path::PathBuf;
 use threadpool::ThreadPool;
 
@@ -150,26 +149,36 @@ where
 }
 
 fn prepare_unpack_output(output_file: &mut File, source_file_size: u64) -> Result<(), Error> {
-    let meta = output_file
-        .metadata()
-        .map_err(|e| ("unable to get file meta data", e))?;
-    if meta.st_mode() & 0x6000 == 0x6000 {
-        // Output is a block device
-        let size = output_file
-            .seek(SeekFrom::End(0))
-            .map_err(|e| ("unable to seek output file", e))?;
-        if size != source_file_size {
-            panic!(
-                "Size of output device ({}) differ from size of archive target file ({})",
-                size_to_str(size),
-                size_to_str(source_file_size)
-            );
+    #[cfg(unix)]
+    {
+        use std::os::linux::fs::MetadataExt;
+        let meta = output_file
+            .metadata()
+            .map_err(|e| ("unable to get file meta data", e))?;
+        if meta.st_mode() & 0x6000 == 0x6000 {
+            // Output is a block device
+            let size = output_file
+                .seek(SeekFrom::End(0))
+                .map_err(|e| ("unable to seek output file", e))?;
+            if size != source_file_size {
+                panic!(
+                    "Size of output device ({}) differ from size of archive target file ({})",
+                    size_to_str(size),
+                    size_to_str(source_file_size)
+                );
+            }
+            output_file
+                .seek(SeekFrom::Start(0))
+                .map_err(|e| ("unable to seek output file", e))?;
+        } else {
+            // Output is a reqular file
+            output_file
+                .set_len(source_file_size)
+                .map_err(|e| ("unable to resize output file", e))?;
         }
-        output_file
-            .seek(SeekFrom::Start(0))
-            .map_err(|e| ("unable to seek output file", e))?;
-    } else {
-        // Output is a reqular file
+    }
+    #[cfg(not(unix))]
+    {
         output_file
             .set_len(source_file_size)
             .map_err(|e| ("unable to resize output file", e))?;
