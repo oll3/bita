@@ -2,12 +2,14 @@
 [![Build Status](https://travis-ci.org/oll3/bita.svg?branch=master)](https://travis-ci.org/oll3/bita)
 [![](http://meritbadge.herokuapp.com/bita)](https://crates.io/crates/bita)
 
-bita is a tool aiming for fast and low bandwidth file synchronization over http.
+Tool for fast and low bandwidth file synchronization over http.
 
-The file to synchronize could be any file where data is expected to change partially or completely between updates.
+---
+
+The file to synchronize can be any file where data is expected to change partially or completely between updates.
 Any local file that might contain data of the source file may be used as seed while cloning.
 
-In a software update system (IoT device/embedded system) with an A/B partition setup bita can be used to update the B partition while using the A partition as seed. The result written to the B parition will be an exact clone of the remote file but the only data fetched from remote is the data which actually differ between the A partition and the remote file.
+On a system with an A/B partition setup bita can be used to update the B partition while using the A partition as seed. The result written to the B partition will be an exact clone of the remote file but the only data fetched from remote is the data which actually differ between the A partition and the remote file.
 
 ---
 
@@ -61,16 +63,16 @@ olle@host:~$ bita compress file.ext4 file.ext4.cba
 
 #### Clone
 
-Clone file at http://host/new.tar.cba using seed another_old.tar and stdin (-):
+Clone file at https://host/new.tar.cba using seed another_old.tar and stdin (-):
 
 ```console
-olle@device:~$ gunzip -c old.tar.gz | bita clone --seed another_old.tar --seed - http://host/new.tar.cba new.tar
+olle@device:~$ gunzip -c old.tar.gz | bita clone --seed another_old.tar --seed - https://host/new.tar.cba new.tar
 ```
 
 Clone using block device /dev/mmcblk0p1 as seed and /dev/mmcblk0p2 as target:
 
 ```console
-olle@device:~$ bita clone --seed /dev/mmcblk0p1 http://host/file.ext4.cba /dev/mmcblk0p2
+olle@device:~$ bita clone --seed /dev/mmcblk0p1 https://host/file.ext4.cba /dev/mmcblk0p2
 ```
 
 

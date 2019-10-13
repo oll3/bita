@@ -1,14 +1,14 @@
 [package]
 name = "bita"
-version = "0.2.1"
+version = "0.3.0"
 authors = ["Olle Sandberg <olle@b3rg.se>"]
 license = "MIT"
 edition = '2018'
-description = "Fast file synchronization over http."
+description = "Differential file synchronization over http(s)."
 repository = "https://github.com/oll3/bita"
 readme = "README.md"
 keywords = ["update", "swupdate", "synchronization", "delta-update"]
-categories = ["command-line-utilities", "compression"]
+categories = ["command-line-utilities", "compression", "differential"]
 
 [build-dependencies]
 protoc-rust = "2.8.1"
