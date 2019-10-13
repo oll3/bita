@@ -54,98 +54,119 @@ where
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-fn clone_to_output<T, F>(
-    pool: &ThreadPool,
+struct CloneToOutput<'a, T> {
+    archive: &'a ArchiveReader,
     archive_backend: T,
-    archive: &ArchiveReader,
-    seed_files: &[PathBuf],
+    seed_files: &'a [PathBuf],
     seed_stdin: bool,
     chunker_params: ChunkerParams,
-    mut chunks_left: HashSet<HashBuf>,
-    mut chunk_output: F,
-) -> Result<(), Error>
+    chunks_left: HashSet<HashBuf>,
+}
+
+impl<'a, T> CloneToOutput<'a, T>
 where
     T: ArchiveBackend,
-    F: FnMut(&str, &HashBuf, &[u8]),
 {
-    let mut total_read_from_seed = 0;
-
-    // Run input seed files through chunker and use chunks which are in the target file.
-    // Start with scanning stdin, if not a tty.
-    if seed_stdin && !atty::is(Stream::Stdin) {
-        let stdin = io::stdin();
-        let chunks_missing = chunks_left.len();
-        let stdin = stdin.lock();
-        info!("Scanning stdin for chunks...");
-        chunk_seed(
-            stdin,
-            &chunker_params,
-            archive.hash_length,
-            &mut chunks_left,
-            |checksum, chunk_data| {
-                total_read_from_seed += chunk_data.len();
-                chunk_output("seed (stdin)", checksum, chunk_data);
-            },
-            &pool,
-        )?;
-        info!(
-            "Used {} chunks from stdin",
-            chunks_missing - chunks_left.len()
-        );
+    fn new(
+        archive_backend: T,
+        archive: &'a ArchiveReader,
+        seed_files: &'a [PathBuf],
+        seed_stdin: bool,
+        chunker_params: ChunkerParams,
+        chunks_left: HashSet<HashBuf>,
+    ) -> Self {
+        Self {
+            archive_backend,
+            archive,
+            seed_files,
+            seed_stdin,
+            chunker_params,
+            chunks_left,
+        }
     }
-    // Now scan through all given seed files
-    for seed_path in seed_files {
-        if !chunks_left.is_empty() {
-            let chunks_missing = chunks_left.len();
-            let seed_file = File::open(&seed_path).map_err(|e| {
-                (
-                    format!("failed to open seed file ({})", seed_path.display()),
-                    e,
-                )
-            })?;
-            info!("Scanning {} for chunks...", seed_path.display());
+
+    fn build<F>(mut self, pool: &ThreadPool, mut chunk_output: F) -> Result<(), Error>
+    where
+        F: FnMut(&str, &HashBuf, &[u8]),
+    {
+        let mut total_read_from_seed = 0;
+
+        // Run input seed files through chunker and use chunks which are in the target file.
+        // Start with scanning stdin, if not a tty.
+        if self.seed_stdin && !atty::is(Stream::Stdin) {
+            let stdin = io::stdin();
+            let chunks_missing = self.chunks_left.len();
+            let stdin = stdin.lock();
+            info!("Scanning stdin for chunks...");
             chunk_seed(
-                seed_file,
-                &chunker_params,
-                archive.hash_length,
-                &mut chunks_left,
+                stdin,
+                &self.chunker_params,
+                self.archive.hash_length,
+                &mut self.chunks_left,
                 |checksum, chunk_data| {
                     total_read_from_seed += chunk_data.len();
-                    chunk_output(
-                        &format!("seed ({})", seed_path.display()),
-                        checksum,
-                        chunk_data,
-                    );
+                    chunk_output("seed (stdin)", checksum, chunk_data);
                 },
                 &pool,
             )?;
             info!(
-                "Used {} chunks from seed file {}",
-                chunks_missing - chunks_left.len(),
-                seed_path.display(),
+                "Used {} chunks from stdin",
+                chunks_missing - self.chunks_left.len()
             );
         }
+        // Scan through all given seed files
+        for seed_path in self.seed_files {
+            if !self.chunks_left.is_empty() {
+                let chunks_missing = self.chunks_left.len();
+                let seed_file = File::open(&seed_path).map_err(|e| {
+                    (
+                        format!("failed to open seed file ({})", seed_path.display()),
+                        e,
+                    )
+                })?;
+                info!("Scanning {} for chunks...", seed_path.display());
+                chunk_seed(
+                    seed_file,
+                    &self.chunker_params,
+                    self.archive.hash_length,
+                    &mut self.chunks_left,
+                    |checksum, chunk_data| {
+                        total_read_from_seed += chunk_data.len();
+                        chunk_output(
+                            &format!("seed ({})", seed_path.display()),
+                            checksum,
+                            chunk_data,
+                        );
+                    },
+                    &pool,
+                )?;
+                info!(
+                    "Used {} chunks from seed file {}",
+                    chunks_missing - self.chunks_left.len(),
+                    seed_path.display(),
+                );
+            }
+        }
+
+        // Fetch rest of the chunks from archive
+        let total_from_archive = self.archive.read_chunk_data(
+            &pool,
+            self.archive_backend,
+            &self.chunks_left,
+            |checksum, chunk_data| {
+                chunk_output("archive", &checksum, chunk_data);
+                Ok(())
+            },
+        )?;
+
+        info!(
+            "Successfully cloned archive using {} from remote and {} from seeds.",
+            size_to_str(total_from_archive),
+            size_to_str(total_read_from_seed)
+        );
+
+        Ok(())
     }
-
-    // Fetch rest of the chunks from archive
-    let total_from_archive = archive.read_chunk_data(
-        &pool,
-        archive_backend,
-        &chunks_left,
-        |checksum, chunk_data| {
-            chunk_output("archive", &checksum, chunk_data);
-            Ok(())
-        },
-    )?;
-
-    info!(
-        "Successfully cloned archive using {} from remote and {} from seeds.",
-        size_to_str(total_from_archive),
-        size_to_str(total_read_from_seed)
-    );
-
-    Ok(())
 }
 
 fn prepare_unpack_output(output_file: &mut File, source_file_size: u64) -> Result<(), Error> {
@@ -240,14 +261,16 @@ where
     prepare_unpack_output(&mut output_file, archive.source_total_size)?;
 
     let mut output_file = BufWriter::new(output_file);
-    clone_to_output(
-        pool,
+    CloneToOutput::new(
         archive_backend,
         &archive,
         &config.seed_files,
         config.seed_stdin,
         chunker_params,
         chunks_left,
+    )
+    .build(
+        pool,
         |chunk_source: &str, hash: &HashBuf, chunk_data: &[u8]| {
             debug!(
                 "Chunk '{}', size {} used from {}",
