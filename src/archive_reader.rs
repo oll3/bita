@@ -63,6 +63,10 @@ impl fmt::Display for ArchiveReader {
     }
 }
 
+trait Reader: futures::stream::Stream {
+    fn set_read_at(&mut self, offset: u64, size: u64) -> Result<(), Error>;
+}
+
 // Trait to implement for archive backends.
 pub trait ArchiveBackend
 where
