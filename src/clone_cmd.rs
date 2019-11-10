@@ -1,185 +1,62 @@
 use atty::Stream;
 use blake2::{Blake2b, Digest};
+use futures::future;
 use log::*;
-use std::collections::HashSet;
-use std::fs::{File, OpenOptions};
-use std::io;
-use std::io::prelude::*;
-use std::io::BufWriter;
 use std::io::SeekFrom;
-use std::path::PathBuf;
-use threadpool::ThreadPool;
+use std::path::{Path, PathBuf};
+use tokio::fs::{File, OpenOptions};
+use tokio::prelude::*;
+use tokio::runtime::Runtime;
+use tokio::sync::oneshot;
 
 use crate::config;
 use crate::info_cmd;
-use bita::archive_reader::{ArchiveBackend, ArchiveReader};
-use bita::chunker::{Chunker, ChunkerParams};
-use bita::chunker_utils::*;
+use bita::archive_reader2::ArchiveReader2;
+use bita::chunker2::{Chunker, ChunkerParams};
 use bita::error::Error;
-use bita::remote_archive_backend::RemoteReader;
+use bita::reader_backend;
 use bita::string_utils::*;
 
-fn chunk_seed<T, F>(
-    mut seed_input: T,
-    chunker_params: &ChunkerParams,
-    hash_length: usize,
-    chunk_hash_set: &mut HashSet<HashBuf>,
-    mut chunk_callback: F,
-    pool: &ThreadPool,
-) -> Result<(), Error>
-where
-    T: Read,
-    F: FnMut(&HashBuf, &[u8]),
-{
-    // As the input file was not an archive we feed the data read so
-    // far into the chunker.
-    let mut chunker = Chunker::new(chunker_params.clone(), &mut seed_input);
-
-    // If input is an archive also check if chunker parameter
-    // matches, otherwise error or warn user?
-    // Generate strong hash for a chunk
-    let hasher = |data: &[u8]| {
-        let mut hasher = Blake2b::new();
-        hasher.input(data);
-        hasher.result().to_vec()
-    };
-    unique_chunks(&mut chunker, hasher, &pool, false, |hashed_chunk| {
-        let hash = &hashed_chunk.hash[0..hash_length].to_vec();
-        if chunk_hash_set.contains(hash) {
-            chunk_callback(hash, &hashed_chunk.data);
-            chunk_hash_set.remove(hash);
-        }
-    })?;
-
-    Ok(())
-}
-
-struct CloneToOutput<'a, T> {
-    archive: &'a ArchiveReader,
-    archive_backend: T,
-    seed_files: &'a [PathBuf],
+async fn create_seed_chunkers<'a>(
     seed_stdin: bool,
-    chunker_params: ChunkerParams,
-    chunks_left: HashSet<HashBuf>,
+    seed_files: &'a [PathBuf],
+    chunker_params: &ChunkerParams,
+) -> Result<Vec<(String, Chunker)>, Error> {
+    let mut chunkers = Vec::new();
+    if seed_stdin && !atty::is(Stream::Stdin) {
+        chunkers.push((
+            "stdin".to_owned(),
+            Chunker::new(chunker_params.clone(), Box::new(tokio::io::stdin())),
+        ));
+    }
+    for seed_path in seed_files {
+        let file = File::open(seed_path)
+            .await
+            .map_err(|e| ("failed to open input file", e))?;
+        chunkers.push((
+            format!("{}", seed_path.display()),
+            Chunker::new(chunker_params.clone(), Box::new(file)),
+        ));
+    }
+    Ok(chunkers)
 }
 
-impl<'a, T> CloneToOutput<'a, T>
-where
-    T: ArchiveBackend,
-{
-    fn new(
-        archive_backend: T,
-        archive: &'a ArchiveReader,
-        seed_files: &'a [PathBuf],
-        seed_stdin: bool,
-        chunker_params: ChunkerParams,
-        chunks_left: HashSet<HashBuf>,
-    ) -> Self {
-        Self {
-            archive_backend,
-            archive,
-            seed_files,
-            seed_stdin,
-            chunker_params,
-            chunks_left,
-        }
-    }
-
-    fn build<F>(mut self, pool: &ThreadPool, mut chunk_output: F) -> Result<(), Error>
-    where
-        F: FnMut(&str, &HashBuf, &[u8]),
-    {
-        let mut total_read_from_seed = 0;
-
-        // Run input seed files through chunker and use chunks which are in the target file.
-        // Start with scanning stdin, if not a tty.
-        if self.seed_stdin && !atty::is(Stream::Stdin) {
-            let stdin = io::stdin();
-            let chunks_missing = self.chunks_left.len();
-            let stdin = stdin.lock();
-            info!("Scanning stdin for chunks...");
-            chunk_seed(
-                stdin,
-                &self.chunker_params,
-                self.archive.hash_length,
-                &mut self.chunks_left,
-                |checksum, chunk_data| {
-                    total_read_from_seed += chunk_data.len();
-                    chunk_output("seed (stdin)", checksum, chunk_data);
-                },
-                &pool,
-            )?;
-            info!(
-                "Used {} chunks from stdin",
-                chunks_missing - self.chunks_left.len()
-            );
-        }
-        // Scan through all given seed files
-        for seed_path in self.seed_files {
-            if !self.chunks_left.is_empty() {
-                let chunks_missing = self.chunks_left.len();
-                let seed_file = File::open(&seed_path).map_err(|e| {
-                    (
-                        format!("failed to open seed file ({})", seed_path.display()),
-                        e,
-                    )
-                })?;
-                info!("Scanning {} for chunks...", seed_path.display());
-                chunk_seed(
-                    seed_file,
-                    &self.chunker_params,
-                    self.archive.hash_length,
-                    &mut self.chunks_left,
-                    |checksum, chunk_data| {
-                        total_read_from_seed += chunk_data.len();
-                        chunk_output(
-                            &format!("seed ({})", seed_path.display()),
-                            checksum,
-                            chunk_data,
-                        );
-                    },
-                    &pool,
-                )?;
-                info!(
-                    "Used {} chunks from seed file {}",
-                    chunks_missing - self.chunks_left.len(),
-                    seed_path.display(),
-                );
-            }
-        }
-
-        // Fetch rest of the chunks from archive
-        let total_from_archive = self.archive.read_chunk_data(
-            &pool,
-            self.archive_backend,
-            &self.chunks_left,
-            |checksum, chunk_data| {
-                chunk_output("archive", &checksum, chunk_data);
-                Ok(())
-            },
-        )?;
-
-        info!(
-            "Successfully cloned archive using {} from remote and {} from seeds.",
-            size_to_str(total_from_archive),
-            size_to_str(total_read_from_seed)
-        );
-
-        Ok(())
-    }
-}
-
-fn prepare_unpack_output(output_file: &mut File, source_file_size: u64) -> Result<(), Error> {
+async fn prepare_unpack_output(
+    mut output_file: File,
+    source_file_size: u64,
+) -> Result<File, Error> {
     #[cfg(unix)]
     {
         use std::os::linux::fs::MetadataExt;
         let meta = output_file
             .metadata()
+            .await
             .map_err(|e| ("unable to get file meta data", e))?;
         if meta.st_mode() & 0x6000 == 0x6000 {
             // Output is a block device
             let size = output_file
                 .seek(SeekFrom::End(0))
+                .await
                 .map_err(|e| ("unable to seek output file", e))?;
             if size != source_file_size {
                 panic!(
@@ -190,11 +67,13 @@ fn prepare_unpack_output(output_file: &mut File, source_file_size: u64) -> Resul
             }
             output_file
                 .seek(SeekFrom::Start(0))
+                .await
                 .map_err(|e| ("unable to seek output file", e))?;
         } else {
             // Output is a reqular file
             output_file
                 .set_len(source_file_size)
+                .await
                 .map_err(|e| ("unable to resize output file", e))?;
         }
     }
@@ -202,23 +81,22 @@ fn prepare_unpack_output(output_file: &mut File, source_file_size: u64) -> Resul
     {
         output_file
             .set_len(source_file_size)
+            .await
             .map_err(|e| ("unable to resize output file", e))?;
     }
-    Ok(())
+    Ok(output_file)
 }
 
-fn clone_archive<T>(
-    mut archive_backend: T,
+async fn clone_archive(
+    reader_builder: reader_backend::Builder,
     config: &config::CloneConfig,
-    pool: &ThreadPool,
-) -> Result<(), Error>
-where
-    T: ArchiveBackend,
-{
-    let archive = ArchiveReader::try_init(&mut archive_backend, &mut Vec::new())?;
-    let chunks_left = archive.chunk_hash_set();
-
-    info_cmd::print_archive(&archive);
+) -> Result<(), Error> {
+    let archive = ArchiveReader2::init(reader_builder.clone()).await?;
+    let mut chunks_left = archive.chunk_hash_set();
+    let hash_length = archive.hash_length;
+    let mut total_read_from_seed = 0u64;
+    let mut total_read_from_archive = 0u64;
+    info_cmd::print_archive2(&archive);
     println!();
 
     // Verify the header checksum if requested
@@ -240,12 +118,13 @@ where
     // Setup chunker to use when chunking seed input
     let chunker_params = archive.chunker_params.clone();
 
-    // Create or open output file.
+    // Create or open output file
     let mut output_file = OpenOptions::new()
         .write(true)
         .create(config.force_create)
         .create_new(!config.force_create)
         .open(&config.output)
+        .await
         .map_err(|e| {
             (
                 format!("failed to open output file ({})", config.output.display()),
@@ -258,49 +137,143 @@ where
     // Check if the given output file is a regular file or block device.
     // If it is a block device we should check its size against the target size before
     // writing. If a regular file then resize that file to target size.
-    prepare_unpack_output(&mut output_file, archive.source_total_size)?;
+    output_file = prepare_unpack_output(output_file, archive.source_total_size).await?;
 
-    let mut output_file = BufWriter::new(output_file);
-    CloneToOutput::new(
-        archive_backend,
-        &archive,
-        &config.seed_files,
-        config.seed_stdin,
-        chunker_params,
-        chunks_left,
-    )
-    .build(
-        pool,
-        |chunk_source: &str, hash: &HashBuf, chunk_data: &[u8]| {
+    let seed_chunkers =
+        create_seed_chunkers(config.seed_stdin, &config.seed_files, &chunker_params).await?;
+
+    for (seed_name, seed_chunker) in seed_chunkers.into_iter() {
+        let mut found_chunks_count = 0;
+        if chunks_left.is_empty() {
+            break;
+        }
+        info!("Scanning {} for chunks...", seed_name);
+
+        let mut found_chunks = seed_chunker
+            .map(|result| {
+                let (_offset, chunk) = result.expect("error while chunking");
+                // Build hash of full source
+                async move {
+                    // Calculate strong hash for each chunk
+                    let mut chunk_hasher = Blake2b::new();
+                    chunk_hasher.input(&chunk);
+                    (
+                        chunk_hasher.result()[0..hash_length as usize].to_vec(),
+                        chunk,
+                    )
+                }
+            })
+            .buffered(8)
+            .filter_map(|(hash, chunk)| {
+                // Filter unique chunks to be compressed
+                if chunks_left.remove(&hash) {
+                    future::ready(Some((hash, chunk)))
+                } else {
+                    future::ready(None)
+                }
+            });
+
+        while let Some((hash, chunk)) = found_chunks.next().await {
             debug!(
                 "Chunk '{}', size {} used from {}",
-                HexSlice::new(hash),
-                size_to_str(chunk_data.len()),
-                chunk_source,
+                HexSlice::new(&hash),
+                size_to_str(chunk.len()),
+                seed_name,
             );
-
-            for offset in &archive.chunk_source_offsets(hash) {
+            for offset in &archive.chunk_source_offsets(&hash) {
+                total_read_from_seed += chunk.len() as u64;
                 output_file
                     .seek(SeekFrom::Start(*offset))
-                    .expect("seek output");
-                output_file.write_all(chunk_data).expect("write output");
+                    .await
+                    .map_err(|err| ("failed to seek output", err))?;
+                output_file
+                    .write_all(&chunk)
+                    .await
+                    .map_err(|err| ("failed to write output", err))?;
             }
-        },
-    )?;
+            found_chunks_count += 1;
+        }
+        info!(
+            "Used {} chunks from seed file {}",
+            found_chunks_count, seed_name
+        );
+    }
+
+    // Read the rest from archive
+    let grouped_chunks = archive.grouped_chunks(&chunks_left);
+    for group in grouped_chunks {
+        // For each group of chunks
+        let start_offset = archive.archive_chunks_offset + group[0].archive_offset;
+        let compression = archive.chunk_compression;
+        let chunk_sizes: Vec<usize> = group.iter().map(|c| c.archive_size as usize).collect();
+
+        let mut archive_chunk_stream = reader_builder
+            .read_chunks(start_offset, &chunk_sizes)?
+            .enumerate()
+            .map(|(chunk_index, chunk)| {
+                let chunk = chunk.expect("failed to read archive");
+                //let chunk_descriptor = &group[chunk_index];
+                let chunk_checksum = group[chunk_index].checksum.clone();
+                let chunk_source_size = group[chunk_index].source_size as usize;
+                let (tx, rx) = oneshot::channel();
+                tokio::spawn(async move {
+                    tx.send((
+                        chunk_checksum.clone(),
+                        ArchiveReader2::decompress_and_verify(
+                            hash_length,
+                            compression,
+                            &chunk_checksum,
+                            chunk_source_size,
+                            chunk,
+                        )
+                        .expect("failed to decompresss chunk"),
+                    ))
+                    .expect("failed to send");
+                });
+                rx.map(|v| v.expect("failed to receive"))
+            })
+            .buffered(8);
+
+        while let Some((hash, chunk)) = archive_chunk_stream.next().await {
+            // For each chunk read from archive
+            debug!(
+                "Chunk '{}', size {} used from archive",
+                HexSlice::new(&hash),
+                size_to_str(chunk.len()),
+            );
+            for offset in &archive.chunk_source_offsets(&hash) {
+                total_read_from_archive += chunk.len() as u64;
+                output_file
+                    .seek(SeekFrom::Start(*offset))
+                    .await
+                    .map_err(|err| ("failed to seek output", err))?;
+                output_file
+                    .write_all(&chunk)
+                    .await
+                    .map_err(|err| ("failed to write output", err))?;
+            }
+        }
+    }
+
+    info!(
+        "Successfully cloned archive using {} from remote and {} from seeds.",
+        size_to_str(total_read_from_archive),
+        size_to_str(total_read_from_seed)
+    );
 
     Ok(())
 }
 
-pub fn run(config: config::CloneConfig) -> Result<(), Error> {
-    let pool = ThreadPool::new(num_cpus::get());
-    if &config.input[0..7] == "http://" || &config.input[0..8] == "https://" {
-        let remote_source = RemoteReader::new(&config.input);
-        clone_archive(remote_source, &config, &pool)?;
+async fn run_async(config: config::CloneConfig) -> Result<(), Error> {
+    let reader_builder = if &config.input[0..7] == "http://" || &config.input[0..8] == "https://" {
+        reader_backend::Builder::new_remote(config.input.parse().unwrap(), 0, None, None)
     } else {
-        let local_file = File::open(&config.input)
-            .map_err(|e| (format!("unable to open {}", config.input), e))?;
-        clone_archive(local_file, &config, &pool)?;
-    }
+        reader_backend::Builder::new_local(&Path::new(&config.input))
+    };
+    clone_archive(reader_builder, &config).await
+}
 
-    Ok(())
+pub fn run(config: config::CloneConfig) -> Result<(), Error> {
+    let rt = Runtime::new().map_err(|e| ("failed to create runtime", e))?;
+    rt.block_on(run_async(config))
 }

@@ -137,15 +137,12 @@ pub fn print_archive2(archive: &ArchiveReader2) {
 }
 
 async fn run_async(config: config::InfoConfig) -> Result<(), Error> {
-    if &config.input[0..7] == "http://" || &config.input[0..8] == "https://" {
-        let builder =
-            bita::reader_backend::Builder::new_remote(config.input.parse().unwrap(), 0, None, None);
-        print_archive_backend2(builder).await?;
+    let builder = if &config.input[0..7] == "http://" || &config.input[0..8] == "https://" {
+        reader_backend::Builder::new_remote(config.input.parse().unwrap(), 0, None, None)
     } else {
-        let builder = bita::reader_backend::Builder::new_local(&Path::new(&config.input));
-        print_archive_backend2(builder).await?;
-    }
-
+        reader_backend::Builder::new_local(&Path::new(&config.input))
+    };
+    print_archive_backend2(builder).await?;
     Ok(())
 }
 

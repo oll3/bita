@@ -1,17 +1,14 @@
 use blake2::{Blake2b, Digest};
-use threadpool::ThreadPool;
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
-use std::io::prelude::*;
 
 use crate::archive;
 use crate::chunk_dictionary;
-use crate::chunker::ChunkerParams;
+use crate::chunker2::ChunkerParams;
 use crate::chunker_utils::HashBuf;
 use crate::compression::Compression;
 use crate::error::Error;
-use crate::para_pipe::ParaPipe;
 use crate::reader_backend;
 use crate::string_utils::*;
 
@@ -224,6 +221,15 @@ impl ArchiveReader2 {
         }
         group_list.push(group);
         group_list
+    }
+
+    pub fn grouped_chunks(&self, chunks: &HashSet<HashBuf>) -> Vec<Vec<&archive::ChunkDescriptor>> {
+        let descriptors: Vec<&archive::ChunkDescriptor> = self
+            .chunk_descriptors
+            .iter()
+            .filter(|chunk| chunks.contains(&chunk.checksum))
+            .collect();
+        Self::group_chunks_in_sequence(descriptors)
     }
 
     pub fn decompress_and_verify(

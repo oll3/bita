@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::path::PathBuf;
 use tokio;
-use tokio::fs::File;
+use tokio::fs::{File, OpenOptions};
 use tokio::prelude::*;
 use tokio::runtime::Runtime;
 use tokio::sync::oneshot;
@@ -67,7 +67,7 @@ async fn run_async(config: CompressConfig) -> Result<(), Error> {
         .open(config.output.clone())
         .map_err(|e| ("failed to open output file", e))?;
 
-    let mut temp_file = tokio::fs::OpenOptions::new()
+    let mut temp_file = OpenOptions::new()
         .write(true)
         .read(true)
         .create(true)
