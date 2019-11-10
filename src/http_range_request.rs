@@ -2,7 +2,7 @@ use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use futures::stream::Stream;
-use hyper::{Body, Client, Request, Uri};
+use hyper::{Body, Client, Uri};
 use hyper_tls::HttpsConnector;
 use std::time::Duration;
 
@@ -15,61 +15,84 @@ enum RequestState {
     Receiving(Body),
 }
 
-pub struct HttpRangeRequest {
+pub struct Builder {
     uri: Uri,
     size: u64,
     offset: u64,
     retry_delay: Option<Duration>,
-    timeout: Option<Duration>,
-    retries: u32,
+    receive_timeout: Option<Duration>,
+    retry_count: u32,
+}
+
+impl Builder {
+    pub fn new(uri: Uri, offset: u64, size: u64) -> Self {
+        Self {
+            uri,
+            offset,
+            size,
+            retry_delay: None,
+            retry_count: 0,
+            receive_timeout: None,
+        }
+    }
+    pub fn retry(mut self, retry_count: u32, retry_delay: Option<Duration>) -> Self {
+        self.retry_delay = retry_delay;
+        self.retry_count = retry_count;
+        self
+    }
+    pub fn receive_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.receive_timeout = timeout;
+        self
+    }
+    pub fn build(self) -> Request {
+        Request {
+            uri: self.uri,
+            offset: self.offset,
+            size: self.size,
+            receive_timeout: self.receive_timeout,
+            retry_count: self.retry_count,
+            retry_delay: self.retry_delay,
+            state: RequestState::Init(None),
+            request_timeout_timer: None,
+        }
+    }
+}
+pub struct Request {
+    uri: Uri,
+    offset: u64,
+    size: u64,
+    retry_delay: Option<Duration>,
+    receive_timeout: Option<Duration>,
+    retry_count: u32,
     state: RequestState,
     request_timeout_timer: Option<tokio::timer::Delay>,
 }
 
-impl HttpRangeRequest {
-    pub fn new(
-        uri: Uri,
-        offset: u64,
-        size: u64,
-        timeout: Option<Duration>,
-        retry_delay: Option<Duration>,
-        retries: u32,
-    ) -> Self {
-        Self {
-            uri,
-            size,
-            offset,
-            timeout,
-            state: RequestState::Init(None),
-            retries,
-            request_timeout_timer: None,
-            retry_delay,
-        }
-    }
+impl Request {
     fn reset_timeout(&mut self) {
-        if let Some(timeout) = self.timeout {
+        if let Some(timeout) = self.receive_timeout {
             self.request_timeout_timer = Some(tokio::timer::delay_for(timeout));
         }
     }
     fn retry(&mut self) {
-        self.retries -= 1;
+        self.retry_count -= 1;
         self.state =
             RequestState::Init(self.retry_delay.map(|delay| tokio::timer::delay_for(delay)));
         self.request_timeout_timer = None;
     }
 }
 
-impl Stream for HttpRangeRequest {
+impl Stream for Request {
     type Item = Result<hyper::body::Chunk, Error>;
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         if let Some(delay) = &mut self.as_mut().request_timeout_timer {
             if let Poll::Ready(()) = Pin::new(delay).poll(cx) {
                 // Retry if got error
-                if self.retries == 0 {
+                if self.retry_count == 0 {
                     return Poll::Ready(Some(Err("request timeout".into())));
                 }
+                log::warn!("receive timeout (retires left: {})", self.retry_count);
                 self.retry();
-                log::error!("Timeout - Retry (retires left: {})!", self.retries);
             }
         }
         loop {
@@ -84,13 +107,12 @@ impl Stream for HttpRangeRequest {
                         }
                     } else {
                         let end_offset = self.offset + self.size - 1;
-                        let req = Request::builder()
+                        let req = hyper::Request::builder()
                             .uri(&self.uri)
                             .header("Range", format!("bytes={}-{}", self.offset, end_offset))
                             .body(Body::empty())
-                            .map_err(|e| ("request build error", e))?;
-                        let https =
-                            HttpsConnector::new().map_err(|e| ("https connector error", e))?;
+                            .map_err(|e| ("failed to build request", e))?;
+                        let https = HttpsConnector::new().map_err(|e| ("https connector", e))?;
                         let client = Client::builder()
                             .http1_max_buf_size(64 * 1024)
                             .build::<_, hyper::Body>(https);
@@ -106,9 +128,14 @@ impl Stream for HttpRangeRequest {
                         }
                         Poll::Ready(Err(err)) => {
                             // Retry if got error
-                            if self.retries == 0 {
+                            if self.retry_count == 0 {
                                 return Poll::Ready(Some(Err(("request failed", err).into())));
                             }
+                            log::warn!(
+                                "request failed: {} (retries left: {})",
+                                err,
+                                self.retry_count
+                            );
                             self.retry();
                         }
                         Poll::Pending => {
@@ -127,11 +154,14 @@ impl Stream for HttpRangeRequest {
                         }
                         Poll::Ready(Some(Err(err))) => {
                             // Retry if got error
-                            if self.retries == 0 {
-                                return Poll::Ready(Some(Err(
-                                    ("error while receiving", err).into()
-                                )));
+                            if self.retry_count == 0 {
+                                return Poll::Ready(Some(Err(("receive failed", err).into())));
                             }
+                            log::warn!(
+                                "receive failed: {} (retries left: {})",
+                                err,
+                                self.retry_count
+                            );
                             self.retry();
                         }
                         Poll::Ready(None) => {

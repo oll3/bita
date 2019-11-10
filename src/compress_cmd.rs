@@ -218,12 +218,11 @@ async fn run_async(config: CompressConfig) -> Result<(), Error> {
     }
     std::fs::remove_file(&config.temp_file).map_err(|e| ("unable to remove temporary file", e))?;
     drop(output_file);
-    // TODO: Print archive info
-    /*output_file
-        .seek(SeekFrom::Start(0))
-        .await
-        .map_err(|e| ("failed to seek output file", e))?;
-    info_cmd::print_archive_backend(output_file).expect("failed to print info");*/
+    {
+        // Print archive info
+        let builder = bita::reader_backend::Builder::new_local(&config.output);
+        info_cmd::print_archive_backend2(builder).await?;
+    }
     Ok(())
 }
 

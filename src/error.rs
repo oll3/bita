@@ -10,8 +10,14 @@ pub enum Error {
     Http(String, hyper::http::Error),
     Tls(String, hyper_tls::Error),
     Other(String),
+    Wrapped(String, Box<Error>),
 }
 
+impl Error {
+    pub fn wrap(self, desc: &str) -> Self {
+        Error::Wrapped(desc.to_owned(), Box::new(self))
+    }
+}
 #[cfg(feature = "lzma-compression")]
 impl From<(&str, lzma::LzmaError)> for Error {
     fn from((desc, e): (&str, lzma::LzmaError)) -> Self {
@@ -87,6 +93,7 @@ impl std::fmt::Debug for Error {
             Error::Http(desc, e) => write!(f, "{}: {:?}", desc, e),
             Error::Tls(desc, e) => write!(f, "{}: {:?}", desc, e),
             Error::Other(desc) => write!(f, "{}", desc),
+            Error::Wrapped(desc, e) => write!(f, "{}: {:?}", desc, e),
         }
     }
 }
@@ -105,6 +112,7 @@ impl std::fmt::Display for Error {
             Error::Http(ref desc, ref e) => write!(f, "{}: {}", desc, e),
             Error::Tls(ref desc, ref e) => write!(f, "{}: {}", desc, e),
             Error::Other(ref desc) => write!(f, "{}", desc),
+            Error::Wrapped(desc, e) => write!(f, "{}: {}", desc, e),
         }
     }
 }

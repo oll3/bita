@@ -1,5 +1,6 @@
 pub mod archive;
 pub mod archive_reader;
+pub mod archive_reader2;
 pub mod buzhash;
 pub mod chunk_dictionary;
 pub mod chunker;
