@@ -5,7 +5,6 @@ pub enum Error {
     Protobuf(String, protobuf::ProtobufError),
     #[cfg(feature = "lzma-compression")]
     LZMA(String, lzma::LzmaError),
-    CURL(String, curl::Error),
     Hyper(String, hyper::Error),
     Http(String, hyper::http::Error),
     Tls(String, hyper_tls::Error),
@@ -28,12 +27,6 @@ impl From<(&str, lzma::LzmaError)> for Error {
 impl From<(&str, protobuf::ProtobufError)> for Error {
     fn from((desc, e): (&str, protobuf::ProtobufError)) -> Self {
         Error::Protobuf(desc.to_owned(), e)
-    }
-}
-
-impl From<(&str, curl::Error)> for Error {
-    fn from((desc, e): (&str, curl::Error)) -> Self {
-        Error::CURL(desc.to_owned(), e)
     }
 }
 
@@ -88,7 +81,6 @@ impl std::fmt::Debug for Error {
             Error::Protobuf(desc, e) => write!(f, "{}: {:?}", desc, e),
             #[cfg(feature = "lzma-compression")]
             Error::LZMA(desc, e) => write!(f, "{}: {:?}", desc, e),
-            Error::CURL(desc, e) => write!(f, "{}: {:?}", desc, e),
             Error::Hyper(desc, e) => write!(f, "{}: {:?}", desc, e),
             Error::Http(desc, e) => write!(f, "{}: {:?}", desc, e),
             Error::Tls(desc, e) => write!(f, "{}: {:?}", desc, e),
@@ -107,7 +99,6 @@ impl std::fmt::Display for Error {
             Error::Protobuf(ref desc, ref e) => write!(f, "{}: {}", desc, e),
             #[cfg(feature = "lzma-compression")]
             Error::LZMA(ref desc, ref e) => write!(f, "{}: {}", desc, e),
-            Error::CURL(ref desc, ref e) => write!(f, "{}: {}", desc, e),
             Error::Hyper(ref desc, ref e) => write!(f, "{}: {}", desc, e),
             Error::Http(ref desc, ref e) => write!(f, "{}: {}", desc, e),
             Error::Tls(ref desc, ref e) => write!(f, "{}: {}", desc, e),

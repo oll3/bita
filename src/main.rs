@@ -13,6 +13,7 @@ use clap::{App, Arg, SubCommand};
 use log::*;
 use std::path::Path;
 use std::process;
+use tokio;
 
 use crate::config::*;
 use crate::string_utils::hex_str_to_vec;
@@ -306,11 +307,12 @@ fn parse_opts() -> Result<Config, Error> {
     }
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let result = match parse_opts() {
-        Ok(Config::Compress(config)) => compress_cmd::run(config),
-        Ok(Config::Clone(config)) => clone_cmd::run(config),
-        Ok(Config::Info(config)) => info_cmd::run(config),
+        Ok(Config::Compress(config)) => compress_cmd::run(config).await,
+        Ok(Config::Clone(config)) => clone_cmd::run(config).await,
+        Ok(Config::Info(config)) => info_cmd::run(config).await,
         Err(e) => Err(e),
     };
     if let Err(ref e) = result {

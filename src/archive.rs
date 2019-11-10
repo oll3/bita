@@ -5,12 +5,13 @@ use std::fmt;
 use std::mem;
 
 use crate::chunk_dictionary;
-use crate::chunker_utils::HashBuf;
 use crate::compression::Compression;
 use crate::error::Error;
 use crate::string_utils::*;
 
 pub const BUZHASH_SEED: u32 = 0x1032_4195;
+
+pub type HashBuf = Vec<u8>;
 
 // Bita archive file magic
 pub const FILE_MAGIC: &[u8; 6] = b"BITA1\0";

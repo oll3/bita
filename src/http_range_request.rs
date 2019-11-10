@@ -76,8 +76,7 @@ impl Request {
     }
     fn retry(&mut self) {
         self.retry_count -= 1;
-        self.state =
-            RequestState::Init(self.retry_delay.map(|delay| tokio::timer::delay_for(delay)));
+        self.state = RequestState::Init(self.retry_delay.map(tokio::timer::delay_for));
         self.request_timeout_timer = None;
     }
 }

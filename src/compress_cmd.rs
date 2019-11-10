@@ -5,10 +5,8 @@ use protobuf::{RepeatedField, SingularPtrField};
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::PathBuf;
-use tokio;
 use tokio::fs::{File, OpenOptions};
 use tokio::prelude::*;
-use tokio::runtime::Runtime;
 use tokio::sync::oneshot;
 
 use crate::config::CompressConfig;
@@ -16,9 +14,16 @@ use crate::info_cmd;
 use crate::string_utils::*;
 use bita::archive;
 use bita::chunk_dictionary;
-use bita::chunker2::{Chunker, ChunkerParams};
-use bita::chunker_utils::*;
+use bita::chunker::{Chunker, ChunkerParams};
 use bita::error::Error;
+
+#[derive(Debug, Clone)]
+pub struct ChunkSourceDescriptor {
+    pub unique_chunk_index: usize,
+    pub offset: u64,
+    pub size: usize,
+    pub hash: archive::HashBuf,
+}
 
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -40,7 +45,7 @@ async fn create_chunker(
     }
 }
 
-async fn run_async(config: CompressConfig) -> Result<(), Error> {
+pub async fn run(config: CompressConfig) -> Result<(), Error> {
     let chunker_params = ChunkerParams::new(
         config.chunk_filter_bits,
         config.min_chunk_size,
@@ -221,12 +226,7 @@ async fn run_async(config: CompressConfig) -> Result<(), Error> {
     {
         // Print archive info
         let builder = bita::reader_backend::Builder::new_local(&config.output);
-        info_cmd::print_archive_backend2(builder).await?;
+        info_cmd::print_archive_backend(builder).await?;
     }
     Ok(())
-}
-
-pub fn run(config: CompressConfig) -> Result<(), Error> {
-    let rt = Runtime::new().map_err(|e| ("failed to create runtime", e))?;
-    rt.block_on(run_async(config))
 }

@@ -1,4 +1,4 @@
-use bita::chunker_utils::HashBuf;
+use bita::archive::HashBuf;
 use bita::compression::Compression;
 use std::path::PathBuf;
 

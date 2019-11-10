@@ -6,20 +6,19 @@ use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
 use tokio::fs::{File, OpenOptions};
 use tokio::prelude::*;
-use tokio::runtime::Runtime;
 use tokio::sync::oneshot;
 
 use crate::config;
 use crate::info_cmd;
-use bita::archive_reader2::ArchiveReader2;
-use bita::chunker2::{Chunker, ChunkerParams};
+use bita::archive_reader::ArchiveReader;
+use bita::chunker::{Chunker, ChunkerParams};
 use bita::error::Error;
 use bita::reader_backend;
 use bita::string_utils::*;
 
-async fn create_seed_chunkers<'a>(
+async fn create_seed_chunkers(
     seed_stdin: bool,
-    seed_files: &'a [PathBuf],
+    seed_files: &[PathBuf],
     chunker_params: &ChunkerParams,
 ) -> Result<Vec<(String, Chunker)>, Error> {
     let mut chunkers = Vec::new();
@@ -87,16 +86,17 @@ async fn prepare_unpack_output(
     Ok(output_file)
 }
 
+#[allow(clippy::cognitive_complexity)]
 async fn clone_archive(
     reader_builder: reader_backend::Builder,
     config: &config::CloneConfig,
 ) -> Result<(), Error> {
-    let archive = ArchiveReader2::init(reader_builder.clone()).await?;
+    let archive = ArchiveReader::init(reader_builder.clone()).await?;
     let mut chunks_left = archive.chunk_hash_set();
     let hash_length = archive.hash_length;
     let mut total_read_from_seed = 0u64;
     let mut total_read_from_archive = 0u64;
-    info_cmd::print_archive2(&archive);
+    info_cmd::print_archive(&archive);
     println!();
 
     // Verify the header checksum if requested
@@ -143,7 +143,7 @@ async fn clone_archive(
         create_seed_chunkers(config.seed_stdin, &config.seed_files, &chunker_params).await?;
 
     for (seed_name, seed_chunker) in seed_chunkers.into_iter() {
-        let mut found_chunks_count = 0;
+        let mut found_chunks_count: usize = 0;
         if chunks_left.is_empty() {
             break;
         }
@@ -219,7 +219,7 @@ async fn clone_archive(
                 tokio::spawn(async move {
                     tx.send((
                         chunk_checksum.clone(),
-                        ArchiveReader2::decompress_and_verify(
+                        ArchiveReader::decompress_and_verify(
                             hash_length,
                             compression,
                             &chunk_checksum,
@@ -264,16 +264,11 @@ async fn clone_archive(
     Ok(())
 }
 
-async fn run_async(config: config::CloneConfig) -> Result<(), Error> {
+pub async fn run(config: config::CloneConfig) -> Result<(), Error> {
     let reader_builder = if &config.input[0..7] == "http://" || &config.input[0..8] == "https://" {
         reader_backend::Builder::new_remote(config.input.parse().unwrap(), 0, None, None)
     } else {
         reader_backend::Builder::new_local(&Path::new(&config.input))
     };
     clone_archive(reader_builder, &config).await
-}
-
-pub fn run(config: config::CloneConfig) -> Result<(), Error> {
-    let rt = Runtime::new().map_err(|e| ("failed to create runtime", e))?;
-    rt.block_on(run_async(config))
 }

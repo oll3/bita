@@ -1,28 +1,13 @@
-use crate::buzhash::BuzHash;
 use std::io;
-use std::io::prelude::*;
+
+use core::pin::Pin;
+use core::task::{Context, Poll};
+use futures::stream::Stream;
+use tokio::io::AsyncRead;
+
+use crate::buzhash::BuzHash;
 
 const CHUNKER_BUF_SIZE: usize = 1024 * 1024;
-
-fn append_to_buf<T>(source: &mut T, buf: &mut Vec<u8>, count: usize) -> io::Result<usize>
-where
-    T: Read,
-{
-    let mut read_size = 0;
-    let buf_size = buf.len();
-    buf.resize(buf_size + count, 0);
-    while read_size < count {
-        let offset = buf_size + read_size;
-        let rc = source.read(&mut buf[offset..])?;
-        if rc == 0 {
-            break;
-        } else {
-            read_size += rc;
-        }
-    }
-    buf.resize(buf_size + read_size, 0);
-    Ok(read_size)
-}
 
 #[derive(Debug, Clone)]
 pub struct Chunk {
@@ -65,28 +50,21 @@ impl ChunkerParams {
     }
 }
 
-pub struct Chunker<'a, T>
-where
-    T: Read,
-{
+pub struct Chunker {
     buzhash: BuzHash,
     filter_mask: u32,
     min_chunk_size: usize,
     max_chunk_size: usize,
     source_buf: Vec<u8>,
-    source: &'a mut T,
+    source: Box<dyn AsyncRead + Unpin>,
     buzhash_input_limit: usize,
     source_index: u64,
     buf_index: usize,
     chunk_start: u64,
-    last_chunk_size: usize,
 }
 
-impl<'a, T> Chunker<'a, T>
-where
-    T: Read,
-{
-    pub fn new(params: ChunkerParams, source: &'a mut T) -> Self {
+impl Chunker {
+    pub fn new(params: ChunkerParams, source: Box<dyn AsyncRead + Unpin>) -> Self {
         // Allow for chunk size less than buzhash window
         let buzhash_input_limit = if params.min_chunk_size >= params.buzhash_window_size {
             params.min_chunk_size - params.buzhash_window_size
@@ -99,36 +77,64 @@ where
             min_chunk_size: params.min_chunk_size,
             max_chunk_size: params.max_chunk_size,
             buzhash: BuzHash::new(params.buzhash_window_size, params.buzhash_seed),
-            source_buf: Vec::new(),
+            source_buf: Vec::with_capacity(params.max_chunk_size + CHUNKER_BUF_SIZE),
             source,
             buzhash_input_limit,
             source_index: 0,
             buf_index: 0,
             chunk_start: 0,
-            last_chunk_size: 0,
         }
     }
 
-    // Scan source for chunks.
-    // Each call returns a chunk with offset or None if EOF was reached.
-    pub fn scan<'b>(&'b mut self) -> io::Result<Option<(u64, &'b [u8])>> {
-        if self.last_chunk_size > 0 {
-            self.source_buf.drain(..self.last_chunk_size);
-            self.last_chunk_size = 0;
-            self.buf_index = 0;
+    fn append_to_buf(&mut self, cx: &mut Context, count: usize) -> Poll<Result<usize, io::Error>> {
+        let mut read_size = 0;
+        let buf_size = self.source_buf.len();
+        {
+            // Use set_len() here instead of resize as we don't care for zeroing the content of buf.
+            let new_size = buf_size + count;
+            if self.source_buf.capacity() < new_size {
+                self.source_buf.reserve(count);
+            }
+            unsafe {
+                self.source_buf.set_len(new_size);
+            }
         }
+        while read_size < count {
+            let offset = buf_size + read_size;
+            let rc = match Pin::new(&mut self.source).poll_read(cx, &mut self.source_buf[offset..])
+            {
+                Poll::Ready(Ok(0)) => break, // EOF
+                Poll::Ready(Ok(rc)) => rc,
+                err_or_pending => {
+                    self.source_buf.resize(buf_size + read_size, 0);
+                    return err_or_pending;
+                }
+            };
+            read_size += rc;
+        }
+        self.source_buf.resize(buf_size + read_size, 0);
+        Poll::Ready(Ok(read_size))
+    }
 
+    #[allow(clippy::type_complexity)]
+    fn poll_chunk(&mut self, cx: &mut Context) -> Poll<Option<Result<(u64, Vec<u8>), io::Error>>> {
         loop {
             if self.buf_index >= self.source_buf.len() {
                 // Fill buffer from source input
-                let rc = append_to_buf(self.source, &mut self.source_buf, CHUNKER_BUF_SIZE)?;
+                let rc = match self.append_to_buf(cx, CHUNKER_BUF_SIZE) {
+                    Poll::Ready(Ok(n)) => n,
+                    Poll::Ready(Err(e)) => return Poll::Ready(Some(Err(e))),
+                    Poll::Pending => return Poll::Pending,
+                };
                 if rc == 0 {
                     // EOF
                     if !self.source_buf.is_empty() {
-                        self.last_chunk_size = self.source_buf.len();
-                        return Ok(Some((self.chunk_start, &self.source_buf[..])));
+                        let chunk = self.source_buf[..].to_vec();
+                        self.source_buf.resize(0, 0);
+                        self.buf_index = 0;
+                        return Poll::Ready(Some(Ok((self.chunk_start, chunk))));
                     } else {
-                        return Ok(None);
+                        return Poll::Ready(None);
                     }
                 }
                 while !self.buzhash.valid() && self.buf_index < self.source_buf.len() {
@@ -181,12 +187,22 @@ where
             self.buf_index = buf_index;
 
             if got_chunk {
-                self.last_chunk_size = self.buf_index;
                 let chunk_start = self.chunk_start;
                 self.chunk_start = self.source_index;
-                return Ok(Some((chunk_start, &self.source_buf[..self.buf_index])));
+                let chunk = self.source_buf[..self.buf_index].to_vec();
+                let buf_index = self.buf_index;
+                self.source_buf.drain(..buf_index);
+                self.buf_index = 0;
+                return Poll::Ready(Some(Ok((chunk_start, chunk))));
             }
         }
+    }
+}
+
+impl Stream for Chunker {
+    type Item = Result<(u64, Vec<u8>), io::Error>;
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        self.poll_chunk(cx)
     }
 }
 
@@ -194,50 +210,70 @@ where
 mod tests {
     use super::Chunker;
     use super::ChunkerParams;
-    use crate::archive::BUZHASH_SEED;
+    use tokio::prelude::*;
 
-    #[test]
-    fn zero_data() {
+    const BUZHASH_SEED: u32 = 0x1032_4195;
+
+    #[tokio::test]
+    async fn zero_data() {
         let expected_chunk_offsets: [u64; 0] = [0; 0];
-        let src = vec![];
-        let mut src: &[u8] = &src;
-        let mut chunker = Chunker::new(ChunkerParams::new(5, 3, 640, 5, BUZHASH_SEED), &mut src);
-        let mut chunk_offsets: Vec<u64> = Vec::new();
-        while let Some((offset, data)) = chunker.scan().expect("scan") {
-            chunk_offsets.push(offset);
-            assert_eq!(data.len(), 0);
-        }
-        assert_eq!(expected_chunk_offsets[..], chunk_offsets[..]);
+        static SRC: [u8; 0] = [];
+        assert_eq!(
+            Chunker::new(
+                ChunkerParams::new(5, 3, 640, 5, BUZHASH_SEED),
+                Box::new(&SRC[..]),
+            )
+            .map(|result| {
+                let (offset, chunk) = result.unwrap();
+                assert_eq!(chunk.len(), 0);
+                offset
+            })
+            .collect::<Vec<u64>>()
+            .await,
+            &expected_chunk_offsets
+        );
     }
-    #[test]
-    fn source_smaller_than_hash_window() {
+    #[tokio::test]
+    async fn source_smaller_than_hash_window() {
         let expected_chunk_offsets: [u64; 1] = [0; 1];
-        let src = vec![0x1f, 0x55, 0x39, 0x5e, 0xfa];
-        let mut src: &[u8] = &src;
-        let mut chunker = Chunker::new(ChunkerParams::new(5, 0, 40, 10, BUZHASH_SEED), &mut src);
-        let mut chunk_offsets: Vec<u64> = Vec::new();
-        while let Some((offset, data)) = chunker.scan().expect("scan") {
-            chunk_offsets.push(offset);
-            assert_eq!(data, [0x1f, 0x55, 0x39, 0x5e, 0xfa]);
-        }
-        assert_eq!(expected_chunk_offsets[..], chunk_offsets[..]);
+        static SRC: [u8; 5] = [0x1f, 0x55, 0x39, 0x5e, 0xfa];
+        assert_eq!(
+            Chunker::new(
+                ChunkerParams::new(5, 0, 40, 10, BUZHASH_SEED),
+                Box::new(&SRC[..]),
+            )
+            .map(|result| {
+                let (offset, chunk) = result.unwrap();
+                assert_eq!(chunk, [0x1f, 0x55, 0x39, 0x5e, 0xfa]);
+                offset
+            })
+            .collect::<Vec<u64>>()
+            .await,
+            &expected_chunk_offsets
+        );
     }
-    #[test]
-    fn source_smaller_than_min_chunk() {
+    #[tokio::test]
+    async fn source_smaller_than_min_chunk() {
         let expected_chunk_offsets: [u64; 1] = [0; 1];
-        let src = vec![0x1f, 0x55, 0x39, 0x5e, 0xfa];
-        let mut src: &[u8] = &src;
-        let mut chunker = Chunker::new(ChunkerParams::new(5, 10, 40, 5, BUZHASH_SEED), &mut src);
-        let mut chunk_offsets: Vec<u64> = Vec::new();
-        while let Some((offset, data)) = chunker.scan().expect("scan") {
-            chunk_offsets.push(offset);
-            assert_eq!(data.len(), 5);
-        }
-        assert_eq!(expected_chunk_offsets[..], chunk_offsets[..]);
+        static SRC: [u8; 5] = [0x1f, 0x55, 0x39, 0x5e, 0xfa];
+        assert_eq!(
+            Chunker::new(
+                ChunkerParams::new(5, 10, 40, 5, BUZHASH_SEED),
+                Box::new(&SRC[..]),
+            )
+            .map(|result| {
+                let (offset, chunk) = result.unwrap();
+                assert_eq!(chunk, [0x1f, 0x55, 0x39, 0x5e, 0xfa]);
+                offset
+            })
+            .collect::<Vec<u64>>()
+            .await,
+            &expected_chunk_offsets
+        );
     }
-    #[test]
-    fn consistency_small_min_chunk() {
-        let expected_chunk_offsets = [
+    #[tokio::test]
+    async fn consistency_small_min_chunk() {
+        let expected_chunk_offsets = vec![
             0, 23, 139, 162, 177, 194, 224, 237, 279, 395, 418, 433, 450, 480, 493, 535, 651, 674,
             689, 706, 736, 749, 791, 907, 930, 945, 962, 992, 1005, 1047, 1163, 1186, 1201, 1218,
             1248, 1261, 1303, 1419, 1442, 1457, 1474, 1504, 1517, 1559, 1675, 1698, 1713, 1730,
@@ -260,26 +296,29 @@ mod tests {
             9952, 9965,
         ];
         let mut seed = 0xa3;
-        let src = (0..10000)
-            .map(|v: u64| {
-                seed ^= v;
-                (seed & 0xff) as u8
-            })
-            .collect::<Vec<u8>>();
-
-        let mut src: &[u8] = &src;
-        let mut chunker = Chunker::new(ChunkerParams::new(5, 3, 640, 5, BUZHASH_SEED), &mut src);
-
-        let mut chunk_offsets: Vec<u64> = Vec::new();
-        while let Some((offset, _data)) = chunker.scan().expect("scan") {
-            chunk_offsets.push(offset);
+        static mut SRC: Vec<u8> = Vec::new();
+        for v in 0..10000 as u64 {
+            seed ^= v;
+            unsafe {
+                SRC.push((seed & 0xff) as u8);
+            }
         }
 
-        assert_eq!(expected_chunk_offsets[..], chunk_offsets[..]);
+        let chunk_offsets = Chunker::new(
+            ChunkerParams::new(5, 3, 640, 5, BUZHASH_SEED),
+            Box::new(unsafe { &SRC[..] }),
+        )
+        .map(|result| {
+            let (offset, _chunk) = result.unwrap();
+            offset
+        })
+        .collect::<Vec<u64>>()
+        .await;
+        assert_eq!(chunk_offsets, expected_chunk_offsets);
     }
-    #[test]
-    fn consistency_bigger_min_chunk() {
-        let expected_chunk_offsets = [
+    #[tokio::test]
+    async fn consistency_bigger_min_chunk() {
+        let expected_chunk_offsets = vec![
             0, 132, 216, 388, 472, 644, 728, 900, 984, 1156, 1240, 1412, 1496, 1668, 1752, 1924,
             2008, 2180, 2264, 2436, 2520, 2692, 2776, 2948, 3032, 3204, 3288, 3460, 3544, 3716,
             3800, 3972, 4056, 4228, 4312, 4484, 4568, 4740, 4824, 4996, 5080, 5252, 5336, 5508,
@@ -348,20 +387,23 @@ mod tests {
         ];
 
         let mut seed = 0x1f23ab13;
-        let src = (0..100000)
-            .map(|v: u64| {
-                seed ^= v;
-                (seed & 0xff) as u8
-            })
-            .collect::<Vec<u8>>();
-
-        let mut src: &[u8] = &src;
-        let mut chunker = Chunker::new(ChunkerParams::new(6, 64, 1024, 20, BUZHASH_SEED), &mut src);
-
-        let mut chunk_offsets: Vec<u64> = Vec::new();
-        while let Some((offset, _data)) = chunker.scan().expect("scan") {
-            chunk_offsets.push(offset);
+        static mut SRC: Vec<u8> = Vec::new();
+        for v in 0..100000 as u64 {
+            seed ^= v;
+            unsafe {
+                SRC.push((seed & 0xff) as u8);
+            }
         }
-        assert_eq!(expected_chunk_offsets[..], chunk_offsets[..]);
+        let chunk_offsets = Chunker::new(
+            ChunkerParams::new(6, 64, 1024, 20, BUZHASH_SEED),
+            Box::new(unsafe { &SRC[..] }),
+        )
+        .map(|result| {
+            let (offset, _chunk) = result.unwrap();
+            offset
+        })
+        .collect::<Vec<u64>>()
+        .await;
+        assert_eq!(chunk_offsets, expected_chunk_offsets);
     }
 }
