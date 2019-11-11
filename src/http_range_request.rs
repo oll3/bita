@@ -3,7 +3,7 @@ use core::pin::Pin;
 use core::task::{Context, Poll};
 use futures::stream::Stream;
 use hyper::{Body, Client, Uri};
-use hyper_tls::HttpsConnector;
+use hyper_rustls::HttpsConnector;
 use std::time::Duration;
 
 use crate::error::Error;
@@ -111,7 +111,7 @@ impl Stream for Request {
                             .header("Range", format!("bytes={}-{}", self.offset, end_offset))
                             .body(Body::empty())
                             .map_err(|e| ("failed to build request", e))?;
-                        let https = HttpsConnector::new().map_err(|e| ("https connector", e))?;
+                        let https = HttpsConnector::new();
                         let client = Client::builder()
                             .http1_max_buf_size(64 * 1024)
                             .build::<_, hyper::Body>(https);

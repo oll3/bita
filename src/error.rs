@@ -7,7 +7,6 @@ pub enum Error {
     LZMA(String, lzma::LzmaError),
     Hyper(String, hyper::Error),
     Http(String, hyper::http::Error),
-    Tls(String, hyper_tls::Error),
     Other(String),
     Wrapped(String, Box<Error>),
 }
@@ -54,12 +53,6 @@ impl From<(&str, hyper::http::Error)> for Error {
     }
 }
 
-impl From<(&str, hyper_tls::Error)> for Error {
-    fn from((desc, e): (&str, hyper_tls::Error)) -> Self {
-        Error::Tls(desc.to_owned(), e)
-    }
-}
-
 impl From<&str> for Error {
     fn from(desc: &str) -> Self {
         Error::Other(desc.to_owned())
@@ -83,7 +76,6 @@ impl std::fmt::Debug for Error {
             Error::LZMA(desc, e) => write!(f, "{}: {:?}", desc, e),
             Error::Hyper(desc, e) => write!(f, "{}: {:?}", desc, e),
             Error::Http(desc, e) => write!(f, "{}: {:?}", desc, e),
-            Error::Tls(desc, e) => write!(f, "{}: {:?}", desc, e),
             Error::Other(desc) => write!(f, "{}", desc),
             Error::Wrapped(desc, e) => write!(f, "{}: {:?}", desc, e),
         }
@@ -101,7 +93,6 @@ impl std::fmt::Display for Error {
             Error::LZMA(ref desc, ref e) => write!(f, "{}: {}", desc, e),
             Error::Hyper(ref desc, ref e) => write!(f, "{}: {}", desc, e),
             Error::Http(ref desc, ref e) => write!(f, "{}: {}", desc, e),
-            Error::Tls(ref desc, ref e) => write!(f, "{}: {}", desc, e),
             Error::Other(ref desc) => write!(f, "{}", desc),
             Error::Wrapped(desc, e) => write!(f, "{}: {}", desc, e),
         }
