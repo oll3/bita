@@ -142,7 +142,158 @@ fn init_log(level: log::LevelFilter) {
         .expect("unable to initialize log");
 }
 
+fn add_chunker_args<'a, 'b>(
+    sub_cmd: clap::App<'a, 'b>,
+    compression_desc: &'b str,
+) -> clap::App<'a, 'b> {
+    sub_cmd
+        .arg(
+            Arg::with_name("avg-chunk-size")
+                .long("avg-chunk-size")
+                .value_name("SIZE")
+                .help("Indication of target chunk size [default: 64KiB]"),
+        )
+        .arg(
+            Arg::with_name("min-chunk-size")
+                .long("min-chunk-size")
+                .value_name("SIZE")
+                .help("Set minimal size of chunks [default: 16KiB]"),
+        )
+        .arg(
+            Arg::with_name("max-chunk-size")
+                .long("max-chunk-size")
+                .value_name("SIZE")
+                .help("Set maximal size of chunks [default: 16MiB]"),
+        )
+        .arg(
+            Arg::with_name("rolling-hash")
+                .long("rolling-hash")
+                .value_name("HASH")
+                .help("Set rolling hash to use (RollSum/BuzHash) [default: RollSum]"),
+        )
+        .arg(
+            Arg::with_name("rolling-window")
+                .long("rolling-window")
+                .value_name("SIZE")
+                .help("Set size of the rolling hash window [default: RollSum=64B, BuzHash=16B]"),
+        )
+        .arg(
+            Arg::with_name("compression-level")
+                .long("compression-level")
+                .value_name("LEVEL")
+                .help("Set the chunk data compression level (0-9) [default: 6]"),
+        )
+        .arg(
+            Arg::with_name("compression")
+                .long("compression")
+                .value_name("TYPE")
+                .help(&compression_desc),
+        )
+}
+
 fn parse_opts() -> Result<Config, Error> {
+    let compression_desc = format!(
+        "Set the chunk data compression type {}",
+        compression_names()
+    );
+    let compress_subcmd = add_chunker_args(
+        SubCommand::with_name("compress")
+            .about("Compress a file or stream.")
+            .arg(
+                Arg::with_name("INPUT")
+                    .short("i")
+                    .long("input")
+                    .value_name("FILE")
+                    .help("Input file, if none is given stdin is used")
+                    .required(false),
+            )
+            .arg(
+                Arg::with_name("OUTPUT")
+                    .value_name("OUTPUT")
+                    .help("Output file")
+                    .required(true),
+            )
+            .arg(
+                Arg::with_name("force-create")
+                    .short("f")
+                    .long("force-create")
+                    .help("Overwrite output files if they exist"),
+            ),
+        &compression_desc,
+    );
+    let clone_subcmd = SubCommand::with_name("clone")
+        .about("Clone a remote (or local archive). The archive is unpacked while being cloned.")
+        .arg(
+            Arg::with_name("INPUT")
+                .value_name("INPUT")
+                .help("Input file (can be a local archive or a URL)")
+                .required(true),
+        )
+        .arg(
+            Arg::with_name("OUTPUT")
+                .value_name("OUTPUT")
+                .help("Output file")
+                .required(true),
+        )
+        .arg(
+            Arg::with_name("seed")
+                .value_name("FILE")
+                .long("seed")
+                .help("File to use as seed while cloning or '-' to read from stdin")
+                .multiple(true),
+        )
+        .arg(
+            Arg::with_name("force-create")
+                .short("f")
+                .long("force-create")
+                .help("Overwrite output files if they exist"),
+        )
+        .arg(
+            Arg::with_name("verify-header")
+                .long("verify-header")
+                .value_name("CHECKSUM")
+                .help("Verify that the archive header checksum is the one given"),
+        )
+        .arg(
+            Arg::with_name("http-retry-count")
+                .long("http-retry-count")
+                .value_name("COUNT")
+                .help("Retry transfer on failure [default: 0]"),
+        )
+        .arg(
+            Arg::with_name("http-retry-delay")
+                .long("http-retry-delay")
+                .value_name("SECONDS")
+                .help("Delay retry for some time on transfer failure [default: 0]"),
+        )
+        .arg(
+            Arg::with_name("http-timeout")
+                .long("http-timeout")
+                .value_name("SECONDS")
+                .help("Fail transfer if unresponsive for some time [default: None]"),
+        )
+        .arg(
+            Arg::with_name("verify-output")
+                .long("verify-output")
+                .help("Vefify that the checksum of the output matches with the archive."),
+        );
+    let diff_subcmd = add_chunker_args(
+        SubCommand::with_name("diff")
+            .about("Show the differential between two files.")
+            .arg(
+                Arg::with_name("A")
+                    .value_name("FILE")
+                    .help("Input file A")
+                    .required(true),
+            )
+            .arg(
+                Arg::with_name("B")
+                    .value_name("FILE")
+                    .help("Input file B")
+                    .required(true),
+            ),
+        &compression_desc,
+    );
     let matches = App::new(PKG_NAME)
         .version(PKG_VERSION)
         .arg(
@@ -152,131 +303,8 @@ fn parse_opts() -> Result<Config, Error> {
                 .global(true)
                 .help("Set verbosity level"),
         )
-        .subcommand(
-            SubCommand::with_name("compress")
-                .about("Compress a file or stream.")
-                .arg(
-                    Arg::with_name("INPUT")
-                        .short("i")
-                        .long("input")
-                        .value_name("FILE")
-                        .help("Input file, if none is given stdin is used")
-                        .required(false),
-                )
-                .arg(
-                    Arg::with_name("OUTPUT")
-                        .value_name("OUTPUT")
-                        .help("Output file")
-                        .required(true),
-                )
-                .arg(
-                    Arg::with_name("avg-chunk-size")
-                        .long("avg-chunk-size")
-                        .value_name("SIZE")
-                        .help("Indication of target chunk size [default: 64KiB]"),
-                )
-                .arg(
-                    Arg::with_name("min-chunk-size")
-                        .long("min-chunk-size")
-                        .value_name("SIZE")
-                        .help("Set minimal size of chunks [default: 16KiB]"),
-                )
-                .arg(
-                    Arg::with_name("max-chunk-size")
-                        .long("max-chunk-size")
-                        .value_name("SIZE")
-                        .help("Set maximal size of chunks [default: 16MiB]"),
-                )
-                .arg(
-                    Arg::with_name("rolling-hash")
-                        .long("rolling-hash")
-                        .value_name("HASH")
-                        .help("Set rolling hash to use (RollSum/BuzHash) [default: RollSum]"),
-                )
-                .arg(
-                    Arg::with_name("rolling-window")
-                        .long("rolling-window")
-                        .value_name("SIZE")
-                        .help("Set size of the rolling hash window [default: RollSum=64B, BuzHash=16B]"),
-                )
-                .arg(
-                    Arg::with_name("hash-length")
-                        .long("hash-length")
-                        .value_name("LENGTH")
-                        .help("Truncate the length of the stored strong hash [default: 64]"),
-                )
-                .arg(
-                    Arg::with_name("compression-level")
-                        .long("compression-level")
-                        .value_name("LEVEL")
-                        .help("Set the chunk data compression level (0-9) [default: 6]"),
-                )
-                .arg(
-                    Arg::with_name("compression")
-                        .long("compression")
-                        .value_name("TYPE")
-                        .help(&format!("Set the chunk data compression type {}", compression_names())),
-                )
-                .arg(
-                    Arg::with_name("force-create")
-                        .short("f")
-                        .long("force-create")
-                        .help("Overwrite output files if they exist"),
-                ),
-        )
-        .subcommand(
-            SubCommand::with_name("clone")
-                .about("Clone a remote (or local archive). The archive is unpacked while being cloned.")
-                .arg(
-                    Arg::with_name("INPUT")
-                        .value_name("INPUT")
-                        .help("Input file (can be a local archive or a URL)")
-                        .required(true),
-                )
-                .arg(
-                    Arg::with_name("OUTPUT")
-                        .value_name("OUTPUT")
-                        .help("Output file")
-                        .required(true),
-                )
-                .arg(
-                    Arg::with_name("seed")
-                        .value_name("FILE")
-                        .long("seed")
-                        .help("File to use as seed while cloning or '-' to read from stdin")
-                        .multiple(true),
-                )
-                .arg(
-                    Arg::with_name("force-create")
-                        .short("f")
-                        .long("force-create")
-                        .help("Overwrite output files if they exist"),
-                ).arg(
-                    Arg::with_name("verify-header")
-                        .long("verify-header")
-                        .value_name("CHECKSUM")
-                        .help("Verify that the archive header checksum is the one given"),
-                ).arg(
-                    Arg::with_name("http-retry-count")
-                        .long("http-retry-count")
-                        .value_name("COUNT")
-                        .help("Retry transfer on failure [default: 0]"),
-                ).arg(
-                    Arg::with_name("http-retry-delay")
-                        .long("http-retry-delay")
-                        .value_name("SECONDS")
-                        .help("Delay retry for some time on transfer failure [default: 0]"),
-                ).arg(
-                    Arg::with_name("http-timeout")
-                        .long("http-timeout")
-                        .value_name("SECONDS")
-                        .help("Fail transfer if unresponsive for some time [default: None]"),
-                ).arg(
-                    Arg::with_name("verify-output")
-                        .long("verify-output")
-                        .help("Verify that the checksum of the output matches with the archive."),
-                ),
-        )
+        .subcommand(compress_subcmd)
+        .subcommand(clone_subcmd)
         .subcommand(
             SubCommand::with_name("info")
                 .about("Print archive details.")
@@ -285,66 +313,9 @@ fn parse_opts() -> Result<Config, Error> {
                         .value_name("INPUT")
                         .help("Input file (can be a local archive or a URL)")
                         .required(true),
-                )
+                ),
         )
-        .subcommand(
-            SubCommand::with_name("diff")
-                .about("Show the differential between two files.")
-                .arg(
-                    Arg::with_name("A")
-                        .value_name("FILE")
-                        .help("Input file A")
-                        .required(true),
-                )
-                .arg(
-                    Arg::with_name("B")
-                        .value_name("FILE")
-                        .help("Input file B")
-                        .required(true),
-                )
-                .arg(
-                    Arg::with_name("avg-chunk-size")
-                        .long("avg-chunk-size")
-                        .value_name("SIZE")
-                        .help("Indication of target chunk size [default: 64KiB]"),
-                )
-                .arg(
-                    Arg::with_name("min-chunk-size")
-                        .long("min-chunk-size")
-                        .value_name("SIZE")
-                        .help("Set minimal size of chunks [default: 16KiB]"),
-                )
-                .arg(
-                    Arg::with_name("max-chunk-size")
-                        .long("max-chunk-size")
-                        .value_name("SIZE")
-                        .help("Set maximal size of chunks [default: 16MiB]"),
-                )
-                .arg(
-                    Arg::with_name("rolling-hash")
-                        .long("rolling-hash")
-                        .value_name("HASH")
-                        .help("Set rolling hash to use (RollSum/BuzHash) [default: RollSum]"),
-                )
-                .arg(
-                    Arg::with_name("rolling-window")
-                        .long("rolling-window")
-                        .value_name("SIZE")
-                        .help("Set size of the rolling hash window [default: 16B]"),
-                )
-                .arg(
-                    Arg::with_name("compression-level")
-                        .long("compression-level")
-                        .value_name("LEVEL")
-                        .help("Set the chunk data compression level (0-9) [default: 6]"),
-                )
-                .arg(
-                    Arg::with_name("compression")
-                        .long("compression")
-                        .value_name("TYPE")
-                        .help(&format!("Set the chunk data compression type {}", compression_names())),
-                )
-        )
+        .subcommand(diff_subcmd)
         .get_matches();
 
     // Set log level
