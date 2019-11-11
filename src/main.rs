@@ -6,6 +6,7 @@ use log;
 mod clone_cmd;
 mod compress_cmd;
 mod config;
+mod diff_cmd;
 mod info_cmd;
 mod string_utils;
 
@@ -22,6 +23,54 @@ use bita::error::Error;
 
 pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+fn parse_chunker_config(matches: &clap::ArgMatches<'_>) -> ChunkerConfig {
+    let avg_chunk_size = parse_size(matches.value_of("avg-chunk-size").unwrap_or("64KiB"));
+    let min_chunk_size = parse_size(matches.value_of("min-chunk-size").unwrap_or("16KiB"));
+    let max_chunk_size = parse_size(matches.value_of("max-chunk-size").unwrap_or("16MiB"));
+    let hash_window_size = parse_size(matches.value_of("buzhash-window").unwrap_or("16B"));
+
+    let compression_level = matches
+        .value_of("compression-level")
+        .unwrap_or("6")
+        .parse()
+        .expect("invalid compression level value");
+
+    if compression_level < 1 || compression_level > 19 {
+        panic!("compression level not within range");
+    }
+
+    let compression = match matches
+        .value_of("compression")
+        .unwrap_or("brotli")
+        .to_lowercase()
+        .as_ref()
+    {
+        #[cfg(feature = "lzma-compression")]
+        "lzma" => Compression::LZMA(compression_level),
+        #[cfg(feature = "zstd-compression")]
+        "zstd" => Compression::ZSTD(compression_level),
+        "brotli" => Compression::Brotli(compression_level),
+        "none" => Compression::None,
+        name => panic!("invalid compression {}", name),
+    };
+
+    let chunk_filter_bits = 30 - (avg_chunk_size as u32).leading_zeros();
+    if min_chunk_size > avg_chunk_size {
+        panic!("min-chunk-size > avg-chunk-size");
+    }
+    if max_chunk_size < avg_chunk_size {
+        panic!("max-chunk-size < avg-chunk-size");
+    }
+    ChunkerConfig {
+        chunk_filter_bits,
+        min_chunk_size,
+        max_chunk_size,
+        hash_window_size,
+        compression_level,
+        compression,
+    }
+}
 
 fn parse_size(size_str: &str) -> usize {
     let size_val: String = size_str.chars().filter(|a| a.is_numeric()).collect();
@@ -196,6 +245,58 @@ fn parse_opts() -> Result<Config, Error> {
                         .required(true),
                 )
         )
+        .subcommand(
+            SubCommand::with_name("diff")
+                .about("Show the differential between two files.")
+                .arg(
+                    Arg::with_name("A")
+                        .value_name("FILE")
+                        .help("Input file A")
+                        .required(true),
+                )
+                .arg(
+                    Arg::with_name("B")
+                        .value_name("FILE")
+                        .help("Input file B")
+                        .required(true),
+                )
+                .arg(
+                    Arg::with_name("avg-chunk-size")
+                        .long("avg-chunk-size")
+                        .value_name("SIZE")
+                        .help("Indication of target chunk size [default: 64KiB]"),
+                )
+                .arg(
+                    Arg::with_name("min-chunk-size")
+                        .long("min-chunk-size")
+                        .value_name("SIZE")
+                        .help("Set minimal size of chunks [default: 16KiB]"),
+                )
+                .arg(
+                    Arg::with_name("max-chunk-size")
+                        .long("max-chunk-size")
+                        .value_name("SIZE")
+                        .help("Set maximal size of chunks [default: 16MiB]"),
+                )
+                .arg(
+                    Arg::with_name("buzhash-window")
+                        .long("buzhash-window")
+                        .value_name("SIZE")
+                        .help("Set size of the buzhash window [default: 16B]"),
+                )
+                .arg(
+                    Arg::with_name("compression-level")
+                        .long("compression-level")
+                        .value_name("LEVEL")
+                        .help("Set the chunk data compression level (0-9) [default: 6]"),
+                )
+                .arg(
+                    Arg::with_name("compression")
+                        .long("compression")
+                        .value_name("TYPE")
+                        .help(&format!("Set the chunk data compression type {}", compression_names())),
+                )
+        )
         .get_matches();
 
     // Set log level
@@ -213,58 +314,15 @@ fn parse_opts() -> Result<Config, Error> {
             None
         };
         let temp_file = Path::with_extension(output, ".tmp");
-
-        let avg_chunk_size = parse_size(matches.value_of("avg-chunk-size").unwrap_or("64KiB"));
-        let min_chunk_size = parse_size(matches.value_of("min-chunk-size").unwrap_or("16KiB"));
-        let max_chunk_size = parse_size(matches.value_of("max-chunk-size").unwrap_or("16MiB"));
-        let hash_window_size = parse_size(matches.value_of("buzhash-window").unwrap_or("16B"));
         let hash_length = matches.value_of("hash-length").unwrap_or("64");
-
-        let compression_level = matches
-            .value_of("compression-level")
-            .unwrap_or("6")
-            .parse()
-            .expect("invalid compression level value");
-
-        if compression_level < 1 || compression_level > 19 {
-            panic!("compression level not within range");
-        }
-
-        let compression = match matches
-            .value_of("compression")
-            .unwrap_or("brotli")
-            .to_lowercase()
-            .as_ref()
-        {
-            #[cfg(feature = "lzma-compression")]
-            "lzma" => Compression::LZMA(compression_level),
-            #[cfg(feature = "zstd-compression")]
-            "zstd" => Compression::ZSTD(compression_level),
-            "brotli" => Compression::Brotli(compression_level),
-            "none" => Compression::None,
-            name => panic!("invalid compression {}", name),
-        };
-
-        let chunk_filter_bits = 30 - (avg_chunk_size as u32).leading_zeros();
-        if min_chunk_size > avg_chunk_size {
-            panic!("min-chunk-size > avg-chunk-size");
-        }
-        if max_chunk_size < avg_chunk_size {
-            panic!("max-chunk-size < avg-chunk-size");
-        }
-
+        let chunker_config = parse_chunker_config(&matches);
         Ok(Config::Compress(CompressConfig {
             input,
             output: output.to_path_buf(),
             hash_length: hash_length.parse().expect("invalid hash length value"),
             force_create: matches.is_present("force-create"),
             temp_file,
-            chunk_filter_bits,
-            min_chunk_size,
-            max_chunk_size,
-            hash_window_size,
-            compression_level,
-            compression,
+            chunker_config,
         }))
     } else if let Some(matches) = matches.subcommand_matches("clone") {
         let input = matches.value_of("INPUT").unwrap();
@@ -301,6 +359,15 @@ fn parse_opts() -> Result<Config, Error> {
         Ok(Config::Info(InfoConfig {
             input: input.to_string(),
         }))
+    } else if let Some(matches) = matches.subcommand_matches("diff") {
+        let input_a = Path::new(matches.value_of("A").unwrap());
+        let input_b = Path::new(matches.value_of("B").unwrap());
+        let chunker_config = parse_chunker_config(&matches);
+        Ok(Config::Diff(DiffConfig {
+            input_a: input_a.to_path_buf(),
+            input_b: input_b.to_path_buf(),
+            chunker_config,
+        }))
     } else {
         error!("Unknown command");
         process::exit(1);
@@ -313,6 +380,7 @@ async fn main() {
         Ok(Config::Compress(config)) => compress_cmd::run(config).await,
         Ok(Config::Clone(config)) => clone_cmd::run(config).await,
         Ok(Config::Info(config)) => info_cmd::run(config).await,
+        Ok(Config::Diff(config)) => diff_cmd::run(config).await,
         Err(e) => Err(e),
     };
     if let Err(ref e) = result {

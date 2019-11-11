@@ -3,6 +3,16 @@ use bita::compression::Compression;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
+pub struct ChunkerConfig {
+    pub chunk_filter_bits: u32,
+    pub min_chunk_size: usize,
+    pub max_chunk_size: usize,
+    pub hash_window_size: usize,
+    pub compression_level: u32,
+    pub compression: Compression,
+}
+
+#[derive(Debug, Clone)]
 pub struct CompressConfig {
     pub force_create: bool,
 
@@ -11,12 +21,7 @@ pub struct CompressConfig {
     pub output: PathBuf,
     pub temp_file: PathBuf,
     pub hash_length: usize,
-    pub chunk_filter_bits: u32,
-    pub min_chunk_size: usize,
-    pub max_chunk_size: usize,
-    pub hash_window_size: usize,
-    pub compression_level: u32,
-    pub compression: Compression,
+    pub chunker_config: ChunkerConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -35,8 +40,16 @@ pub struct InfoConfig {
 }
 
 #[derive(Debug, Clone)]
+pub struct DiffConfig {
+    pub input_a: PathBuf,
+    pub input_b: PathBuf,
+    pub chunker_config: ChunkerConfig,
+}
+
+#[derive(Debug, Clone)]
 pub enum Config {
     Compress(CompressConfig),
     Clone(CloneConfig),
     Info(InfoConfig),
+    Diff(DiffConfig),
 }

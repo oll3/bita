@@ -47,13 +47,13 @@ async fn create_chunker(
 
 pub async fn run(config: CompressConfig) -> Result<(), Error> {
     let chunker_params = ChunkerParams::new(
-        config.chunk_filter_bits,
-        config.min_chunk_size,
-        config.max_chunk_size,
-        config.hash_window_size,
+        config.chunker_config.chunk_filter_bits,
+        config.chunker_config.min_chunk_size,
+        config.chunker_config.max_chunk_size,
+        config.chunker_config.hash_window_size,
         archive::BUZHASH_SEED,
     );
-    let compression = config.compression;
+    let compression = config.chunker_config.compression;
     let hash_length = config.hash_length;
     let mut unique_chunks = HashMap::new();
     let mut source_hasher = Blake2b::new();
@@ -196,13 +196,13 @@ pub async fn run(config: CompressConfig) -> Result<(), Error> {
         application_version: PKG_VERSION.to_string(),
         chunk_descriptors: RepeatedField::from_vec(archive_chunks),
         source_checksum: source_hash,
-        chunk_compression: SingularPtrField::some(config.compression.into()),
+        chunk_compression: SingularPtrField::some(config.chunker_config.compression.into()),
         source_total_size: source_size,
         chunker_params: SingularPtrField::some(chunk_dictionary::ChunkerParameters {
-            chunk_filter_bits: config.chunk_filter_bits,
-            min_chunk_size: config.min_chunk_size as u32,
-            max_chunk_size: config.max_chunk_size as u32,
-            hash_window_size: config.hash_window_size as u32,
+            chunk_filter_bits: config.chunker_config.chunk_filter_bits,
+            min_chunk_size: config.chunker_config.min_chunk_size as u32,
+            max_chunk_size: config.chunker_config.max_chunk_size as u32,
+            hash_window_size: config.chunker_config.hash_window_size as u32,
             chunk_hash_length: config.hash_length as u32,
             unknown_fields: std::default::Default::default(),
             cached_size: std::default::Default::default(),
