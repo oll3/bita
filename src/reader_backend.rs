@@ -1,7 +1,7 @@
 use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
-use futures::stream::Stream;
+use futures_core::stream::Stream;
 use hyper::Uri;
 use std::collections::VecDeque;
 use std::io::Seek;
@@ -274,6 +274,7 @@ impl Stream for Chunks {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures_util::stream::StreamExt;
     use std::io::Write;
     use tempfile::NamedTempFile;
 

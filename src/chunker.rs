@@ -2,7 +2,7 @@ use std::io;
 
 use core::pin::Pin;
 use core::task::{Context, Poll};
-use futures::stream::Stream;
+use futures_core::stream::Stream;
 use tokio::io::AsyncRead;
 
 use crate::buzhash::BuzHash;
@@ -216,6 +216,7 @@ where
 mod tests {
     use super::Chunker;
     use super::ChunkerParams;
+    use futures_util::stream::StreamExt;
     use tokio::prelude::*;
 
     const BUZHASH_SEED: u32 = 0x1032_4195;

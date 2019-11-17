@@ -1,5 +1,7 @@
 use blake2::{Blake2b, Digest};
-use futures::future;
+use futures_util::future;
+use futures_util::future::FutureExt;
+use futures_util::stream::StreamExt;
 use log::*;
 use protobuf::{RepeatedField, SingularPtrField};
 use std::collections::HashMap;

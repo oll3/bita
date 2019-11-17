@@ -1,16 +1,15 @@
 use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
-use futures::stream::Stream;
+use futures_core::stream::Stream;
 use hyper::{Body, Client, Uri};
-use hyper_rustls::HttpsConnector;
 use std::time::Duration;
 
 use crate::error::Error;
 
 #[derive(Debug)]
 enum RequestState {
-    Init(Option<tokio::timer::Delay>),
+    Init(Option<tokio::time::Delay>),
     Response(hyper::client::ResponseFuture),
     Receiving(Body),
 }
@@ -57,6 +56,7 @@ impl Builder {
         }
     }
 }
+
 pub struct Request {
     uri: Uri,
     offset: u64,
@@ -65,37 +65,38 @@ pub struct Request {
     receive_timeout: Option<Duration>,
     retry_count: u32,
     state: RequestState,
-    request_timeout_timer: Option<tokio::timer::Delay>,
+    request_timeout_timer: Option<tokio::time::Delay>,
 }
 
 impl Request {
     fn reset_timeout(&mut self) {
         if let Some(timeout) = self.receive_timeout {
-            self.request_timeout_timer = Some(tokio::timer::delay_for(timeout));
+            self.request_timeout_timer = Some(tokio::time::delay_for(timeout));
         }
     }
     fn retry(&mut self) {
         self.retry_count -= 1;
-        self.state = RequestState::Init(self.retry_delay.map(tokio::timer::delay_for));
+        self.state = RequestState::Init(self.retry_delay.map(tokio::time::delay_for));
         self.request_timeout_timer = None;
     }
 }
 
 impl Stream for Request {
     type Item = Result<hyper::body::Chunk, Error>;
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        if let Some(delay) = &mut self.as_mut().request_timeout_timer {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        let pinned = Pin::get_mut(self);
+        if let Some(delay) = &mut pinned.request_timeout_timer {
             if let Poll::Ready(()) = Pin::new(delay).poll(cx) {
                 // Retry if got error
-                if self.retry_count == 0 {
+                if pinned.retry_count == 0 {
                     return Poll::Ready(Some(Err("request timeout".into())));
                 }
-                log::warn!("receive timeout (retires left: {})", self.retry_count);
-                self.retry();
+                log::warn!("receive timeout (retires left: {})", pinned.retry_count);
+                pinned.retry();
             }
         }
         loop {
-            match self.state {
+            match pinned.state {
                 RequestState::Init(ref mut delay) => {
                     if let Some(delay_f) = delay {
                         let rc = Pin::new(delay_f).poll(cx);
@@ -105,37 +106,37 @@ impl Stream for Request {
                             return Poll::Pending;
                         }
                     } else {
-                        let end_offset = self.offset + self.size - 1;
+                        let end_offset = pinned.offset + pinned.size - 1;
                         let req = hyper::Request::builder()
-                            .uri(&self.uri)
-                            .header("Range", format!("bytes={}-{}", self.offset, end_offset))
+                            .uri(&pinned.uri)
+                            .header("Range", format!("bytes={}-{}", pinned.offset, end_offset))
                             .body(Body::empty())
                             .map_err(|e| ("failed to build request", e))?;
-                        let https = HttpsConnector::new();
+                        let https = hyper::client::HttpConnector::new();
                         let client = Client::builder()
                             .http1_max_buf_size(64 * 1024)
                             .build::<_, hyper::Body>(https);
-                        self.state = RequestState::Response(client.request(req));
-                        self.reset_timeout();
+                        pinned.state = RequestState::Response(client.request(req));
+                        pinned.reset_timeout();
                     }
                 }
                 RequestState::Response(ref mut response) => {
                     match Pin::new(response).poll(cx) {
                         Poll::Ready(Ok(body)) => {
-                            self.reset_timeout();
-                            self.state = RequestState::Receiving(body.into_body());
+                            pinned.reset_timeout();
+                            pinned.state = RequestState::Receiving(body.into_body());
                         }
                         Poll::Ready(Err(err)) => {
                             // Retry if got error
-                            if self.retry_count == 0 {
+                            if pinned.retry_count == 0 {
                                 return Poll::Ready(Some(Err(("request failed", err).into())));
                             }
                             log::warn!(
                                 "request failed: {} (retries left: {})",
                                 err,
-                                self.retry_count
+                                pinned.retry_count
                             );
-                            self.retry();
+                            pinned.retry();
                         }
                         Poll::Pending => {
                             return Poll::Pending;
@@ -145,23 +146,23 @@ impl Stream for Request {
                 RequestState::Receiving(ref mut body) => {
                     match Pin::new(body).poll_next(cx) {
                         Poll::Ready(Some(Ok(body))) => {
-                            self.reset_timeout();
+                            pinned.reset_timeout();
                             // Advance in stream
-                            self.offset += body.len() as u64;
-                            self.size -= body.len() as u64;
+                            pinned.offset += body.len() as u64;
+                            pinned.size -= body.len() as u64;
                             return Poll::Ready(Some(Ok(body)));
                         }
                         Poll::Ready(Some(Err(err))) => {
                             // Retry if got error
-                            if self.retry_count == 0 {
+                            if pinned.retry_count == 0 {
                                 return Poll::Ready(Some(Err(("receive failed", err).into())));
                             }
                             log::warn!(
                                 "receive failed: {} (retries left: {})",
                                 err,
-                                self.retry_count
+                                pinned.retry_count
                             );
-                            self.retry();
+                            pinned.retry();
                         }
                         Poll::Ready(None) => {
                             // End of stream

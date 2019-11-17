@@ -1,9 +1,10 @@
 use blake2::{Blake2b, Digest};
+use futures_util::future::FutureExt;
+use futures_util::stream::StreamExt;
 use log::*;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use tokio::fs::File;
-use tokio::prelude::*;
 use tokio::sync::oneshot;
 
 use crate::config::DiffConfig;
