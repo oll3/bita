@@ -266,7 +266,12 @@ async fn clone_archive(
 
 pub async fn run(config: config::CloneConfig) -> Result<(), Error> {
     let reader_builder = if &config.input[0..7] == "http://" || &config.input[0..8] == "https://" {
-        reader_backend::Builder::new_remote(config.input.parse().unwrap(), 0, None, None)
+        reader_backend::Builder::new_remote(
+            config.input.parse().unwrap(),
+            config.http_retry_count,
+            config.http_retry_delay,
+            config.http_timeout,
+        )
     } else {
         reader_backend::Builder::new_local(&Path::new(&config.input))
     };

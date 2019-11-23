@@ -233,6 +233,21 @@ fn parse_opts() -> Result<Config, Error> {
                         .long("verify-header")
                         .value_name("CHECKSUM")
                         .help("Verify that the archive header checksum is the one given"),
+                ).arg(
+                    Arg::with_name("http-retry-count")
+                        .long("http-retry-count")
+                        .value_name("COUNT")
+                        .help("Retry transfer on failure [default: 0]"),
+                ).arg(
+                    Arg::with_name("http-retry-delay")
+                        .long("http-retry-delay")
+                        .value_name("SECONDS")
+                        .help("Delay retry for some time on transfer failure [default: 0]"),
+                ).arg(
+                    Arg::with_name("http-timeout")
+                        .long("http-timeout")
+                        .value_name("SECONDS")
+                        .help("Fail transfer if unresponsive for some time [default: None]"),
                 ),
         )
         .subcommand(
@@ -346,6 +361,20 @@ fn parse_opts() -> Result<Config, Error> {
             .value_of("verify-header")
             .map(|c| hex_str_to_vec(c).expect("failed to parse checksum"));
 
+        let http_retry_count = matches
+            .value_of("http-retry-count")
+            .unwrap_or("0")
+            .parse()
+            .expect("failed to parse http-retry-count");
+
+        let http_retry_delay = matches.value_of("http-retry-delay").map(|v| {
+            std::time::Duration::from_secs(v.parse().expect("failed to parse http-retry-delay"))
+        });
+
+        let http_timeout = matches.value_of("http-timeout").map(|v| {
+            std::time::Duration::from_secs(v.parse().expect("failed to parse http-timeout"))
+        });
+
         Ok(Config::Clone(CloneConfig {
             input: input.to_string(),
             output: Path::new(output).to_path_buf(),
@@ -353,6 +382,9 @@ fn parse_opts() -> Result<Config, Error> {
             header_checksum: verify_header,
             seed_files,
             seed_stdin,
+            http_retry_count,
+            http_retry_delay,
+            http_timeout,
         }))
     } else if let Some(matches) = matches.subcommand_matches("info") {
         let input = matches.value_of("INPUT").unwrap();
