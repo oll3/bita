@@ -35,6 +35,7 @@ pub struct CloneConfig {
     pub http_retry_count: u32,
     pub http_retry_delay: Option<std::time::Duration>,
     pub http_timeout: Option<std::time::Duration>,
+    pub verify_output: bool,
 }
 
 #[derive(Debug, Clone)]

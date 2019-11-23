@@ -121,6 +121,7 @@ async fn clone_archive(
     // Create or open output file
     let mut output_file = OpenOptions::new()
         .write(true)
+        .read(config.verify_output)
         .create(config.force_create)
         .create_new(!config.force_create)
         .open(&config.output)
@@ -252,6 +253,38 @@ async fn clone_archive(
                     .await
                     .map_err(|err| ("failed to write output", err))?;
             }
+        }
+    }
+
+    if config.verify_output {
+        info!("Verifying checksum of {}...", config.output.display());
+        output_file
+            .seek(SeekFrom::Start(0))
+            .await
+            .map_err(|err| ("failed to seek output", err))?;
+        let mut output_hasher = Blake2b::new();
+        let mut buffer: Vec<u8> = vec![0; 4 * 1024 * 1024];
+        loop {
+            let rc = output_file
+                .read(&mut buffer)
+                .await
+                .map_err(|err| ("failed to read output", err))?;
+            if rc == 0 {
+                break;
+            }
+            output_hasher.input(&buffer[0..rc]);
+        }
+        let sum = output_hasher.result().to_vec();
+        if sum == archive.source_checksum {
+            info!("Checksum verified Ok");
+        } else {
+            panic!(format!(
+                "Checksum mismatch. {}: {}, {}: {}.",
+                config.output.display(),
+                HexSlice::new(&sum),
+                config.input,
+                HexSlice::new(&archive.source_checksum)
+            ));
         }
     }
 

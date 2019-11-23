@@ -248,6 +248,10 @@ fn parse_opts() -> Result<Config, Error> {
                         .long("http-timeout")
                         .value_name("SECONDS")
                         .help("Fail transfer if unresponsive for some time [default: None]"),
+                ).arg(
+                    Arg::with_name("verify-output")
+                        .long("verify-output")
+                        .help("Vefify that the checksum of the output matches with the archive."),
                 ),
         )
         .subcommand(
@@ -385,6 +389,7 @@ fn parse_opts() -> Result<Config, Error> {
             http_retry_count,
             http_retry_delay,
             http_timeout,
+            verify_output: matches.is_present("verify-output"),
         }))
     } else if let Some(matches) = matches.subcommand_matches("info") {
         let input = matches.value_of("INPUT").unwrap();
