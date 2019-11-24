@@ -20,7 +20,6 @@ use bita::string_utils::*;
 async fn seed_input<T>(
     input: T,
     seed_name: &str,
-    hash_length: u32,
     chunker_params: ChunkerParams,
     archive: &ArchiveReader,
     chunks_left: &mut HashSet<Vec<u8>>,
@@ -30,6 +29,7 @@ where
     T: AsyncRead + Unpin,
 {
     info!("Scanning {} for chunks...", seed_name);
+    let hash_length = archive.hash_length;
     let mut bytes_read_from_seed: u64 = 0;
     let mut found_chunks_count: usize = 0;
     let seed_chunker = Chunker::new(chunker_params, input);
@@ -85,136 +85,14 @@ where
     Ok(bytes_read_from_seed)
 }
 
-async fn prepare_unpack_output(
-    mut output_file: File,
-    source_file_size: u64,
-) -> Result<File, Error> {
-    #[cfg(unix)]
-    {
-        use std::os::linux::fs::MetadataExt;
-        let meta = output_file
-            .metadata()
-            .await
-            .map_err(|e| ("unable to get file meta data", e))?;
-        if meta.st_mode() & 0x6000 == 0x6000 {
-            // Output is a block device
-            let size = output_file
-                .seek(SeekFrom::End(0))
-                .await
-                .map_err(|e| ("unable to seek output file", e))?;
-            if size != source_file_size {
-                panic!(
-                    "Size of output device ({}) differ from size of archive target file ({})",
-                    size_to_str(size),
-                    size_to_str(source_file_size)
-                );
-            }
-            output_file
-                .seek(SeekFrom::Start(0))
-                .await
-                .map_err(|e| ("unable to seek output file", e))?;
-        } else {
-            // Output is a reqular file
-            output_file
-                .set_len(source_file_size)
-                .await
-                .map_err(|e| ("unable to resize output file", e))?;
-        }
-    }
-    #[cfg(not(unix))]
-    {
-        output_file
-            .set_len(source_file_size)
-            .await
-            .map_err(|e| ("unable to resize output file", e))?;
-    }
-    Ok(output_file)
-}
-
-#[allow(clippy::cognitive_complexity)]
-async fn clone_archive(
+async fn finish_using_archive(
     reader_builder: reader_backend::Builder,
-    config: &config::CloneConfig,
-) -> Result<(), Error> {
-    let archive = ArchiveReader::init(reader_builder.clone()).await?;
-    let mut chunks_left = archive.chunk_hash_set();
+    archive: &ArchiveReader,
+    chunks_left: HashSet<Vec<u8>>,
+    output_file: &mut File,
+) -> Result<u64, Error> {
+    let mut total_read_from_archive: u64 = 0;
     let hash_length = archive.hash_length;
-    let mut total_read_from_seed = 0u64;
-    let mut total_read_from_archive = 0u64;
-
-    info_cmd::print_archive(&archive);
-    println!();
-
-    // Verify the header checksum if requested
-    if let Some(ref expected_checksum) = config.header_checksum {
-        if *expected_checksum != archive.header_checksum {
-            return Err(Error::ChecksumMismatch(
-                "Header checksum mismatch!".to_owned(),
-            ));
-        } else {
-            info!("Header checksum verified OK");
-        }
-    }
-    info!(
-        "Cloning archive {} to {}...",
-        config.input,
-        config.output.display()
-    );
-
-    // Setup chunker to use when chunking seed input
-    let chunker_params = archive.chunker_params.clone();
-
-    // Create or open output file
-    let mut output_file = OpenOptions::new()
-        .write(true)
-        .read(config.verify_output)
-        .create(config.force_create)
-        .create_new(!config.force_create)
-        .open(&config.output)
-        .await
-        .map_err(|e| {
-            (
-                format!("failed to open output file ({})", config.output.display()),
-                e,
-            )
-        })?;
-
-    // Clone and unpack archive
-
-    // Check if the given output file is a regular file or block device.
-    // If it is a block device we should check its size against the target size before
-    // writing. If a regular file then resize that file to target size.
-    output_file = prepare_unpack_output(output_file, archive.source_total_size).await?;
-
-    if config.seed_stdin && !atty::is(Stream::Stdin) {
-        total_read_from_seed += seed_input(
-            tokio::io::stdin(),
-            "stdin",
-            hash_length as u32,
-            chunker_params.clone(),
-            &archive,
-            &mut chunks_left,
-            &mut output_file,
-        )
-        .await?;
-    }
-    for seed_path in &config.seed_files {
-        let file = File::open(seed_path)
-            .await
-            .map_err(|e| ("failed to open seed file", e))?;
-        total_read_from_seed += seed_input(
-            file,
-            &format!("{}", seed_path.display()),
-            hash_length as u32,
-            chunker_params.clone(),
-            &archive,
-            &mut chunks_left,
-            &mut output_file,
-        )
-        .await?;
-    }
-
-    // Read the rest from archive
     let grouped_chunks = archive.grouped_chunks(&chunks_left);
     for group in grouped_chunks {
         // For each group of chunks
@@ -269,37 +147,178 @@ async fn clone_archive(
             }
         }
     }
+    Ok(total_read_from_archive)
+}
+
+async fn verify_output(
+    config: &config::CloneConfig,
+    expected_checksum: &[u8],
+    output_file: &mut File,
+) -> Result<(), Error> {
+    info!("Verifying checksum of {}...", config.output.display());
+    output_file
+        .seek(SeekFrom::Start(0))
+        .await
+        .map_err(|err| ("failed to seek output", err))?;
+    let mut output_hasher = Blake2b::new();
+    let mut buffer: Vec<u8> = vec![0; 4 * 1024 * 1024];
+    loop {
+        let rc = output_file
+            .read(&mut buffer)
+            .await
+            .map_err(|err| ("failed to read output", err))?;
+        if rc == 0 {
+            break;
+        }
+        output_hasher.input(&buffer[0..rc]);
+    }
+    let sum = output_hasher.result().to_vec();
+    if sum == expected_checksum {
+        info!("Checksum verified Ok");
+    } else {
+        panic!(format!(
+            "Checksum mismatch. {}: {}, {}: {}.",
+            config.output.display(),
+            HexSlice::new(&sum),
+            config.input,
+            HexSlice::new(&expected_checksum)
+        ));
+    }
+    Ok(())
+}
+
+async fn prepare_unpack_output(
+    mut output_file: File,
+    source_file_size: u64,
+) -> Result<File, Error> {
+    #[cfg(unix)]
+    {
+        use std::os::linux::fs::MetadataExt;
+        let meta = output_file
+            .metadata()
+            .await
+            .map_err(|e| ("unable to get file meta data", e))?;
+        if meta.st_mode() & 0x6000 == 0x6000 {
+            // Output is a block device
+            let size = output_file
+                .seek(SeekFrom::End(0))
+                .await
+                .map_err(|e| ("unable to seek output file", e))?;
+            if size != source_file_size {
+                panic!(
+                    "Size of output device ({}) differ from size of archive target file ({})",
+                    size_to_str(size),
+                    size_to_str(source_file_size)
+                );
+            }
+            output_file
+                .seek(SeekFrom::Start(0))
+                .await
+                .map_err(|e| ("unable to seek output file", e))?;
+        } else {
+            // Output is a reqular file
+            output_file
+                .set_len(source_file_size)
+                .await
+                .map_err(|e| ("unable to resize output file", e))?;
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        output_file
+            .set_len(source_file_size)
+            .await
+            .map_err(|e| ("unable to resize output file", e))?;
+    }
+    Ok(output_file)
+}
+
+async fn clone_archive(
+    reader_builder: reader_backend::Builder,
+    config: &config::CloneConfig,
+) -> Result<(), Error> {
+    let archive = ArchiveReader::init(reader_builder.clone()).await?;
+    let mut chunks_left = archive.chunk_hash_set();
+    let mut total_read_from_seed = 0u64;
+
+    info_cmd::print_archive(&archive);
+    println!();
+
+    // Verify the header checksum if requested
+    if let Some(ref expected_checksum) = config.header_checksum {
+        if *expected_checksum != archive.header_checksum {
+            return Err(Error::ChecksumMismatch(
+                "Header checksum mismatch!".to_owned(),
+            ));
+        } else {
+            info!("Header checksum verified OK");
+        }
+    }
+    info!(
+        "Cloning archive {} to {}...",
+        config.input,
+        config.output.display()
+    );
+
+    // Setup chunker to use when chunking seed input
+    let chunker_params = archive.chunker_params.clone();
+
+    // Create or open output file
+    let mut output_file = OpenOptions::new()
+        .write(true)
+        .read(config.verify_output)
+        .create(config.force_create)
+        .create_new(!config.force_create)
+        .open(&config.output)
+        .await
+        .map_err(|e| {
+            (
+                format!("failed to open output file ({})", config.output.display()),
+                e,
+            )
+        })?;
+
+    // Clone and unpack archive
+
+    // Check if the given output file is a regular file or block device.
+    // If it is a block device we should check its size against the target size before
+    // writing. If a regular file then resize that file to target size.
+    output_file = prepare_unpack_output(output_file, archive.source_total_size).await?;
+
+    // Read chunks from seed files
+    if config.seed_stdin && !atty::is(Stream::Stdin) {
+        total_read_from_seed += seed_input(
+            tokio::io::stdin(),
+            "stdin",
+            chunker_params.clone(),
+            &archive,
+            &mut chunks_left,
+            &mut output_file,
+        )
+        .await?;
+    }
+    for seed_path in &config.seed_files {
+        let file = File::open(seed_path)
+            .await
+            .map_err(|e| ("failed to open seed file", e))?;
+        total_read_from_seed += seed_input(
+            file,
+            &format!("{}", seed_path.display()),
+            chunker_params.clone(),
+            &archive,
+            &mut chunks_left,
+            &mut output_file,
+        )
+        .await?;
+    }
+
+    // Read the rest from archive
+    let total_read_from_archive =
+        finish_using_archive(reader_builder, &archive, chunks_left, &mut output_file).await?;
 
     if config.verify_output {
-        info!("Verifying checksum of {}...", config.output.display());
-        output_file
-            .seek(SeekFrom::Start(0))
-            .await
-            .map_err(|err| ("failed to seek output", err))?;
-        let mut output_hasher = Blake2b::new();
-        let mut buffer: Vec<u8> = vec![0; 4 * 1024 * 1024];
-        loop {
-            let rc = output_file
-                .read(&mut buffer)
-                .await
-                .map_err(|err| ("failed to read output", err))?;
-            if rc == 0 {
-                break;
-            }
-            output_hasher.input(&buffer[0..rc]);
-        }
-        let sum = output_hasher.result().to_vec();
-        if sum == archive.source_checksum {
-            info!("Checksum verified Ok");
-        } else {
-            panic!(format!(
-                "Checksum mismatch. {}: {}, {}: {}.",
-                config.output.display(),
-                HexSlice::new(&sum),
-                config.input,
-                HexSlice::new(&archive.source_checksum)
-            ));
-        }
+        // Verify output
+        verify_output(&config, &archive.source_checksum, &mut output_file).await?;
     }
 
     info!(
