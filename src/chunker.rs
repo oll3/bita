@@ -50,21 +50,24 @@ impl ChunkerParams {
     }
 }
 
-pub struct Chunker {
+pub struct Chunker<T> {
     buzhash: BuzHash,
     filter_mask: u32,
     min_chunk_size: usize,
     max_chunk_size: usize,
     source_buf: Vec<u8>,
-    source: Box<dyn AsyncRead + Unpin>,
+    source: T,
     buzhash_input_limit: usize,
     source_index: u64,
     buf_index: usize,
     chunk_start: u64,
 }
 
-impl Chunker {
-    pub fn new(params: ChunkerParams, source: Box<dyn AsyncRead + Unpin>) -> Self {
+impl<T> Chunker<T>
+where
+    T: AsyncRead + Unpin,
+{
+    pub fn new(params: ChunkerParams, source: T) -> Self {
         // Allow for chunk size less than buzhash window
         let buzhash_input_limit = if params.min_chunk_size >= params.buzhash_window_size {
             params.min_chunk_size - params.buzhash_window_size
@@ -199,7 +202,10 @@ impl Chunker {
     }
 }
 
-impl Stream for Chunker {
+impl<T> Stream for Chunker<T>
+where
+    T: AsyncRead + Unpin,
+{
     type Item = Result<(u64, Vec<u8>), io::Error>;
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         self.poll_chunk(cx)

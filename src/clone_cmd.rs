@@ -2,8 +2,9 @@ use atty::Stream;
 use blake2::{Blake2b, Digest};
 use futures::future;
 use log::*;
+use std::collections::HashSet;
 use std::io::SeekFrom;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tokio::fs::{File, OpenOptions};
 use tokio::prelude::*;
 use tokio::sync::oneshot;
@@ -16,28 +17,72 @@ use bita::error::Error;
 use bita::reader_backend;
 use bita::string_utils::*;
 
-async fn create_seed_chunkers(
-    seed_stdin: bool,
-    seed_files: &[PathBuf],
-    chunker_params: &ChunkerParams,
-) -> Result<Vec<(String, Chunker)>, Error> {
-    let mut chunkers = Vec::new();
-    if seed_stdin && !atty::is(Stream::Stdin) {
-        chunkers.push((
-            "stdin".to_owned(),
-            Chunker::new(chunker_params.clone(), Box::new(tokio::io::stdin())),
-        ));
+async fn seed_input<T>(
+    input: T,
+    seed_name: &str,
+    hash_length: u32,
+    chunker_params: ChunkerParams,
+    archive: &ArchiveReader,
+    chunks_left: &mut HashSet<Vec<u8>>,
+    output_file: &mut File,
+) -> Result<u64, Error>
+where
+    T: AsyncRead + Unpin,
+{
+    info!("Scanning {} for chunks...", seed_name);
+    let mut bytes_read_from_seed: u64 = 0;
+    let mut found_chunks_count: usize = 0;
+    let seed_chunker = Chunker::new(chunker_params, input);
+    let mut found_chunks = seed_chunker
+        .map(|result| {
+            let (_offset, chunk) = result.expect("error while chunking");
+            // Build hash of full source
+            async move {
+                // Calculate strong hash for each chunk
+                let mut chunk_hasher = Blake2b::new();
+                chunk_hasher.input(&chunk);
+                (
+                    chunk_hasher.result()[0..hash_length as usize].to_vec(),
+                    chunk,
+                )
+            }
+        })
+        .buffered(8)
+        .filter_map(|(hash, chunk)| {
+            // Filter unique chunks to be compressed
+            if chunks_left.remove(&hash) {
+                future::ready(Some((hash, chunk)))
+            } else {
+                future::ready(None)
+            }
+        });
+
+    while let Some((hash, chunk)) = found_chunks.next().await {
+        debug!(
+            "Chunk '{}', size {} used from {}",
+            HexSlice::new(&hash),
+            size_to_str(chunk.len()),
+            seed_name,
+        );
+        for offset in &archive.chunk_source_offsets(&hash) {
+            bytes_read_from_seed += chunk.len() as u64;
+            output_file
+                .seek(SeekFrom::Start(*offset))
+                .await
+                .map_err(|err| ("failed to seek output", err))?;
+            output_file
+                .write_all(&chunk)
+                .await
+                .map_err(|err| ("failed to write output", err))?;
+        }
+        found_chunks_count += 1;
     }
-    for seed_path in seed_files {
-        let file = File::open(seed_path)
-            .await
-            .map_err(|e| ("failed to open input file", e))?;
-        chunkers.push((
-            format!("{}", seed_path.display()),
-            Chunker::new(chunker_params.clone(), Box::new(file)),
-        ));
-    }
-    Ok(chunkers)
+    info!(
+        "Used {} chunks from seed file {}",
+        found_chunks_count, seed_name
+    );
+
+    Ok(bytes_read_from_seed)
 }
 
 async fn prepare_unpack_output(
@@ -96,6 +141,7 @@ async fn clone_archive(
     let hash_length = archive.hash_length;
     let mut total_read_from_seed = 0u64;
     let mut total_read_from_archive = 0u64;
+
     info_cmd::print_archive(&archive);
     println!();
 
@@ -140,64 +186,32 @@ async fn clone_archive(
     // writing. If a regular file then resize that file to target size.
     output_file = prepare_unpack_output(output_file, archive.source_total_size).await?;
 
-    let seed_chunkers =
-        create_seed_chunkers(config.seed_stdin, &config.seed_files, &chunker_params).await?;
-
-    for (seed_name, seed_chunker) in seed_chunkers.into_iter() {
-        let mut found_chunks_count: usize = 0;
-        if chunks_left.is_empty() {
-            break;
-        }
-        info!("Scanning {} for chunks...", seed_name);
-
-        let mut found_chunks = seed_chunker
-            .map(|result| {
-                let (_offset, chunk) = result.expect("error while chunking");
-                // Build hash of full source
-                async move {
-                    // Calculate strong hash for each chunk
-                    let mut chunk_hasher = Blake2b::new();
-                    chunk_hasher.input(&chunk);
-                    (
-                        chunk_hasher.result()[0..hash_length as usize].to_vec(),
-                        chunk,
-                    )
-                }
-            })
-            .buffered(8)
-            .filter_map(|(hash, chunk)| {
-                // Filter unique chunks to be compressed
-                if chunks_left.remove(&hash) {
-                    future::ready(Some((hash, chunk)))
-                } else {
-                    future::ready(None)
-                }
-            });
-
-        while let Some((hash, chunk)) = found_chunks.next().await {
-            debug!(
-                "Chunk '{}', size {} used from {}",
-                HexSlice::new(&hash),
-                size_to_str(chunk.len()),
-                seed_name,
-            );
-            for offset in &archive.chunk_source_offsets(&hash) {
-                total_read_from_seed += chunk.len() as u64;
-                output_file
-                    .seek(SeekFrom::Start(*offset))
-                    .await
-                    .map_err(|err| ("failed to seek output", err))?;
-                output_file
-                    .write_all(&chunk)
-                    .await
-                    .map_err(|err| ("failed to write output", err))?;
-            }
-            found_chunks_count += 1;
-        }
-        info!(
-            "Used {} chunks from seed file {}",
-            found_chunks_count, seed_name
-        );
+    if config.seed_stdin && !atty::is(Stream::Stdin) {
+        total_read_from_seed += seed_input(
+            tokio::io::stdin(),
+            "stdin",
+            hash_length as u32,
+            chunker_params.clone(),
+            &archive,
+            &mut chunks_left,
+            &mut output_file,
+        )
+        .await?;
+    }
+    for seed_path in &config.seed_files {
+        let file = File::open(seed_path)
+            .await
+            .map_err(|e| ("failed to open seed file", e))?;
+        total_read_from_seed += seed_input(
+            file,
+            &format!("{}", seed_path.display()),
+            hash_length as u32,
+            chunker_params.clone(),
+            &archive,
+            &mut chunks_left,
+            &mut output_file,
+        )
+        .await?;
     }
 
     // Read the rest from archive

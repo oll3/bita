@@ -4,7 +4,6 @@ use log::*;
 use protobuf::{RepeatedField, SingularPtrField};
 use std::collections::HashMap;
 use std::io::Write;
-use std::path::PathBuf;
 use tokio::fs::{File, OpenOptions};
 use tokio::prelude::*;
 use tokio::sync::oneshot;
@@ -15,6 +14,7 @@ use crate::string_utils::*;
 use bita::archive;
 use bita::chunk_dictionary;
 use bita::chunker::{Chunker, ChunkerParams};
+use bita::compression::Compression;
 use bita::error::Error;
 
 #[derive(Debug, Clone)]
@@ -27,62 +27,41 @@ pub struct ChunkSourceDescriptor {
 
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-async fn create_chunker(
+async fn chunk_input<T>(
+    input: T,
     chunker_params: ChunkerParams,
-    input_path: Option<PathBuf>,
-) -> Result<Chunker, Error> {
-    if let Some(input_path) = input_path {
-        // Read source from file
-        let file = File::open(input_path)
-            .await
-            .map_err(|e| ("failed to open input file", e))?;
-        Ok(Chunker::new(chunker_params, Box::new(file)))
-    } else if !atty::is(atty::Stream::Stdin) {
-        // Read source from stdin
-        Ok(Chunker::new(chunker_params, Box::new(tokio::io::stdin())))
-    } else {
-        panic!("Bla");
-    }
-}
-
-pub async fn run(config: CompressConfig) -> Result<(), Error> {
-    let chunker_params = ChunkerParams::new(
-        config.chunker_config.chunk_filter_bits,
-        config.chunker_config.min_chunk_size,
-        config.chunker_config.max_chunk_size,
-        config.chunker_config.hash_window_size,
-        archive::BUZHASH_SEED,
-    );
-    let compression = config.chunker_config.compression;
-    let hash_length = config.hash_length;
-    let mut unique_chunks = HashMap::new();
+    compression: Compression,
+    temp_file_path: &std::path::Path,
+    hash_length: usize,
+) -> Result<
+    (
+        Vec<u8>,
+        Vec<bita::chunk_dictionary::ChunkDescriptor>,
+        u64,
+        Vec<ChunkSourceDescriptor>,
+    ),
+    Error,
+>
+where
+    T: AsyncRead + Unpin,
+{
     let mut source_hasher = Blake2b::new();
+    let mut unique_chunks = HashMap::new();
     let mut source_size: u64 = 0;
     let mut source_chunks = Vec::new();
     let mut archive_offset: u64 = 0;
     let mut unique_chunk_index: usize = 0;
     let mut archive_chunks = Vec::new();
 
-    let mut output_file = std::fs::OpenOptions::new()
-        .write(true)
-        .read(true)
-        .create(config.force_create)
-        .truncate(config.force_create)
-        .create_new(!config.force_create)
-        .open(config.output.clone())
-        .map_err(|e| ("failed to open output file", e))?;
-
     let mut temp_file = OpenOptions::new()
         .write(true)
-        .read(true)
         .create(true)
         .truncate(true)
-        .open(config.temp_file.clone())
+        .open(temp_file_path)
         .await
         .map_err(|e| ("failed to open temp file", e))?;
-
     {
-        let chunker = create_chunker(chunker_params, config.input.clone()).await?;
+        let chunker = Chunker::new(chunker_params, input);
         let mut chunk_stream = chunker
             .map(|result| {
                 let (offset, chunk) = result.expect("error while chunking");
@@ -143,14 +122,12 @@ pub async fn run(config: CompressConfig) -> Result<(), Error> {
             })
             .buffered(8);
 
-        while let Some((chunk_index, hash, offset, chunk, compressed_chunk)) =
-            chunk_stream.next().await
-        {
+        while let Some((index, hash, offset, chunk, compressed_chunk)) = chunk_stream.next().await {
             let chunk_len = chunk.len();
             let use_uncompressed_chunk = compressed_chunk.len() >= chunk_len;
             debug!(
                 "Chunk {}, '{}', offset: {}, size: {}, {}",
-                chunk_index,
+                index,
                 HexSlice::new(&hash),
                 offset,
                 size_to_str(chunk_len),
@@ -184,10 +161,59 @@ pub async fn run(config: CompressConfig) -> Result<(), Error> {
                 .map_err(|e| ("Failed to write to temp file", e))?;
         }
     }
+    Ok((
+        source_hasher.result().to_vec(),
+        archive_chunks,
+        source_size,
+        source_chunks,
+    ))
+}
+
+pub async fn run(config: CompressConfig) -> Result<(), Error> {
+    let chunker_params = ChunkerParams::new(
+        config.chunker_config.chunk_filter_bits,
+        config.chunker_config.min_chunk_size,
+        config.chunker_config.max_chunk_size,
+        config.chunker_config.hash_window_size,
+        archive::BUZHASH_SEED,
+    );
+    let compression = config.chunker_config.compression;
+    let mut output_file = std::fs::OpenOptions::new()
+        .write(true)
+        .read(true)
+        .create(config.force_create)
+        .truncate(config.force_create)
+        .create_new(!config.force_create)
+        .open(config.output.clone())
+        .map_err(|e| ("failed to open output file", e))?;
+
+    let (source_hash, archive_chunks, source_size, source_chunks) =
+        if let Some(input_path) = config.input {
+            chunk_input(
+                File::open(input_path)
+                    .await
+                    .map_err(|err| ("failed to open input file", err))?,
+                chunker_params,
+                compression,
+                &config.temp_file,
+                config.hash_length,
+            )
+            .await?
+        } else if !atty::is(atty::Stream::Stdin) {
+            // Read source from stdin
+            chunk_input(
+                tokio::io::stdin(),
+                chunker_params,
+                compression,
+                &config.temp_file,
+                config.hash_length,
+            )
+            .await?
+        } else {
+            panic!("Missing input");
+        };
 
     // Build the final archive
-    let source_hash = source_hasher.result().to_vec();
-
     let file_header = chunk_dictionary::ChunkDictionary {
         rebuild_order: source_chunks
             .iter()
@@ -214,7 +240,6 @@ pub async fn run(config: CompressConfig) -> Result<(), Error> {
     output_file
         .write_all(&header_buf)
         .map_err(|e| ("failed to write header", e))?;
-    drop(temp_file);
     {
         let mut temp_file = std::fs::File::open(&config.temp_file)
             .map_err(|e| ("failed to open temporary file", e))?;
