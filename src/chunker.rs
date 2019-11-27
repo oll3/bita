@@ -50,24 +50,24 @@ impl ChunkerParams {
     }
 }
 
-pub struct Chunker<T> {
+pub struct Chunker<'a, T> {
     buzhash: BuzHash,
     filter_mask: u32,
     min_chunk_size: usize,
     max_chunk_size: usize,
     source_buf: Vec<u8>,
-    source: T,
+    source: &'a mut T,
     buzhash_input_limit: usize,
     source_index: u64,
     buf_index: usize,
     chunk_start: u64,
 }
 
-impl<T> Chunker<T>
+impl<'a, T> Chunker<'a, T>
 where
     T: AsyncRead + Unpin,
 {
-    pub fn new(params: ChunkerParams, source: T) -> Self {
+    pub fn new(params: ChunkerParams, source: &'a mut T) -> Self {
         // Allow for chunk size less than buzhash window
         let buzhash_input_limit = if params.min_chunk_size >= params.buzhash_window_size {
             params.min_chunk_size - params.buzhash_window_size
@@ -202,7 +202,7 @@ where
     }
 }
 
-impl<T> Stream for Chunker<T>
+impl<'a, T> Stream for Chunker<'a, T>
 where
     T: AsyncRead + Unpin,
 {
@@ -217,7 +217,6 @@ mod tests {
     use super::Chunker;
     use super::ChunkerParams;
     use futures_util::stream::StreamExt;
-    use tokio::prelude::*;
 
     const BUZHASH_SEED: u32 = 0x1032_4195;
 
@@ -228,7 +227,7 @@ mod tests {
         assert_eq!(
             Chunker::new(
                 ChunkerParams::new(5, 3, 640, 5, BUZHASH_SEED),
-                Box::new(&SRC[..]),
+                &mut Box::new(&SRC[..])
             )
             .map(|result| {
                 let (offset, chunk) = result.unwrap();
@@ -247,7 +246,7 @@ mod tests {
         assert_eq!(
             Chunker::new(
                 ChunkerParams::new(5, 0, 40, 10, BUZHASH_SEED),
-                Box::new(&SRC[..]),
+                &mut Box::new(&SRC[..])
             )
             .map(|result| {
                 let (offset, chunk) = result.unwrap();
@@ -266,7 +265,7 @@ mod tests {
         assert_eq!(
             Chunker::new(
                 ChunkerParams::new(5, 10, 40, 5, BUZHASH_SEED),
-                Box::new(&SRC[..]),
+                &mut Box::new(&SRC[..]),
             )
             .map(|result| {
                 let (offset, chunk) = result.unwrap();
@@ -313,7 +312,7 @@ mod tests {
 
         let chunk_offsets = Chunker::new(
             ChunkerParams::new(5, 3, 640, 5, BUZHASH_SEED),
-            Box::new(unsafe { &SRC[..] }),
+            &mut Box::new(unsafe { &SRC[..] }),
         )
         .map(|result| {
             let (offset, _chunk) = result.unwrap();
@@ -403,7 +402,7 @@ mod tests {
         }
         let chunk_offsets = Chunker::new(
             ChunkerParams::new(6, 64, 1024, 20, BUZHASH_SEED),
-            Box::new(unsafe { &SRC[..] }),
+            &mut Box::new(unsafe { &SRC[..] }),
         )
         .map(|result| {
             let (offset, _chunk) = result.unwrap();

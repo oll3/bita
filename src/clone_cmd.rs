@@ -19,7 +19,7 @@ use bita::reader_backend;
 use bita::string_utils::*;
 
 async fn seed_input<T>(
-    input: T,
+    mut input: T,
     seed_name: &str,
     chunker_params: ChunkerParams,
     archive: &ArchiveReader,
@@ -33,7 +33,7 @@ where
     let hash_length = archive.hash_length;
     let mut bytes_read_from_seed: u64 = 0;
     let mut found_chunks_count: usize = 0;
-    let seed_chunker = Chunker::new(chunker_params, input);
+    let seed_chunker = Chunker::new(chunker_params, &mut input);
     let mut found_chunks = seed_chunker
         .map(|result| {
             let (_offset, chunk) = result.expect("error while chunking");

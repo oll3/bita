@@ -40,11 +40,11 @@ async fn chunk_file(
     let mut total_compressed_size = 0u64;
     let mut total_chunks = 0;
     {
-        let file = File::open(path)
+        let mut file = File::open(path)
             .await
             .map_err(|e| ("failed to open output file", e))?;
         let mut unique_chunk = HashSet::new();
-        let chunker = Chunker::new(chunker_params.clone(), Box::new(file));
+        let chunker = Chunker::new(chunker_params.clone(), &mut file);
         let mut chunk_stream = chunker
             .map(|result| {
                 let (offset, chunk) = result.expect("error while chunking");

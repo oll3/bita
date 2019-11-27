@@ -30,7 +30,7 @@ pub struct ChunkSourceDescriptor {
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 async fn chunk_input<T>(
-    input: T,
+    mut input: T,
     chunker_params: ChunkerParams,
     compression: Compression,
     temp_file_path: &std::path::Path,
@@ -63,7 +63,7 @@ where
         .await
         .map_err(|e| ("failed to open temp file", e))?;
     {
-        let chunker = Chunker::new(chunker_params, input);
+        let chunker = Chunker::new(chunker_params, &mut input);
         let mut chunk_stream = chunker
             .map(|result| {
                 let (offset, chunk) = result.expect("error while chunking");
