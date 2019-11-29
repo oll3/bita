@@ -89,34 +89,41 @@ where
         }
     }
 
-    fn append_to_buf(&mut self, cx: &mut Context, count: usize) -> Poll<Result<usize, io::Error>> {
-        let mut read_size = 0;
-        let buf_size = self.source_buf.len();
+    fn append_to_buf(&mut self, cx: &mut Context, want: usize) -> Poll<Result<usize, io::Error>> {
+        let mut read_count = 0;
+        let before_size = self.source_buf.len();
         {
             // Use set_len() here instead of resize as we don't care for zeroing the content of buf.
-            let new_size = buf_size + count;
+            let new_size = before_size + want;
             if self.source_buf.capacity() < new_size {
-                self.source_buf.reserve(count);
+                self.source_buf.reserve(want);
             }
             unsafe {
                 self.source_buf.set_len(new_size);
             }
         }
-        while read_size < count {
-            let offset = buf_size + read_size;
+        while read_count < want {
+            let offset = before_size + read_count;
             let rc = match Pin::new(&mut self.source).poll_read(cx, &mut self.source_buf[offset..])
             {
                 Poll::Ready(Ok(0)) => break, // EOF
                 Poll::Ready(Ok(rc)) => rc,
-                err_or_pending => {
-                    self.source_buf.resize(buf_size + read_size, 0);
-                    return err_or_pending;
+                Poll::Ready(err) => {
+                    self.source_buf.resize(before_size + read_count, 0);
+                    return Poll::Ready(err);
+                }
+                Poll::Pending => {
+                    self.source_buf.resize(before_size + read_count, 0);
+                    if read_count > 0 {
+                        return Poll::Ready(Ok(read_count));
+                    }
+                    return Poll::Pending;
                 }
             };
-            read_size += rc;
+            read_count += rc;
         }
-        self.source_buf.resize(buf_size + read_size, 0);
-        Poll::Ready(Ok(read_size))
+        self.source_buf.resize(before_size + read_count, 0);
+        Poll::Ready(Ok(read_count))
     }
 
     #[allow(clippy::type_complexity)]
