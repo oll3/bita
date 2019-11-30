@@ -55,7 +55,7 @@ pub struct Chunker<'a, T> {
     filter_mask: u32,
     min_chunk_size: usize,
     max_chunk_size: usize,
-    source_buf: Vec<u8>,
+    read_buf: Vec<u8>,
     source: &'a mut T,
     buzhash_input_limit: usize,
     source_index: u64,
@@ -80,7 +80,7 @@ where
             min_chunk_size: params.min_chunk_size,
             max_chunk_size: params.max_chunk_size,
             buzhash: BuzHash::new(params.buzhash_window_size, params.buzhash_seed),
-            source_buf: Vec::with_capacity(params.max_chunk_size + CHUNKER_BUF_SIZE),
+            read_buf: Vec::with_capacity(params.max_chunk_size + CHUNKER_BUF_SIZE),
             source,
             buzhash_input_limit,
             source_index: 0,
@@ -89,31 +89,31 @@ where
         }
     }
 
-    fn append_to_buf(&mut self, cx: &mut Context, want: usize) -> Poll<Result<usize, io::Error>> {
+    fn refill_read_buf(&mut self, cx: &mut Context, want: usize) -> Poll<Result<usize, io::Error>> {
         let mut read_count = 0;
-        let before_size = self.source_buf.len();
+        let before_size = self.read_buf.len();
         {
             // Use set_len() here instead of resize as we don't care for zeroing the content of buf.
             let new_size = before_size + want;
-            if self.source_buf.capacity() < new_size {
-                self.source_buf.reserve(want);
+            if self.read_buf.capacity() < new_size {
+                self.read_buf.reserve(want);
             }
             unsafe {
-                self.source_buf.set_len(new_size);
+                self.read_buf.set_len(new_size);
             }
         }
         while read_count < want {
             let offset = before_size + read_count;
-            let rc = match Pin::new(&mut self.source).poll_read(cx, &mut self.source_buf[offset..])
+            let rc = match Pin::new(&mut self.source).poll_read(cx, &mut self.read_buf[offset..])
             {
                 Poll::Ready(Ok(0)) => break, // EOF
                 Poll::Ready(Ok(rc)) => rc,
                 Poll::Ready(err) => {
-                    self.source_buf.resize(before_size + read_count, 0);
+                    self.read_buf.resize(before_size + read_count, 0);
                     return Poll::Ready(err);
                 }
                 Poll::Pending => {
-                    self.source_buf.resize(before_size + read_count, 0);
+                    self.read_buf.resize(before_size + read_count, 0);
                     if read_count > 0 {
                         return Poll::Ready(Ok(read_count));
                     }
@@ -122,34 +122,34 @@ where
             };
             read_count += rc;
         }
-        self.source_buf.resize(before_size + read_count, 0);
+        self.read_buf.resize(before_size + read_count, 0);
         Poll::Ready(Ok(read_count))
     }
 
     #[allow(clippy::type_complexity)]
     fn poll_chunk(&mut self, cx: &mut Context) -> Poll<Option<Result<(u64, Vec<u8>), io::Error>>> {
         loop {
-            if self.buf_index >= self.source_buf.len() {
-                // Fill buffer from source input
-                let rc = match self.append_to_buf(cx, CHUNKER_BUF_SIZE) {
+            if self.buf_index >= self.read_buf.len() {
+                // Fill buffer from source
+                let rc = match self.refill_read_buf(cx, CHUNKER_BUF_SIZE) {
                     Poll::Ready(Ok(n)) => n,
                     Poll::Ready(Err(e)) => return Poll::Ready(Some(Err(e))),
                     Poll::Pending => return Poll::Pending,
                 };
                 if rc == 0 {
                     // EOF
-                    if !self.source_buf.is_empty() {
-                        let chunk = self.source_buf[..].to_vec();
-                        self.source_buf.resize(0, 0);
+                    if !self.read_buf.is_empty() {
+                        let chunk = self.read_buf[..].to_vec();
+                        self.read_buf.resize(0, 0);
                         self.buf_index = 0;
                         return Poll::Ready(Some(Ok((self.chunk_start, chunk))));
                     } else {
                         return Poll::Ready(None);
                     }
                 }
-                while !self.buzhash.valid() && self.buf_index < self.source_buf.len() {
+                while !self.buzhash.valid() && self.buf_index < self.read_buf.len() {
                     // Initialize the buzhash
-                    self.buzhash.init(self.source_buf[self.buf_index]);
+                    self.buzhash.init(self.read_buf[self.buf_index]);
                     self.buf_index += 1;
                     self.source_index += 1;
                 }
@@ -157,10 +157,10 @@ where
 
             // Skip past the minimum chunk size to minimize the number of hash inputs
             let mut buf_index =
-                if self.buf_index < self.buzhash_input_limit && self.buzhash_input_limit > 0 {
+                if self.buzhash_input_limit > 0 && self.buf_index < self.buzhash_input_limit {
                     let skip_to = self.buzhash_input_limit - 1;
-                    if skip_to >= self.source_buf.len() {
-                        self.source_buf.len()
+                    if skip_to >= self.read_buf.len() {
+                        self.read_buf.len()
                     } else {
                         skip_to
                     }
@@ -168,9 +168,9 @@ where
                     self.buf_index
                 };
 
-            let mut got_chunk = false;
             if self.min_chunk_size > 0 {
-                for val in self.source_buf[buf_index..].iter() {
+                // Read the last part of the minimal possible chunk
+                for val in self.read_buf[buf_index..].iter() {
                     buf_index += 1;
                     self.buzhash.input(*val);
                     if buf_index >= (self.min_chunk_size - 1) {
@@ -180,7 +180,8 @@ where
             }
 
             // Scan for chunk boundary
-            for val in self.source_buf[buf_index..].iter() {
+            let mut got_chunk = false;
+            for val in self.read_buf[buf_index..].iter() {
                 buf_index += 1;
                 self.buzhash.input(*val);
 
@@ -199,9 +200,9 @@ where
             if got_chunk {
                 let chunk_start = self.chunk_start;
                 self.chunk_start = self.source_index;
-                let chunk = self.source_buf[..self.buf_index].to_vec();
+                let chunk = self.read_buf[..self.buf_index].to_vec();
                 let buf_index = self.buf_index;
-                self.source_buf.drain(..buf_index);
+                self.read_buf.drain(..buf_index);
                 self.buf_index = 0;
                 return Poll::Ready(Some(Ok((chunk_start, chunk))));
             }
