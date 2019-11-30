@@ -104,8 +104,7 @@ where
         }
         while read_count < want {
             let offset = before_size + read_count;
-            let rc = match Pin::new(&mut self.source).poll_read(cx, &mut self.read_buf[offset..])
-            {
+            let rc = match Pin::new(&mut self.source).poll_read(cx, &mut self.read_buf[offset..]) {
                 Poll::Ready(Ok(0)) => break, // EOF
                 Poll::Ready(Ok(rc)) => rc,
                 Poll::Ready(err) => {
@@ -168,7 +167,7 @@ where
                     self.buf_index
                 };
 
-            if self.min_chunk_size > 0 {
+            if self.min_chunk_size > 0 && buf_index < self.min_chunk_size {
                 // Read the last part of the minimal possible chunk
                 for val in self.read_buf[buf_index..].iter() {
                     buf_index += 1;
@@ -224,10 +223,87 @@ where
 mod tests {
     use super::Chunker;
     use super::ChunkerParams;
+    use core::pin::Pin;
+    use core::task::{Context, Poll};
     use futures_util::stream::StreamExt;
+    use std::cmp;
+    use tokio::io::AsyncRead;
 
     const BUZHASH_SEED: u32 = 0x1032_4195;
 
+    // The MockSource will return bytes_per_read bytes every other read
+    // and Pending every other, to replicate a source with limited I/O.
+    struct MockSource {
+        data: Vec<u8>,
+        offset: usize,
+        bytes_per_read: usize,
+        pending: bool,
+    }
+    impl MockSource {
+        fn new(data: Vec<u8>, bytes_per_read: usize) -> Self {
+            Self {
+                data,
+                offset: 0,
+                bytes_per_read,
+                pending: false,
+            }
+        }
+    }
+    impl AsyncRead for MockSource {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            _cx: &mut Context,
+            buf: &mut [u8],
+        ) -> Poll<Result<usize, std::io::Error>> {
+            let data_available = self.data.len() - self.offset;
+            if data_available == 0 {
+                Poll::Ready(Ok(0))
+            } else if self.pending {
+                self.pending = false;
+                Poll::Pending
+            } else {
+                let read = cmp::min(data_available, cmp::min(buf.len(), self.bytes_per_read));
+                buf[0..read].clone_from_slice(&self.data[self.offset..self.offset + read]);
+                self.offset += read;
+                self.pending = true;
+                Poll::Ready(Ok(read))
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn single_byte_per_source_read() {
+        let source_data: Vec<u8> = {
+            let mut seed: usize = 0xa3;
+            (0..10000)
+                .map(|v| {
+                    seed ^= seed.wrapping_mul(4);
+                    (seed ^ v) as u8
+                })
+                .collect()
+        };
+        let chunker_params = ChunkerParams::new(10, 20, 600, 10, BUZHASH_SEED);
+        let expected_offsets = {
+            Chunker::new(chunker_params.clone(), &mut Box::new(&source_data[..]))
+                .map(|result| {
+                    let (offset, _chunk) = result.unwrap();
+                    offset
+                })
+                .collect::<Vec<u64>>()
+                .await
+        };
+        // Only give back a single byte per read from source, should still result in the same
+        // result as with unlimited I/O.
+        let mut source = MockSource::new(source_data.clone(), 1);
+        let offsets = Chunker::new(chunker_params.clone(), &mut source)
+            .map(|result| {
+                let (offset, _chunk) = result.unwrap();
+                offset
+            })
+            .collect::<Vec<u64>>()
+            .await;
+        assert_eq!(expected_offsets, offsets);
+    }
     #[tokio::test]
     async fn zero_data() {
         let expected_chunk_offsets: [u64; 0] = [0; 0];
