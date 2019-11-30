@@ -65,7 +65,7 @@ where
             size_to_str(chunk.len()),
             seed_name,
         );
-        for offset in &archive.chunk_source_offsets(&hash) {
+        for offset in archive.chunk_source_offsets(&hash) {
             bytes_read_from_seed += chunk.len() as u64;
             output_file
                 .seek(SeekFrom::Start(*offset))
@@ -133,7 +133,7 @@ async fn finish_using_archive(
                 HexSlice::new(&hash),
                 size_to_str(chunk.len()),
             );
-            for offset in &archive.chunk_source_offsets(&hash) {
+            for offset in archive.chunk_source_offsets(&hash) {
                 total_read_from_archive += chunk.len() as u64;
                 output_file
                     .seek(SeekFrom::Start(*offset))

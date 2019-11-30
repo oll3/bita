@@ -187,11 +187,11 @@ impl ArchiveReader {
     }
 
     // Get source offsets of a chunk
-    pub fn chunk_source_offsets(&self, hash: &[u8]) -> Vec<u64> {
-        if let Some(index) = self.chunk_map.get(hash) {
-            self.chunk_offsets[*index].clone()
+    pub fn chunk_source_offsets(&self, hash: &[u8]) -> &[u64] {
+        if let Some(&index) = self.chunk_map.get(hash) {
+            &self.chunk_offsets[index]
         } else {
-            vec![]
+            &[]
         }
     }
 
