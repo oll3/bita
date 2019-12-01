@@ -39,16 +39,10 @@ pub fn print_archive(archive: &ArchiveReader) {
         "  Archive size: {}",
         size_to_str(archive.compressed_size() + archive.header_size as u64)
     );
-    info!(
-        "  Header checksum: {}",
-        HexSlice::new(&archive.header_checksum)
-    );
+    info!("  Header checksum: {}", archive.header_checksum);
 
     info!("Source:");
-    info!(
-        "  Source checksum: {}",
-        HexSlice::new(&archive.source_checksum)
-    );
+    info!("  Source checksum: {}", archive.source_checksum);
     info!(
         "  Chunks in source: {} (unique: {})",
         archive.total_chunks(),

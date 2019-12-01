@@ -8,10 +8,9 @@ use crate::chunk_dictionary;
 use crate::compression::Compression;
 use crate::error::Error;
 use crate::string_utils::*;
+use crate::HashSum;
 
 pub const BUZHASH_SEED: u32 = 0x1032_4195;
-
-pub type HashBuf = Vec<u8>;
 
 // Bita archive file magic
 pub const FILE_MAGIC: &[u8; 6] = b"BITA1\0";
@@ -21,7 +20,7 @@ pub const PRE_HEADER_SIZE: usize = 6 + mem::size_of::<u64>();
 
 #[derive(Clone)]
 pub struct ChunkDescriptor {
-    pub checksum: HashBuf,
+    pub checksum: HashSum,
     pub archive_size: u32,
     pub archive_offset: u64,
     pub source_size: u32,
@@ -30,7 +29,7 @@ pub struct ChunkDescriptor {
 impl From<ChunkDescriptor> for chunk_dictionary::ChunkDescriptor {
     fn from(dict: ChunkDescriptor) -> Self {
         chunk_dictionary::ChunkDescriptor {
-            checksum: dict.checksum,
+            checksum: dict.checksum.to_vec(),
             archive_size: dict.archive_size,
             archive_offset: dict.archive_offset,
             source_size: dict.source_size,
@@ -43,7 +42,7 @@ impl From<ChunkDescriptor> for chunk_dictionary::ChunkDescriptor {
 impl From<chunk_dictionary::ChunkDescriptor> for ChunkDescriptor {
     fn from(dict: chunk_dictionary::ChunkDescriptor) -> Self {
         ChunkDescriptor {
-            checksum: dict.checksum,
+            checksum: dict.checksum.into(),
             archive_size: dict.archive_size,
             archive_offset: dict.archive_offset,
             source_size: dict.source_size,
@@ -58,7 +57,7 @@ impl fmt::Display for chunk_dictionary::ChunkDictionary {
             "version: {}, chunks: {}, source hash: {}, source size: {}, compression: {}",
             self.application_version,
             self.chunk_descriptors.len(),
-            HexSlice::new(&self.source_checksum),
+            HashSum::from_vec(self.source_checksum.clone()),
             size_to_str(self.source_total_size),
             Compression::from(self.get_chunk_compression().clone())
         )

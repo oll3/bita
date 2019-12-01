@@ -17,13 +17,14 @@ use bita::chunker::{Chunker, ChunkerParams};
 use bita::error::Error;
 use bita::reader_backend;
 use bita::string_utils::*;
+use bita::HashSum;
 
 async fn seed_input<T>(
     mut input: T,
     seed_name: &str,
     chunker_params: ChunkerParams,
     archive: &ArchiveReader,
-    chunks_left: &mut HashSet<Vec<u8>>,
+    chunks_left: &mut HashSet<HashSum>,
     output_file: &mut File,
 ) -> Result<u64, Error>
 where
@@ -43,7 +44,7 @@ where
                 let mut chunk_hasher = Blake2b::new();
                 chunk_hasher.input(&chunk);
                 (
-                    chunk_hasher.result()[0..hash_length as usize].to_vec(),
+                    HashSum::from_slice(&chunk_hasher.result()[0..hash_length as usize]),
                     chunk,
                 )
             }
@@ -61,7 +62,7 @@ where
     while let Some((hash, chunk)) = found_chunks.next().await {
         debug!(
             "Chunk '{}', size {} used from {}",
-            HexSlice::new(&hash),
+            hash,
             size_to_str(chunk.len()),
             seed_name,
         );
@@ -87,11 +88,10 @@ where
 async fn finish_using_archive(
     reader_builder: reader_backend::Builder,
     archive: &ArchiveReader,
-    chunks_left: HashSet<Vec<u8>>,
+    chunks_left: HashSet<HashSum>,
     output_file: &mut File,
 ) -> Result<u64, Error> {
     let mut total_read_from_archive: u64 = 0;
-    let hash_length = archive.hash_length;
     let grouped_chunks = archive.grouped_chunks(&chunks_left);
     for group in grouped_chunks {
         // For each group of chunks
@@ -112,7 +112,6 @@ async fn finish_using_archive(
                     tx.send((
                         chunk_checksum.clone(),
                         ArchiveReader::decompress_and_verify(
-                            hash_length,
                             compression,
                             &chunk_checksum,
                             chunk_source_size,
@@ -130,7 +129,7 @@ async fn finish_using_archive(
             // For each chunk read from archive
             debug!(
                 "Chunk '{}', size {} used from archive",
-                HexSlice::new(&hash),
+                hash,
                 size_to_str(chunk.len()),
             );
             for offset in archive.chunk_source_offsets(&hash) {
@@ -149,7 +148,7 @@ async fn finish_using_archive(
 
 async fn verify_output(
     config: &config::CloneConfig,
-    expected_checksum: &[u8],
+    expected_checksum: &HashSum,
     output_file: &mut File,
 ) -> Result<(), Error> {
     info!("Verifying checksum of {}...", config.output.display());
@@ -167,16 +166,16 @@ async fn verify_output(
         }
         output_hasher.input(&buffer[0..rc]);
     }
-    let sum = output_hasher.result().to_vec();
-    if sum == expected_checksum {
+    let sum = HashSum::from_slice(&output_hasher.result()[..]);
+    if sum == *expected_checksum {
         info!("Checksum verified Ok");
     } else {
         panic!(format!(
             "Checksum mismatch. {}: {}, {}: {}.",
             config.output.display(),
-            HexSlice::new(&sum),
+            sum,
             config.input,
-            HexSlice::new(&expected_checksum)
+            expected_checksum
         ));
     }
     Ok(())

@@ -20,6 +20,7 @@ use crate::config::*;
 use crate::string_utils::hex_str_to_vec;
 use bita::compression::Compression;
 use bita::error::Error;
+use bita::HashSum;
 
 pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -363,7 +364,7 @@ fn parse_opts() -> Result<Config, Error> {
 
         let verify_header = matches
             .value_of("verify-header")
-            .map(|c| hex_str_to_vec(c).expect("failed to parse checksum"));
+            .map(|c| HashSum::from_vec(hex_str_to_vec(c).expect("failed to parse checksum")));
 
         let http_retry_count = matches
             .value_of("http-retry-count")

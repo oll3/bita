@@ -1,5 +1,5 @@
-use bita::archive::HashBuf;
 use bita::compression::Compression;
+use bita::HashSum;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
@@ -31,7 +31,7 @@ pub struct CloneConfig {
     pub output: PathBuf,
     pub seed_stdin: bool,
     pub seed_files: Vec<PathBuf>,
-    pub header_checksum: Option<HashBuf>,
+    pub header_checksum: Option<HashSum>,
     pub http_retry_count: u32,
     pub http_retry_delay: Option<std::time::Duration>,
     pub http_timeout: Option<std::time::Duration>,

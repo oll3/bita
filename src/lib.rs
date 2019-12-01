@@ -5,7 +5,10 @@ pub mod chunk_dictionary;
 pub mod chunker;
 pub mod compression;
 pub mod error;
+mod hashsum;
 pub mod http_range_request;
 pub mod reader_backend;
 
 pub mod string_utils;
+
+pub use crate::hashsum::HashSum;

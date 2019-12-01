@@ -18,13 +18,14 @@ use bita::chunk_dictionary;
 use bita::chunker::{Chunker, ChunkerParams};
 use bita::compression::Compression;
 use bita::error::Error;
+use bita::HashSum;
 
 #[derive(Debug, Clone)]
 pub struct ChunkSourceDescriptor {
     pub unique_chunk_index: usize,
     pub offset: u64,
     pub size: usize,
-    pub hash: archive::HashBuf,
+    pub hash: HashSum,
 }
 
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -76,7 +77,7 @@ where
                     let mut chunk_hasher = Blake2b::new();
                     chunk_hasher.input(&chunk);
                     tx.send((
-                        chunk_hasher.result()[0..hash_length as usize].to_vec(),
+                        HashSum::from_slice(&chunk_hasher.result()[0..hash_length as usize]),
                         offset,
                         chunk,
                     ))
@@ -101,7 +102,7 @@ where
                         unique_chunk_index: chunk_index,
                         offset,
                         size: chunk.len(),
-                        hash: hash.to_vec(),
+                        hash: hash.clone(),
                     });
                 }
                 if unique {
@@ -130,7 +131,7 @@ where
             debug!(
                 "Chunk {}, '{}', offset: {}, size: {}, {}",
                 index,
-                HexSlice::new(&hash),
+                hash,
                 offset,
                 size_to_str(chunk_len),
                 if use_uncompressed_chunk {
@@ -147,7 +148,7 @@ where
 
             // Store a chunk descriptor which refres to the compressed data
             archive_chunks.push(chunk_dictionary::ChunkDescriptor {
-                checksum: hash.clone(),
+                checksum: hash.to_vec(),
                 source_size: chunk_len as u32,
                 archive_offset,
                 archive_size: use_data.len() as u32,

@@ -10,10 +10,11 @@ use crate::compression::Compression;
 use crate::error::Error;
 use crate::reader_backend;
 use crate::string_utils::*;
+use crate::HashSum;
 
 pub struct ArchiveReader {
     // Go from chunk hash to archive chunk index (chunks vector)
-    chunk_map: HashMap<archive::HashBuf, usize>,
+    chunk_map: HashMap<HashSum, usize>,
 
     // Array of chunk descriptors
     pub chunk_descriptors: Vec<archive::ChunkDescriptor>,
@@ -28,7 +29,7 @@ pub struct ArchiveReader {
     pub header_size: usize,
 
     // Checksum (blake2) of header.
-    pub header_checksum: Vec<u8>,
+    pub header_checksum: HashSum,
 
     // Compression used for all chunks
     pub chunk_compression: Compression,
@@ -38,7 +39,7 @@ pub struct ArchiveReader {
 
     // Size of the original source file
     pub source_total_size: u64,
-    pub source_checksum: archive::HashBuf,
+    pub source_checksum: HashSum,
 
     // Chunker parameters used when this archive was created
     pub chunker_params: ChunkerParams,
@@ -55,7 +56,7 @@ impl fmt::Display for ArchiveReader {
             self.unique_chunks(),
             self.chunk_compression,
             size_to_str(self.source_total_size),
-            HexSlice::new(&self.source_checksum),
+            self.source_checksum,
         )
     }
 }
@@ -102,8 +103,8 @@ impl ArchiveReader {
         let mut hasher = Blake2b::new();
         let offs = archive::PRE_HEADER_SIZE + dictionary_size + 8;
         hasher.input(&header[..offs]);
-        let header_checksum = header[offs..(offs + 64)].to_vec();
-        if header_checksum != hasher.result().to_vec() {
+        let header_checksum = HashSum::from_slice(&header[offs..(offs + 64)]);
+        if header_checksum != &hasher.result()[..] {
             return Err(Error::NotAnArchive("corrupt archive header".to_owned()));
         }
 
@@ -119,9 +120,9 @@ impl ArchiveReader {
 
         // Create map to go from chunk hash to descriptor index
         let mut chunk_descriptors: Vec<archive::ChunkDescriptor> = Vec::new();
-        let mut chunk_map: HashMap<archive::HashBuf, usize> = HashMap::new();
+        let mut chunk_map: HashMap<HashSum, usize> = HashMap::new();
         for (index, desc) in dictionary.chunk_descriptors.into_iter().enumerate() {
-            chunk_map.insert(desc.checksum.clone(), index);
+            chunk_map.insert(HashSum::from_slice(&desc.checksum[..]), index);
             chunk_descriptors.push(desc.into());
         }
 
@@ -146,7 +147,7 @@ impl ArchiveReader {
             header_checksum,
             header_size: header.len(),
             source_total_size: dictionary.source_total_size,
-            source_checksum: dictionary.source_checksum,
+            source_checksum: dictionary.source_checksum.into(),
             created_by_app_version: dictionary.application_version,
             chunk_compression: dictionary.chunk_compression.unwrap().into(),
             rebuild_order: dictionary
@@ -182,12 +183,12 @@ impl ArchiveReader {
     }
 
     // Get a set of all chunks present in archive
-    pub fn chunk_hash_set(&self) -> HashSet<archive::HashBuf> {
+    pub fn chunk_hash_set(&self) -> HashSet<HashSum> {
         self.chunk_map.iter().map(|x| x.0.clone()).collect()
     }
 
     // Get source offsets of a chunk
-    pub fn chunk_source_offsets(&self, hash: &[u8]) -> &[u64] {
+    pub fn chunk_source_offsets(&self, hash: &HashSum) -> &[u64] {
         if let Some(&index) = self.chunk_map.get(hash) {
             &self.chunk_offsets[index]
         } else {
@@ -196,10 +197,7 @@ impl ArchiveReader {
     }
 
     // Group chunks which are placed in sequence inside archive
-    pub fn grouped_chunks(
-        &self,
-        chunks: &HashSet<archive::HashBuf>,
-    ) -> Vec<Vec<&archive::ChunkDescriptor>> {
+    pub fn grouped_chunks(&self, chunks: &HashSet<HashSum>) -> Vec<Vec<&archive::ChunkDescriptor>> {
         let mut descriptors: Vec<&archive::ChunkDescriptor> = self
             .chunk_descriptors
             .iter()
@@ -230,9 +228,8 @@ impl ArchiveReader {
     }
 
     pub fn decompress_and_verify(
-        hash_length: usize,
         compression: Compression,
-        archive_checksum: &[u8],
+        archive_checksum: &HashSum,
         source_size: usize,
         archive_data: Vec<u8>,
     ) -> Result<Vec<u8>, Error> {
@@ -248,12 +245,11 @@ impl ArchiveReader {
 
         // Verify data by hash
         hasher.input(&chunk_data);
-        let checksum = hasher.result().to_vec();
-        if checksum[..hash_length] != archive_checksum[..hash_length] {
+        let checksum = HashSum::from_slice(&hasher.result()[..archive_checksum.len()]);
+        if checksum != *archive_checksum {
             panic!(
                 "Chunk hash mismatch (expected: {}, got: {})",
-                HexSlice::new(&checksum[0..hash_length]),
-                HexSlice::new(&archive_checksum[0..hash_length])
+                checksum, archive_checksum,
             );
         }
 
