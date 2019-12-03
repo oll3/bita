@@ -74,7 +74,6 @@ where
         } else {
             0
         };
-
         Chunker {
             filter_mask: params.filter_mask(),
             min_chunk_size: params.min_chunk_size,
@@ -153,57 +152,48 @@ where
                     self.source_index += 1;
                 }
             }
-
-            // Skip past the minimum chunk size to minimize the number of hash inputs
-            let mut buf_index =
-                if self.buzhash_input_limit > 0 && self.buf_index < self.buzhash_input_limit {
-                    let skip_to = self.buzhash_input_limit - 1;
-                    if skip_to >= self.read_buf.len() {
-                        self.read_buf.len()
-                    } else {
-                        skip_to
-                    }
-                } else {
-                    self.buf_index
-                };
-
-            if self.min_chunk_size > 0 && buf_index < self.min_chunk_size {
-                // Read the last part of the minimal possible chunk
-                for val in self.read_buf[buf_index..].iter() {
-                    buf_index += 1;
+            let start_buf_index = self.buf_index;
+            if self.buzhash_input_limit > 0 && self.buf_index < self.buzhash_input_limit {
+                // Skip past the minimum chunk size to minimize the number of hash inputs
+                self.buf_index = std::cmp::min(self.buzhash_input_limit - 1, self.read_buf.len());
+            }
+            if self.min_chunk_size > 0 && self.buf_index < self.min_chunk_size {
+                // Hash the last part (buzhash window size bytes) of the minimal possible chunk.
+                // There is no need to check the hash sum here since we're still below the minimal
+                // chunk size. Still we need the bytes in the hash window to get correct sum when
+                // reaching above the minimal chunk size.
+                for val in self.read_buf[self.buf_index..]
+                    .iter()
+                    .take(self.min_chunk_size - self.buf_index - 1)
+                {
+                    self.buf_index += 1;
                     self.buzhash.input(*val);
-                    if buf_index >= (self.min_chunk_size - 1) {
-                        break;
-                    }
                 }
             }
-
-            // Scan for chunk boundary
+            // Scan until end of buffer, chunk boundary (hash sum match) or max chunk size reached
             let mut got_chunk = false;
-            for val in self.read_buf[buf_index..].iter() {
-                buf_index += 1;
-                self.buzhash.input(*val);
-
-                got_chunk = buf_index >= self.max_chunk_size;
-                if !got_chunk {
-                    let hash = self.buzhash.sum();
-                    got_chunk = hash | self.filter_mask == hash;
-                }
-                if got_chunk {
+            for &val in self.read_buf[self.buf_index..]
+                .iter()
+                .take(self.max_chunk_size - self.buf_index)
+            {
+                self.buf_index += 1;
+                self.buzhash.input(val);
+                let sum = self.buzhash.sum();
+                if sum | self.filter_mask == sum {
+                    got_chunk = true;
                     break;
                 }
             }
-            self.source_index += (buf_index - self.buf_index) as u64;
-            self.buf_index = buf_index;
-
+            if self.buf_index >= self.max_chunk_size {
+                got_chunk = true;
+            }
+            self.source_index += (self.buf_index - start_buf_index) as u64;
             if got_chunk {
-                let chunk_start = self.chunk_start;
-                self.chunk_start = self.source_index;
-                let chunk = self.read_buf[..self.buf_index].to_vec();
-                let buf_index = self.buf_index;
-                self.read_buf.drain(..buf_index);
+                let offset_and_chunk = (self.chunk_start, self.read_buf[..self.buf_index].to_vec());
+                self.read_buf.drain(..self.buf_index);
                 self.buf_index = 0;
-                return Poll::Ready(Some(Ok((chunk_start, chunk))));
+                self.chunk_start = self.source_index;
+                return Poll::Ready(Some(Ok(offset_and_chunk)));
             }
         }
     }
