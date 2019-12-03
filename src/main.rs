@@ -252,7 +252,7 @@ fn parse_opts() -> Result<Config, Error> {
                 ).arg(
                     Arg::with_name("verify-output")
                         .long("verify-output")
-                        .help("Vefify that the checksum of the output matches with the archive."),
+                        .help("Verify that the checksum of the output matches with the archive."),
                 ),
         )
         .subcommand(
