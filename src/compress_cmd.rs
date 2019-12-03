@@ -12,12 +12,12 @@ use tokio::sync::oneshot;
 
 use crate::config::CompressConfig;
 use crate::info_cmd;
-use crate::string_utils::*;
 use bita::archive;
 use bita::chunk_dictionary;
 use bita::chunker::{Chunker, ChunkerParams};
 use bita::compression::Compression;
 use bita::error::Error;
+use bita::string_utils::*;
 use bita::HashSum;
 
 #[derive(Debug, Clone)]

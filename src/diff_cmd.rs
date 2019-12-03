@@ -8,10 +8,10 @@ use tokio::fs::File;
 use tokio::sync::oneshot;
 
 use crate::config::DiffConfig;
-use crate::string_utils::*;
 use bita::chunker::{Chunker, ChunkerParams};
 use bita::compression::Compression;
 use bita::error::Error;
+use bita::string_utils::*;
 
 #[derive(Clone, Debug)]
 struct ChunkDescriptor {

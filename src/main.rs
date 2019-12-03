@@ -8,7 +8,6 @@ mod compress_cmd;
 mod config;
 mod diff_cmd;
 mod info_cmd;
-mod string_utils;
 
 use clap::{App, Arg, SubCommand};
 use log::*;
@@ -17,9 +16,9 @@ use std::process;
 use tokio;
 
 use crate::config::*;
-use crate::string_utils::hex_str_to_vec;
 use bita::compression::Compression;
 use bita::error::Error;
+use bita::string_utils::hex_str_to_vec;
 use bita::HashSum;
 
 pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");
