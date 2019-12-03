@@ -145,4 +145,48 @@ mod tests {
 
         assert_eq!(sums1[11..], sums2[11..]);
     }
+    #[test]
+    fn first_valid_correct_sum() {
+        let window_size = 5;
+        let sums: Vec<u32> = {
+            let mut h = BuzHash::new(window_size, 0x10324195);
+            [1, 2, 3, 4, 5]
+                .iter()
+                .filter_map(|&v| {
+                    if !h.valid() {
+                        h.init(v);
+                    } else {
+                        h.input(v);
+                    }
+                    if h.valid() {
+                        return Some(h.sum());
+                    }
+                    None
+                })
+                .collect()
+        };
+        assert_eq!(sums[0], 1406929643);
+    }
+    #[test]
+    fn last_valid_correct_sum() {
+        let window_size = 5;
+        let sums: Vec<u32> = {
+            let mut h = BuzHash::new(window_size, 0x10324195);
+            [10, 20, 30, 40, 50, 60, 70, 80, 90, 1, 2, 3, 4, 5]
+                .iter()
+                .filter_map(|&v| {
+                    if !h.valid() {
+                        h.init(v);
+                    } else {
+                        h.input(v);
+                    }
+                    if h.valid() {
+                        return Some(h.sum());
+                    }
+                    None
+                })
+                .collect()
+        };
+        assert_eq!(sums[9], 1406929643);
+    }
 }
