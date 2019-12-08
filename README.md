@@ -1,82 +1,65 @@
-## bita
 [![Build Status](https://travis-ci.org/oll3/bita.svg?branch=master)](https://travis-ci.org/oll3/bita)
 [![](http://meritbadge.herokuapp.com/bita)](https://crates.io/crates/bita)
 
-Tool for fast and low bandwidth file synchronization over http.
+## bita
 
+bita strives to make file download less bandwidth heavy by reusing local data when available.
+
+A typical case where bita may provide a significant reduction in bandwidth is OTA software upgrade of IoT/embedded devices. Where we expect that a new release image may contain a lot of data already present on the device being upgraded.
+
+bita provides a simple way to only download the data which actual differ between the new release and the release running on the device, still ensuring that the result is an exact clone of the new release image. In an embedded Linux system with dual (A/B) partition setup we would use the running partition as seed (a file which might contain data to reuse) while writing the new release to the other inactive partition.
+
+No need prepare delta upgrade files for going to/from different releases. No need to run you own release file server.
+Just `bita compress` the release image, upload the archive to any regular http hosting site. And `bita clone` the archive using whatever local data is available.
+
+
+## How it works
+
+![concept](images/concept.png?raw=true)
 ---
 
-The file to synchronize can be any file where data is expected to change partially or completely between updates.
-Any local file that might contain data of the source file may be used as seed while cloning.
+On compression the input file is scanned for chunk boundaries using a rolling hash. With the default setting a suitable boundary should be found every ~64 KiB. A chunk is defined as the data contained between two boundaries. For each chunk a strong hash, using blake2, is generated.
+The chunk location (offset and size) in the input file and the strong hash is then stored in the dictionary. If a chunk is unique it's also compressed and inserted into the output archive.
 
-On a system with an A/B partition setup bita can be used to update the B partition while using the A partition as seed. The result written to the B partition will be an exact clone of the remote file but the only data fetched from remote is the data which actually differ between the A partition and the remote file.
-
----
-
-On compression the input is scanned for chunk boundaries using a rolling hash. With the default setting a suitable boundary should be found every ~64 KiB.
-Each found chunk is assigned a strong hash using blake2. If the chunk is unique it will be compressed and inserted into the final archive.
-A dictionary which describes all chunks by their strong hash and the order for how to rebuild the input file is also attached to the archive.
-
-On clone the dictionary is first fetched from the remote archive. Then bita scans all the given seed files for chunks which are present in the dictionary.
-Any matching chunk found in a seed will be inserted into the output file.
-When all seeds has been consumed the chunks still missing is fetched from the remote archive, then unpacked and inserted into the output file.
-
-Each chunk of data is verified by the strong hash before written to the output.
+The final archive will contain a dictionary describing the order of chunks in the input file and the compressed chunks necessary to rebuild the input file. The archive will also contain the configuration used when scanning input for chunks.
 
 ---
+On clone the dictionary and scan configuration is first fetched from the remote archive. Then the given seed file(s) are scanned for chunks present in the dictionary. Scanning is done using the same configuration as when building the archive.
+Any chunk found in a seed file will be copied into the output file at the location(s) specified by the dictionary.
+When all seeds has been consumed the chunks still missing, if any, is fetched from the remote archive, decompressed and inserted into the output file.
 
-### Installing from crates.io
+Each chunk, both fetched from seed and from archive, is verified by its strong hash before written to the output.
+
+---
+The server serving bita archives can be any http(s) server supporting [range requests](https://developer.mozilla.org/en-US/docs/Web/HTTP/Range_requests "range requests"), which should be most.
+
+
+## Install from crates.io
 ```console
 olle@home:~$ cargo install bita
 ```
 
-### Building from source
-```console
-olle@home:~$ cargo build
-```
-#### Building in release mode
-```console
-olle@home:~$ cargo build --release
-```
+## Example usage
 
-### Running tests
-```console
-olle@home:~$ cargo test
-```
-
-
-### Example usage
-
-#### Compress
-
-Create a compressed archive file.cba from stdin stream:
+Create a compressed archive `file.ext4.cba` from file `file.ext4`:
 
 ```console
-olle@host:~$ gunzip -c file.gz | bita compress --compression-level 9 file.cba
+olle@home:~$ bita compress -i file.ext4 file.ext4.cba
 ```
 
-Create an compressed archive file.ext4.cba from file file.ext4:
+Clone file at `https://host/new.tar.cba` using stdin (-) and `another_old.tar` as seed:
 
 ```console
-olle@host:~$ bita compress file.ext4 file.ext4.cba
+olle@home:~$ gunzip -c old.tar.gz | bita clone --seed another_old.tar --seed - https://host/new.tar.cba new.tar
 ```
 
-#### Clone
-
-Clone file at https://host/new.tar.cba using seed another_old.tar and stdin (-):
+Clone using block device `/dev/mmcblk0p1` as seed and `/dev/mmcblk0p2` as target:
 
 ```console
-olle@device:~$ gunzip -c old.tar.gz | bita clone --seed another_old.tar --seed - https://host/new.tar.cba new.tar
+upgrader@device:~$ bita clone --seed /dev/mmcblk0p1 https://host/file.ext4.cba /dev/mmcblk0p2
 ```
 
-Clone using block device /dev/mmcblk0p1 as seed and /dev/mmcblk0p2 as target:
-
-```console
-olle@device:~$ bita clone --seed /dev/mmcblk0p1 https://host/file.ext4.cba /dev/mmcblk0p2
-```
-
-
-### Similar Tools
+## Similar Tools
 * [casync](https://github.com/systemd/casync)
 * [zchunk](https://github.com/zchunk/zchunk)
 * [zsync](http://zsync.moria.org.uk)
