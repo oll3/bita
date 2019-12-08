@@ -7,8 +7,8 @@ edition = '2018'
 description = "Differential file synchronization over http(s)."
 repository = "https://github.com/oll3/bita"
 readme = "README.md"
-keywords = ["update", "swupdate", "synchronization", "delta-update"]
-categories = ["command-line-utilities", "compression", "differential"]
+keywords = ["sofware-update", "file-synchronization", "delta-update",  "differential", "ota", "iot"]
+categories = ["command-line-utilities", "compression"]
 
 [build-dependencies]
 protoc-rust = "2.8.1"
