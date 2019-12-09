@@ -181,42 +181,42 @@ async fn verify_output(
     Ok(())
 }
 
-fn prepare_unpack_output(mut output_file: File, source_file_size: u64) -> Result<File, Error> {
-    #[cfg(unix)]
-    {
-        use std::os::linux::fs::MetadataExt;
-        let meta = output_file
-            .metadata()
-            .map_err(|e| ("unable to get file meta data", e))?;
-        if meta.st_mode() & 0x6000 == 0x6000 {
-            // Output is a block device
-            let size = output_file
-                .seek(SeekFrom::End(0))
-                .map_err(|e| ("unable to seek output file", e))?;
-            if size != source_file_size {
-                panic!(
-                    "Size of output device ({}) differ from size of archive target file ({})",
-                    size_to_str(size),
-                    size_to_str(source_file_size)
-                );
-            }
-            output_file
-                .seek(SeekFrom::Start(0))
-                .map_err(|e| ("unable to seek output file", e))?;
-        } else {
-            // Output is a reqular file
-            output_file
-                .set_len(source_file_size)
-                .map_err(|e| ("unable to resize output file", e))?;
+#[cfg(unix)]
+fn prepare_unpack_output(output_file: &mut File, source_file_size: u64) -> Result<(), Error> {
+    use std::os::linux::fs::MetadataExt;
+    let meta = output_file
+        .metadata()
+        .map_err(|e| ("unable to get file meta data", e))?;
+    if meta.st_mode() & 0x6000 == 0x6000 {
+        // Output is a block device
+        let size = output_file
+            .seek(SeekFrom::End(0))
+            .map_err(|e| ("unable to seek output file", e))?;
+        if size != source_file_size {
+            panic!(
+                "Size of output device ({}) differ from size of archive target file ({})",
+                size_to_str(size),
+                size_to_str(source_file_size)
+            );
         }
-    }
-    #[cfg(not(unix))]
-    {
+        output_file
+            .seek(SeekFrom::Start(0))
+            .map_err(|e| ("unable to seek output file", e))?;
+    } else {
+        // Output is a reqular file
         output_file
             .set_len(source_file_size)
             .map_err(|e| ("unable to resize output file", e))?;
     }
-    Ok(output_file)
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn prepare_unpack_output(output_file: &mut File, source_file_size: u64) -> Result<(), Error> {
+    output_file
+        .set_len(source_file_size)
+        .map_err(|e| ("unable to resize output file", e))?;
+    Ok(())
 }
 
 async fn clone_archive(
@@ -268,7 +268,7 @@ async fn clone_archive(
     // Check if the given output file is a regular file or block device.
     // If it is a block device we should check its size against the target size before
     // writing. If a regular file then resize that file to target size.
-    output_file = prepare_unpack_output(output_file, archive.source_total_size)?;
+    prepare_unpack_output(&mut output_file, archive.source_total_size)?;
 
     // Read chunks from seed files
     if config.seed_stdin && !atty::is(atty::Stream::Stdin) {
