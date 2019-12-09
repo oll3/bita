@@ -82,7 +82,7 @@ impl Request {
 }
 
 impl Stream for Request {
-    type Item = Result<hyper::body::Chunk, Error>;
+    type Item = Result<hyper::body::Bytes, Error>;
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         let pinned = Pin::get_mut(self);
         if let Some(delay) = &mut pinned.request_timeout_timer {

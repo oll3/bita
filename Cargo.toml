@@ -20,13 +20,13 @@ atty = "0.2.13"
 protobuf = "2.8.1"
 log = "0.4.8"
 fern = "0.5.9"
-chrono = "0.4.9"
+chrono = "0.4.10"
 brotli = "3.3.0"
 futures-core = {version = "0.3.1" }
 futures-util = {version = "0.3.1" }
-tokio = { git = "ssh://git@github.com/tokio-rs/tokio.git", features = ["fs", "io-std", "sync", "io-util", "macros", "time", "rt-threaded"] }
-hyper = { git = "ssh://git@github.com/hyperium/hyper.git", features = ["unstable-stream"] }
-hyper-rustls = { git = "ssh://git@github.com/ctz/hyper-rustls.git" }
+tokio = { version = "0.2.4", features = ["fs", "io-std", "sync", "io-util", "macros", "time", "rt-threaded"] }
+hyper = { git = "ssh://git@github.com/hyperium/hyper.git", features = ["stream"] }
+#hyper-rustls = { git = "ssh://git@github.com/ctz/hyper-rustls.git" }
 
 rust-lzma = {version = "0.4.0", optional = true}
 zstd = {version = "0.4.28", optional = true }

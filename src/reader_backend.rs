@@ -144,7 +144,7 @@ impl Future for Single {
                 ReaderBackend::Remote { request, buffer } => {
                     match Pin::new(request).poll_next(cx) {
                         Poll::Ready(Some(Ok(chunk))) => {
-                            buffer.extend(&chunk.into_bytes()[..]);
+                            buffer.extend(&chunk[..]);
                             if buffer.len() >= size {
                                 buffer.truncate(size);
                                 return Poll::Ready(Ok(buffer.clone()));
@@ -216,7 +216,7 @@ impl Stream for Chunks {
                     }
                     match Pin::new(request).poll_next(cx) {
                         Poll::Ready(Some(Ok(chunk))) => {
-                            buffer.extend(&chunk.into_bytes()[..]);
+                            buffer.extend(&chunk[..]);
                         }
                         Poll::Ready(Some(Err(err))) => return Poll::Ready(Some(Err(err))),
                         Poll::Ready(None) => {
