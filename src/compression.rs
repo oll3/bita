@@ -24,7 +24,7 @@ impl std::fmt::Display for Compression {
             #[cfg(feature = "zstd-compression")]
             Compression::ZSTD(ref level) => write!(f, "ZSTD({})", level),
             Compression::Brotli(ref level) => write!(f, "Brotli({})", level),
-            Compression::None => write!(f, "None)"),
+            Compression::None => write!(f, "None"),
         }
     }
 }
