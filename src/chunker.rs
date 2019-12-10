@@ -6,6 +6,8 @@ use futures_core::stream::Stream;
 use tokio::io::AsyncRead;
 
 use crate::buzhash::BuzHash;
+use crate::rolling_hash::RollingHash;
+use crate::rollsum::RollSum;
 
 const CHUNKER_BUF_SIZE: usize = 1024 * 1024;
 
@@ -15,12 +17,32 @@ pub struct Chunk {
     pub data: Vec<u8>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum RollingHashType {
+    BuzHash,
+    RollSum,
+}
+
+impl std::fmt::Display for RollingHashType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                RollingHashType::BuzHash => "BuzHash",
+                RollingHashType::RollSum => "RollSum",
+            }
+        )
+    }
+}
+
 #[derive(Clone)]
 pub struct ChunkerParams {
     pub filter_bits: u32,
     pub min_chunk_size: usize,
     pub max_chunk_size: usize,
-    pub buzhash_window_size: usize,
+    pub rolling_hash: RollingHashType,
+    pub rolling_window_size: usize,
     pub buzhash_seed: u32,
 }
 
@@ -29,15 +51,17 @@ impl ChunkerParams {
         chunk_filter_bits: u32,
         min_chunk_size: usize,
         max_chunk_size: usize,
-        buzhash_window_size: usize,
+        rolling_hash: RollingHashType,
+        rolling_window_size: usize,
         buzhash_seed: u32,
     ) -> Self {
         ChunkerParams {
             filter_bits: chunk_filter_bits,
             min_chunk_size,
             max_chunk_size,
-            buzhash_window_size,
+            rolling_window_size,
             buzhash_seed,
+            rolling_hash,
         }
     }
 
@@ -50,8 +74,45 @@ impl ChunkerParams {
     }
 }
 
-pub struct Chunker<'a, T> {
-    buzhash: BuzHash,
+pub enum Chunker<'a, T>
+where
+    T: AsyncRead + Unpin,
+{
+    BuzHash(InternalChunker<'a, T, BuzHash>),
+    RollSum(InternalChunker<'a, T, RollSum>),
+}
+
+impl<'a, T> Chunker<'a, T>
+where
+    T: AsyncRead + Unpin,
+{
+    pub fn new(params: ChunkerParams, source: &'a mut T) -> Self {
+        match params.rolling_hash {
+            RollingHashType::BuzHash => {
+                Chunker::BuzHash(InternalChunker::<T, BuzHash>::new(params, source))
+            }
+            RollingHashType::RollSum => {
+                Chunker::RollSum(InternalChunker::<T, RollSum>::new(params, source))
+            }
+        }
+    }
+}
+
+impl<'a, T> Stream for Chunker<'a, T>
+where
+    T: AsyncRead + Unpin,
+{
+    type Item = Result<(u64, Vec<u8>), io::Error>;
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        match *self {
+            Chunker::BuzHash(ref mut c) => c.poll_chunk(cx),
+            Chunker::RollSum(ref mut c) => c.poll_chunk(cx),
+        }
+    }
+}
+
+pub struct InternalChunker<'a, T, H> {
+    hasher: H,
     filter_mask: u32,
     min_chunk_size: usize,
     max_chunk_size: usize,
@@ -63,22 +124,23 @@ pub struct Chunker<'a, T> {
     chunk_start: u64,
 }
 
-impl<'a, T> Chunker<'a, T>
+impl<'a, T, H> InternalChunker<'a, T, H>
 where
     T: AsyncRead + Unpin,
+    H: RollingHash,
 {
-    pub fn new(params: ChunkerParams, source: &'a mut T) -> Self {
+    fn new(params: ChunkerParams, source: &'a mut T) -> Self {
         // Allow for chunk size less than buzhash window
-        let buzhash_input_limit = if params.min_chunk_size >= params.buzhash_window_size {
-            params.min_chunk_size - params.buzhash_window_size
+        let buzhash_input_limit = if params.min_chunk_size >= params.rolling_window_size {
+            params.min_chunk_size - params.rolling_window_size
         } else {
             0
         };
-        Chunker {
+        Self {
             filter_mask: params.filter_mask(),
             min_chunk_size: params.min_chunk_size,
             max_chunk_size: params.max_chunk_size,
-            buzhash: BuzHash::new(params.buzhash_window_size, params.buzhash_seed),
+            hasher: RollingHash::new(params.rolling_window_size, params.buzhash_seed),
             read_buf: Vec::with_capacity(params.max_chunk_size + CHUNKER_BUF_SIZE),
             source,
             buzhash_input_limit,
@@ -145,9 +207,11 @@ where
                         return Poll::Ready(None);
                     }
                 }
-                while !self.buzhash.valid() && self.buf_index < self.read_buf.len() {
+                while self.source_index < self.hasher.window_size() as u64
+                    && self.buf_index < self.read_buf.len()
+                {
                     // Initialize the buzhash
-                    self.buzhash.init(self.read_buf[self.buf_index]);
+                    self.hasher.init(self.read_buf[self.buf_index]);
                     self.buf_index += 1;
                     self.source_index += 1;
                 }
@@ -158,7 +222,7 @@ where
                 self.buf_index = std::cmp::min(self.buzhash_input_limit - 1, self.read_buf.len());
             }
             if self.min_chunk_size > 0 && self.buf_index < self.min_chunk_size {
-                // Hash the last part (buzhash window size bytes) of the minimal possible chunk.
+                // Hash the last part (rolling hash window size bytes) of the minimal possible chunk.
                 // There is no need to check the hash sum here since we're still below the minimal
                 // chunk size. Still we need the bytes in the hash window to get correct sum when
                 // reaching above the minimal chunk size.
@@ -167,7 +231,7 @@ where
                     .take(self.min_chunk_size - self.buf_index - 1)
                 {
                     self.buf_index += 1;
-                    self.buzhash.input(*val);
+                    self.hasher.input(*val);
                 }
             }
             // Scan until end of buffer, chunk boundary (hash sum match) or max chunk size reached
@@ -177,8 +241,8 @@ where
                 .take(self.max_chunk_size - self.buf_index)
             {
                 self.buf_index += 1;
-                self.buzhash.input(val);
-                let sum = self.buzhash.sum();
+                self.hasher.input(val);
+                let sum = self.hasher.sum();
                 if sum | self.filter_mask == sum {
                     got_chunk = true;
                     break;
@@ -199,9 +263,10 @@ where
     }
 }
 
-impl<'a, T> Stream for Chunker<'a, T>
+impl<'a, T, H> Stream for InternalChunker<'a, T, H>
 where
     T: AsyncRead + Unpin,
+    H: RollingHash + Unpin,
 {
     type Item = Result<(u64, Vec<u8>), io::Error>;
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
@@ -211,8 +276,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::Chunker;
-    use super::ChunkerParams;
+    use super::*;
     use core::pin::Pin;
     use core::task::{Context, Poll};
     use futures_util::stream::StreamExt;
@@ -220,6 +284,8 @@ mod tests {
     use tokio::io::AsyncRead;
 
     const BUZHASH_SEED: u32 = 0x1032_4195;
+    const ROLLING_HASHES: [RollingHashType; 2] =
+        [RollingHashType::BuzHash, RollingHashType::RollSum];
 
     // The MockSource will return bytes_per_read bytes every other read
     // and Pending every other, to replicate a source with limited I/O.
@@ -263,96 +329,104 @@ mod tests {
 
     #[tokio::test]
     async fn single_byte_per_source_read() {
-        let source_data: Vec<u8> = {
-            let mut seed: usize = 0xa3;
-            (0..10000)
-                .map(|v| {
-                    seed ^= seed.wrapping_mul(4);
-                    (seed ^ v) as u8
-                })
-                .collect()
-        };
-        let chunker_params = ChunkerParams::new(10, 20, 600, 10, BUZHASH_SEED);
-        let expected_offsets = {
-            Chunker::new(chunker_params.clone(), &mut Box::new(&source_data[..]))
+        for rolling_hash in &ROLLING_HASHES {
+            let source_data: Vec<u8> = {
+                let mut seed: usize = 0xa3;
+                (0..10000)
+                    .map(|v| {
+                        seed ^= seed.wrapping_mul(4);
+                        (seed ^ v) as u8
+                    })
+                    .collect()
+            };
+            let chunker_params = ChunkerParams::new(10, 20, 600, *rolling_hash, 10, BUZHASH_SEED);
+            let expected_offsets = {
+                Chunker::new(chunker_params.clone(), &mut Box::new(&source_data[..]))
+                    .map(|result| {
+                        let (offset, _chunk) = result.unwrap();
+                        offset
+                    })
+                    .collect::<Vec<u64>>()
+                    .await
+            };
+            // Only give back a single byte per read from source, should still result in the same
+            // result as with unlimited I/O.
+            let mut source = MockSource::new(source_data.clone(), 1);
+            let offsets = Chunker::new(chunker_params.clone(), &mut source)
                 .map(|result| {
                     let (offset, _chunk) = result.unwrap();
                     offset
                 })
                 .collect::<Vec<u64>>()
-                .await
-        };
-        // Only give back a single byte per read from source, should still result in the same
-        // result as with unlimited I/O.
-        let mut source = MockSource::new(source_data.clone(), 1);
-        let offsets = Chunker::new(chunker_params.clone(), &mut source)
-            .map(|result| {
-                let (offset, _chunk) = result.unwrap();
-                offset
-            })
-            .collect::<Vec<u64>>()
-            .await;
-        assert_eq!(expected_offsets, offsets);
+                .await;
+            assert_eq!(expected_offsets, offsets);
+        }
     }
     #[tokio::test]
     async fn zero_data() {
-        let expected_chunk_offsets: [u64; 0] = [0; 0];
-        static SRC: [u8; 0] = [];
-        assert_eq!(
-            Chunker::new(
-                ChunkerParams::new(5, 3, 640, 5, BUZHASH_SEED),
-                &mut Box::new(&SRC[..])
-            )
-            .map(|result| {
-                let (offset, chunk) = result.unwrap();
-                assert_eq!(chunk.len(), 0);
-                offset
-            })
-            .collect::<Vec<u64>>()
-            .await,
-            &expected_chunk_offsets
-        );
+        for rolling_hash in &ROLLING_HASHES {
+            let expected_chunk_offsets: [u64; 0] = [0; 0];
+            static SRC: [u8; 0] = [];
+            assert_eq!(
+                Chunker::new(
+                    ChunkerParams::new(5, 3, 640, *rolling_hash, 5, BUZHASH_SEED),
+                    &mut Box::new(&SRC[..])
+                )
+                .map(|result| {
+                    let (offset, chunk) = result.unwrap();
+                    assert_eq!(chunk.len(), 0);
+                    offset
+                })
+                .collect::<Vec<u64>>()
+                .await,
+                &expected_chunk_offsets
+            );
+        }
     }
     #[tokio::test]
     async fn source_smaller_than_hash_window() {
-        let expected_chunk_offsets: [u64; 1] = [0; 1];
-        static SRC: [u8; 5] = [0x1f, 0x55, 0x39, 0x5e, 0xfa];
-        assert_eq!(
-            Chunker::new(
-                ChunkerParams::new(5, 0, 40, 10, BUZHASH_SEED),
-                &mut Box::new(&SRC[..])
-            )
-            .map(|result| {
-                let (offset, chunk) = result.unwrap();
-                assert_eq!(chunk, [0x1f, 0x55, 0x39, 0x5e, 0xfa]);
-                offset
-            })
-            .collect::<Vec<u64>>()
-            .await,
-            &expected_chunk_offsets
-        );
+        for rolling_hash in &ROLLING_HASHES {
+            let expected_chunk_offsets: [u64; 1] = [0; 1];
+            static SRC: [u8; 5] = [0x1f, 0x55, 0x39, 0x5e, 0xfa];
+            assert_eq!(
+                Chunker::new(
+                    ChunkerParams::new(5, 0, 40, *rolling_hash, 10, BUZHASH_SEED),
+                    &mut Box::new(&SRC[..])
+                )
+                .map(|result| {
+                    let (offset, chunk) = result.unwrap();
+                    assert_eq!(chunk, [0x1f, 0x55, 0x39, 0x5e, 0xfa]);
+                    offset
+                })
+                .collect::<Vec<u64>>()
+                .await,
+                &expected_chunk_offsets
+            );
+        }
     }
     #[tokio::test]
     async fn source_smaller_than_min_chunk() {
-        let expected_chunk_offsets: [u64; 1] = [0; 1];
-        static SRC: [u8; 5] = [0x1f, 0x55, 0x39, 0x5e, 0xfa];
-        assert_eq!(
-            Chunker::new(
-                ChunkerParams::new(5, 10, 40, 5, BUZHASH_SEED),
-                &mut Box::new(&SRC[..]),
-            )
-            .map(|result| {
-                let (offset, chunk) = result.unwrap();
-                assert_eq!(chunk, [0x1f, 0x55, 0x39, 0x5e, 0xfa]);
-                offset
-            })
-            .collect::<Vec<u64>>()
-            .await,
-            &expected_chunk_offsets
-        );
+        for rolling_hash in &ROLLING_HASHES {
+            let expected_chunk_offsets: [u64; 1] = [0; 1];
+            static SRC: [u8; 5] = [0x1f, 0x55, 0x39, 0x5e, 0xfa];
+            assert_eq!(
+                Chunker::new(
+                    ChunkerParams::new(5, 10, 40, *rolling_hash, 5, BUZHASH_SEED),
+                    &mut Box::new(&SRC[..]),
+                )
+                .map(|result| {
+                    let (offset, chunk) = result.unwrap();
+                    assert_eq!(chunk, [0x1f, 0x55, 0x39, 0x5e, 0xfa]);
+                    offset
+                })
+                .collect::<Vec<u64>>()
+                .await,
+                &expected_chunk_offsets
+            );
+        }
     }
     #[tokio::test]
-    async fn consistency_small_min_chunk() {
+    async fn consistency_small_min_chunk_buzhash() {
         let expected_chunk_offsets = vec![
             0, 23, 139, 162, 177, 194, 224, 237, 279, 395, 418, 433, 450, 480, 493, 535, 651, 674,
             689, 706, 736, 749, 791, 907, 930, 945, 962, 992, 1005, 1047, 1163, 1186, 1201, 1218,
@@ -385,7 +459,7 @@ mod tests {
         }
 
         let chunk_offsets = Chunker::new(
-            ChunkerParams::new(5, 3, 640, 5, BUZHASH_SEED),
+            ChunkerParams::new(5, 3, 640, RollingHashType::BuzHash, 5, BUZHASH_SEED),
             &mut Box::new(unsafe { &SRC[..] }),
         )
         .map(|result| {
@@ -397,7 +471,7 @@ mod tests {
         assert_eq!(chunk_offsets, expected_chunk_offsets);
     }
     #[tokio::test]
-    async fn consistency_bigger_min_chunk() {
+    async fn consistency_bigger_min_chunk_buzhash() {
         let expected_chunk_offsets = vec![
             0, 132, 216, 388, 472, 644, 728, 900, 984, 1156, 1240, 1412, 1496, 1668, 1752, 1924,
             2008, 2180, 2264, 2436, 2520, 2692, 2776, 2948, 3032, 3204, 3288, 3460, 3544, 3716,
@@ -475,7 +549,7 @@ mod tests {
             }
         }
         let chunk_offsets = Chunker::new(
-            ChunkerParams::new(6, 64, 1024, 20, BUZHASH_SEED),
+            ChunkerParams::new(6, 64, 1024, RollingHashType::BuzHash, 20, BUZHASH_SEED),
             &mut Box::new(unsafe { &SRC[..] }),
         )
         .map(|result| {

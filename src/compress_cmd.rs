@@ -14,7 +14,7 @@ use crate::config::CompressConfig;
 use crate::info_cmd;
 use bita::archive;
 use bita::chunk_dictionary;
-use bita::chunker::{Chunker, ChunkerParams};
+use bita::chunker::{Chunker, ChunkerParams, RollingHashType};
 use bita::compression::Compression;
 use bita::error::Error;
 use bita::string_utils::*;
@@ -177,7 +177,8 @@ pub async fn run(config: CompressConfig) -> Result<(), Error> {
         config.chunker_config.chunk_filter_bits,
         config.chunker_config.min_chunk_size,
         config.chunker_config.max_chunk_size,
-        config.chunker_config.hash_window_size,
+        config.chunker_config.rolling_hash,
+        config.chunker_config.rolling_window_size,
         archive::BUZHASH_SEED,
     );
     let compression = config.chunker_config.compression;
@@ -231,8 +232,16 @@ pub async fn run(config: CompressConfig) -> Result<(), Error> {
             chunk_filter_bits: config.chunker_config.chunk_filter_bits,
             min_chunk_size: config.chunker_config.min_chunk_size as u32,
             max_chunk_size: config.chunker_config.max_chunk_size as u32,
-            hash_window_size: config.chunker_config.hash_window_size as u32,
+            rolling_hash_window_size: config.chunker_config.rolling_window_size as u32,
             chunk_hash_length: config.hash_length as u32,
+            rolling_hash_type: match config.chunker_config.rolling_hash {
+                RollingHashType::BuzHash => {
+                    chunk_dictionary::ChunkerParameters_RollingHashType::BUZHASH
+                }
+                RollingHashType::RollSum => {
+                    chunk_dictionary::ChunkerParameters_RollingHashType::ROLLSUM
+                }
+            },
             unknown_fields: std::default::Default::default(),
             cached_size: std::default::Default::default(),
         }),

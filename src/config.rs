@@ -1,3 +1,4 @@
+use bita::chunker::RollingHashType;
 use bita::compression::Compression;
 use bita::HashSum;
 use std::path::PathBuf;
@@ -7,9 +8,10 @@ pub struct ChunkerConfig {
     pub chunk_filter_bits: u32,
     pub min_chunk_size: usize,
     pub max_chunk_size: usize,
-    pub hash_window_size: usize,
+    pub rolling_window_size: usize,
     pub compression_level: u32,
     pub compression: Compression,
+    pub rolling_hash: RollingHashType,
 }
 
 #[derive(Debug, Clone)]

@@ -8,6 +8,8 @@ pub mod error;
 mod hashsum;
 pub mod http_range_request;
 pub mod reader_backend;
+pub mod rolling_hash;
+pub mod rollsum;
 
 pub mod string_utils;
 

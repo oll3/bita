@@ -169,7 +169,8 @@ pub async fn run(config: DiffConfig) -> Result<(), Error> {
         config.chunker_config.chunk_filter_bits,
         config.chunker_config.min_chunk_size,
         config.chunker_config.max_chunk_size,
-        config.chunker_config.hash_window_size,
+        config.chunker_config.rolling_hash,
+        config.chunker_config.rolling_window_size,
         bita::archive::BUZHASH_SEED,
     );
     let compression = config.chunker_config.compression;
@@ -189,9 +190,10 @@ pub async fn run(config: DiffConfig) -> Result<(), Error> {
         chunker_params.filter_mask(),
     );
     info!("  Chunk compression: {}", compression);
+    info!("  Rolling hash: {}", chunker_params.rolling_hash);
     info!(
-        "  Hash window size: {}",
-        size_to_str(chunker_params.buzhash_window_size)
+        "  Rolling hash window size: {}",
+        size_to_str(chunker_params.rolling_window_size)
     );
     println!();
 

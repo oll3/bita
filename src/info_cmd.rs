@@ -31,9 +31,10 @@ pub fn print_archive(archive: &ArchiveReader) {
     );
     info!("  Chunk compression: {}", archive.chunk_compression);
     info!("  Chunk hash length: {} bytes", archive.hash_length);
+    info!("  Rolling hash: {}", archive.chunker_params.rolling_hash);
     info!(
-        "  Hash window size: {}",
-        size_to_str(archive.chunker_params.buzhash_window_size)
+        "  Rolling hash window size: {}",
+        size_to_str(archive.chunker_params.rolling_window_size)
     );
     info!(
         "  Archive size: {}",

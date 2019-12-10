@@ -2,61 +2,62 @@ syntax = "proto3";
 
 package chunk_dictionary;
 
-message ChunkDescriptor
-{
-    // Hash of (uncompressed) chunk
-    bytes checksum = 1;
+message ChunkDescriptor {
+  // Hash of (uncompressed) chunk
+  bytes checksum = 1;
 
-    // Chunk data placement in archive.
-    // If the archive_size = source_size then the chunk is uncompresed.
-    uint32 archive_size = 3;
-    uint64 archive_offset = 4;
+  // Chunk data placement in archive.
+  // If the archive_size = source_size then the chunk is uncompresed.
+  uint32 archive_size = 3;
+  uint64 archive_offset = 4;
 
-    // Size of uncompressed chunk data
-    uint32 source_size = 5;
+  // Size of uncompressed chunk data
+  uint32 source_size = 5;
 }
 
-message ChunkerParameters
-{
-    uint32 chunk_filter_bits = 1;
-    uint32 min_chunk_size = 2;
-    uint32 max_chunk_size = 3;
-    uint32 hash_window_size = 4;
-    uint32 chunk_hash_length = 5;
+message ChunkerParameters {
+  enum RollingHashType {
+    BUZHASH = 0;
+    ROLLSUM = 1;
+  }
+  uint32 chunk_filter_bits = 1;
+  uint32 min_chunk_size = 2;
+  uint32 max_chunk_size = 3;
+  uint32 rolling_hash_window_size = 4;
+  uint32 chunk_hash_length = 5;
+  RollingHashType rolling_hash_type = 6;
 }
 
-message ChunkCompression
-{
-    enum CompressionType {
-        NONE = 0;
-        LZMA = 1;
-        ZSTD = 2;
-        BROTLI = 3;
-    }
-    CompressionType compression = 2;
-    uint32 compression_level = 3;
+message ChunkCompression {
+  enum CompressionType {
+    NONE = 0;
+    LZMA = 1;
+    ZSTD = 2;
+    BROTLI = 3;
+  }
+  CompressionType compression = 2;
+  uint32 compression_level = 3;
 }
 
-message ChunkDictionary
-{
-    // Dictionary was created with this version
-    string application_version = 1;
+message ChunkDictionary {
+  // Dictionary was created with this version
+  string application_version = 1;
 
-    // Hash of the source file
-    bytes source_checksum = 2;
+  // Hash of the source file
+  bytes source_checksum = 2;
 
-    // Total size of the source file
-    uint64 source_total_size = 3;
+  // Total size of the source file
+  uint64 source_total_size = 3;
 
-    // Chunker parameters used when building archive
-    ChunkerParameters chunker_params = 4;
+  // Chunker parameters used when building archive
+  ChunkerParameters chunker_params = 4;
 
-    // Chunk compression used for all chunks in archive
-    ChunkCompression chunk_compression = 5;
+  // Chunk compression used for all chunks in archive
+  ChunkCompression chunk_compression = 5;
 
-    // Array of chunk descriptor indexes describing howto rebuild the source
-    repeated uint32 rebuild_order = 6;
+  // Array of chunk descriptor indexes describing howto rebuild the source
+  repeated uint32 rebuild_order = 6;
 
-    // Chunk descriptors in order of first occurence in source file
-    repeated ChunkDescriptor chunk_descriptors = 7;
+  // Chunk descriptors in order of first occurence in source file
+  repeated ChunkDescriptor chunk_descriptors = 7;
 }

@@ -5,7 +5,7 @@ use std::fmt;
 
 use crate::archive;
 use crate::chunk_dictionary;
-use crate::chunker::ChunkerParams;
+use crate::chunker::{ChunkerParams, RollingHashType};
 use crate::compression::Compression;
 use crate::error::Error;
 use crate::reader_backend;
@@ -160,7 +160,15 @@ impl ArchiveReader {
                 chunker_params.chunk_filter_bits,
                 chunker_params.min_chunk_size as usize,
                 chunker_params.max_chunk_size as usize,
-                chunker_params.hash_window_size as usize,
+                match chunker_params.rolling_hash_type {
+                    chunk_dictionary::ChunkerParameters_RollingHashType::BUZHASH => {
+                        RollingHashType::BuzHash
+                    }
+                    chunk_dictionary::ChunkerParameters_RollingHashType::ROLLSUM => {
+                        RollingHashType::RollSum
+                    }
+                },
+                chunker_params.rolling_hash_window_size as usize,
                 archive::BUZHASH_SEED,
             ),
             hash_length: chunker_params.chunk_hash_length as usize,

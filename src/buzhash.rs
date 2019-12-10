@@ -1,4 +1,6 @@
-#![cfg_attr(feature = "cargo-clippy", allow(clippy::unreadable_literal))]
+use crate::rolling_hash::RollingHash;
+
+#[allow(clippy::unreadable_literal)]
 static BUZHASH_TABLE: &[u32] = &[
     0xa40cc360, 0xbb785af8, 0x32c790bc, 0x6c64cd34, 0x83b4aa73, 0x36b691a5, 0x4631ad79, 0x5e49d231,
     0xcab22600, 0x6d45bfdf, 0xcd26dfc8, 0xf2e63bec, 0x18cb0c69, 0x817876fd, 0xb8c88ca8, 0xfabcc7d3,
@@ -111,6 +113,21 @@ impl BuzHash {
     // Get current hash sum
     pub fn sum(&self) -> u32 {
         self.hash_sum
+    }
+}
+
+impl RollingHash for BuzHash {
+    fn new(window_size: usize, hash_seed: u32) -> Self {
+        Self::new(window_size, hash_seed)
+    }
+    fn window_size(&self) -> usize {
+        self.window
+    }
+    fn input(&mut self, value: u8) {
+        self.input(value)
+    }
+    fn sum(&self) -> u32 {
+        self.sum()
     }
 }
 

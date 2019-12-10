@@ -16,6 +16,7 @@ use std::process;
 use tokio;
 
 use crate::config::*;
+use bita::chunker::RollingHashType;
 use bita::compression::Compression;
 use bita::error::Error;
 use bita::string_utils::hex_str_to_vec;
@@ -28,7 +29,6 @@ fn parse_chunker_config(matches: &clap::ArgMatches<'_>) -> ChunkerConfig {
     let avg_chunk_size = parse_size(matches.value_of("avg-chunk-size").unwrap_or("64KiB"));
     let min_chunk_size = parse_size(matches.value_of("min-chunk-size").unwrap_or("16KiB"));
     let max_chunk_size = parse_size(matches.value_of("max-chunk-size").unwrap_or("16MiB"));
-    let hash_window_size = parse_size(matches.value_of("buzhash-window").unwrap_or("16B"));
 
     let compression_level = matches
         .value_of("compression-level")
@@ -55,6 +55,22 @@ fn parse_chunker_config(matches: &clap::ArgMatches<'_>) -> ChunkerConfig {
         name => panic!("invalid compression {}", name),
     };
 
+    let (rolling_hash, default_window_size) = match matches
+        .value_of("rolling-hash")
+        .unwrap_or("RollSum")
+        .to_lowercase()
+        .as_ref()
+    {
+        "rollsum" => (RollingHashType::RollSum, "64B"),
+        "buzhash" => (RollingHashType::BuzHash, "16B"),
+        name => panic!("invalid hash {}", name),
+    };
+    let rolling_window_size = parse_size(
+        matches
+            .value_of("rolling-window")
+            .unwrap_or(default_window_size),
+    );
+
     let chunk_filter_bits = 30 - (avg_chunk_size as u32).leading_zeros();
     if min_chunk_size > avg_chunk_size {
         panic!("min-chunk-size > avg-chunk-size");
@@ -66,9 +82,10 @@ fn parse_chunker_config(matches: &clap::ArgMatches<'_>) -> ChunkerConfig {
         chunk_filter_bits,
         min_chunk_size,
         max_chunk_size,
-        hash_window_size,
         compression_level,
         compression,
+        rolling_hash,
+        rolling_window_size,
     }
 }
 
@@ -171,10 +188,16 @@ fn parse_opts() -> Result<Config, Error> {
                         .help("Set maximal size of chunks [default: 16MiB]"),
                 )
                 .arg(
-                    Arg::with_name("buzhash-window")
-                        .long("buzhash-window")
+                    Arg::with_name("rolling-hash")
+                        .long("rolling-hash")
+                        .value_name("HASH")
+                        .help("Set rolling hash to use (RollSum/BuzHash) [default: RollSum]"),
+                )
+                .arg(
+                    Arg::with_name("rolling-window")
+                        .long("rolling-window")
                         .value_name("SIZE")
-                        .help("Set size of the buzhash window [default: 16B]"),
+                        .help("Set size of the rolling hash window [default: RollSum=64B, BuzHash=16B]"),
                 )
                 .arg(
                     Arg::with_name("hash-length")
@@ -298,10 +321,16 @@ fn parse_opts() -> Result<Config, Error> {
                         .help("Set maximal size of chunks [default: 16MiB]"),
                 )
                 .arg(
-                    Arg::with_name("buzhash-window")
-                        .long("buzhash-window")
+                    Arg::with_name("rolling-hash")
+                        .long("rolling-hash")
+                        .value_name("HASH")
+                        .help("Set rolling hash to use (RollSum/BuzHash) [default: RollSum]"),
+                )
+                .arg(
+                    Arg::with_name("rolling-window")
+                        .long("rolling-window")
                         .value_name("SIZE")
-                        .help("Set size of the buzhash window [default: 16B]"),
+                        .help("Set size of the rolling hash window [default: 16B]"),
                 )
                 .arg(
                     Arg::with_name("compression-level")
