@@ -1,5 +1,5 @@
 pub trait RollingHash {
-    fn new(window_size: usize, hash_seed: u32) -> Self;
+    fn new(window_size: usize) -> Self;
     fn init(&mut self, value: u8) {
         self.input(value);
     }

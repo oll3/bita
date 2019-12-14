@@ -16,7 +16,7 @@ use std::process;
 use tokio;
 
 use crate::config::*;
-use bita::chunker::RollingHashType;
+use bita::chunker::{ChunkerConfig, HashConfig, HashFilterBits};
 use bita::compression::Compression;
 use bita::error::Error;
 use bita::string_utils::hex_str_to_vec;
@@ -25,11 +25,66 @@ use bita::HashSum;
 pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-fn parse_chunker_config(matches: &clap::ArgMatches<'_>) -> ChunkerConfig {
+fn parse_hash_chunker_config(
+    matches: &clap::ArgMatches<'_>,
+    default_window_size: &str,
+) -> HashConfig {
     let avg_chunk_size = parse_size(matches.value_of("avg-chunk-size").unwrap_or("64KiB"));
     let min_chunk_size = parse_size(matches.value_of("min-chunk-size").unwrap_or("16KiB"));
     let max_chunk_size = parse_size(matches.value_of("max-chunk-size").unwrap_or("16MiB"));
 
+    let filter_bits = HashFilterBits::from_size(avg_chunk_size as u32);
+    if min_chunk_size > avg_chunk_size {
+        panic!("min-chunk-size > avg-chunk-size");
+    }
+    if max_chunk_size < avg_chunk_size {
+        panic!("max-chunk-size < avg-chunk-size");
+    }
+    let window_size = parse_size(
+        matches
+            .value_of("rolling-window-size")
+            .unwrap_or(default_window_size),
+    );
+
+    HashConfig {
+        filter_bits,
+        min_chunk_size,
+        max_chunk_size,
+        window_size,
+    }
+}
+
+fn parse_chunker_config(matches: &clap::ArgMatches<'_>) -> ChunkerConfig {
+    match (
+        matches.value_of("fixed-size"),
+        matches
+            .value_of("hash-chunking")
+            .unwrap_or("RollSum")
+            .to_lowercase()
+            .as_ref(),
+    ) {
+        (Some(fixed_size), _) => ChunkerConfig::FixedSize(parse_size(fixed_size)),
+        (_, "rollsum") => ChunkerConfig::RollSum(parse_hash_chunker_config(matches, "64B")),
+        (_, "buzhash") => ChunkerConfig::RollSum(parse_hash_chunker_config(matches, "16B")),
+        _ => unreachable!(),
+    }
+}
+
+pub fn compression_names() -> String {
+    let mut s = "(brotli, ".to_owned();
+    #[cfg(feature = "lzma-compression")]
+    {
+        s += "lzma, ";
+    }
+    #[cfg(feature = "zstd-compression")]
+    {
+        s += "zstd, ";
+    }
+    s += "none) [default: brotli]";
+    s
+}
+
+fn parse_compression(matches: &clap::ArgMatches<'_>) -> (Compression, u32) {
     let compression_level = matches
         .value_of("compression-level")
         .unwrap_or("6")
@@ -54,39 +109,7 @@ fn parse_chunker_config(matches: &clap::ArgMatches<'_>) -> ChunkerConfig {
         "none" => Compression::None,
         name => panic!("invalid compression {}", name),
     };
-
-    let (rolling_hash, default_window_size) = match matches
-        .value_of("rolling-hash")
-        .unwrap_or("RollSum")
-        .to_lowercase()
-        .as_ref()
-    {
-        "rollsum" => (RollingHashType::RollSum, "64B"),
-        "buzhash" => (RollingHashType::BuzHash, "16B"),
-        name => panic!("invalid hash {}", name),
-    };
-    let rolling_window_size = parse_size(
-        matches
-            .value_of("rolling-window")
-            .unwrap_or(default_window_size),
-    );
-
-    let chunk_filter_bits = 30 - (avg_chunk_size as u32).leading_zeros();
-    if min_chunk_size > avg_chunk_size {
-        panic!("min-chunk-size > avg-chunk-size");
-    }
-    if max_chunk_size < avg_chunk_size {
-        panic!("max-chunk-size < avg-chunk-size");
-    }
-    ChunkerConfig {
-        chunk_filter_bits,
-        min_chunk_size,
-        max_chunk_size,
-        compression_level,
-        compression,
-        rolling_hash,
-        rolling_window_size,
-    }
+    (compression, compression_level)
 }
 
 fn parse_size(size_str: &str) -> usize {
@@ -103,20 +126,6 @@ fn parse_size(size_str: &str) -> usize {
         "B" => size_val,
         _ => panic!("Invalid size unit"),
     }
-}
-
-pub fn compression_names() -> String {
-    let mut s = "(brotli, ".to_owned();
-    #[cfg(feature = "lzma-compression")]
-    {
-        s += "lzma, ";
-    }
-    #[cfg(feature = "zstd-compression")]
-    {
-        s += "zstd, ";
-    }
-    s += "none) [default: brotli]";
-    s
 }
 
 fn init_log(level: log::LevelFilter) {
@@ -166,16 +175,23 @@ fn add_chunker_args<'a, 'b>(
                 .help("Set maximal size of chunks [default: 16MiB]"),
         )
         .arg(
-            Arg::with_name("rolling-hash")
-                .long("rolling-hash")
+            Arg::with_name("hash-chunking")
+                .long("hash-chunking")
                 .value_name("HASH")
-                .help("Set rolling hash to use (RollSum/BuzHash) [default: RollSum]"),
+                .help("Set hash to use for chunking (RollSum/BuzHash). [default: RollSum]"),
         )
         .arg(
-            Arg::with_name("rolling-window")
-                .long("rolling-window")
+            Arg::with_name("rolling-window-size")
+                .long("rolling-window-size")
                 .value_name("SIZE")
-                .help("Set size of the rolling hash window [default: RollSum=64B, BuzHash=16B]"),
+                .help("Set size of the rolling hash window to use for chunking. [default: 64B for RollSum, 16B for BuzHash]")
+        )
+        .arg(
+            Arg::with_name("fixed-size")
+                .long("fixed-size")
+                .value_name("SIZE")
+                .help("Use fixed size chunking instead of rolling hash.")
+                .conflicts_with("hash-chunking"),
         )
         .arg(
             Arg::with_name("compression-level")
@@ -335,6 +351,7 @@ fn parse_opts() -> Result<Config, Error> {
         let temp_file = Path::with_extension(output, ".tmp");
         let hash_length = matches.value_of("hash-length").unwrap_or("64");
         let chunker_config = parse_chunker_config(&matches);
+        let (compression, compression_level) = parse_compression(matches);
         Ok(Config::Compress(CompressConfig {
             input,
             output: output.to_path_buf(),
@@ -342,6 +359,8 @@ fn parse_opts() -> Result<Config, Error> {
             force_create: matches.is_present("force-create"),
             temp_file,
             chunker_config,
+            compression,
+            compression_level,
         }))
     } else if let Some(matches) = matches.subcommand_matches("clone") {
         let input = matches.value_of("INPUT").unwrap();
@@ -400,10 +419,13 @@ fn parse_opts() -> Result<Config, Error> {
         let input_a = Path::new(matches.value_of("A").unwrap());
         let input_b = Path::new(matches.value_of("B").unwrap());
         let chunker_config = parse_chunker_config(&matches);
+        let (compression, compression_level) = parse_compression(matches);
         Ok(Config::Diff(DiffConfig {
             input_a: input_a.to_path_buf(),
             input_b: input_b.to_path_buf(),
             chunker_config,
+            compression,
+            compression_level,
         }))
     } else {
         error!("Unknown command");

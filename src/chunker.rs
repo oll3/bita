@@ -17,60 +17,101 @@ pub struct Chunk {
     pub data: Vec<u8>,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum RollingHashType {
-    BuzHash,
-    RollSum,
+fn refill_read_buf<T>(
+    cx: &mut Context,
+    want: usize,
+    read_buf: &mut Vec<u8>,
+    mut source: &mut T,
+) -> Poll<Result<usize, io::Error>>
+where
+    T: AsyncRead + Unpin,
+{
+    let mut read_count = 0;
+    let before_size = read_buf.len();
+    {
+        // Use set_len() here instead of resize as we don't care for zeroing the content of buf.
+        let new_size = before_size + want;
+        if read_buf.capacity() < new_size {
+            read_buf.reserve(want);
+        }
+        unsafe {
+            read_buf.set_len(new_size);
+        }
+    }
+    while read_count < want {
+        let offset = before_size + read_count;
+
+        let rc = match Pin::new(&mut source).poll_read(cx, &mut read_buf[offset..]) {
+            Poll::Ready(Ok(0)) => break, // EOF
+            Poll::Ready(Ok(rc)) => rc,
+            Poll::Ready(err) => {
+                read_buf.resize(before_size + read_count, 0);
+                return Poll::Ready(err);
+            }
+            Poll::Pending => {
+                read_buf.resize(before_size + read_count, 0);
+                if read_count > 0 {
+                    return Poll::Ready(Ok(read_count));
+                }
+                return Poll::Pending;
+            }
+        };
+        read_count += rc;
+    }
+    read_buf.resize(before_size + read_count, 0);
+    Poll::Ready(Ok(read_count))
 }
 
-impl std::fmt::Display for RollingHashType {
+#[derive(Clone, Debug)]
+pub struct HashFilterBits(pub u32);
+
+impl HashFilterBits {
+    pub fn from_size(size: u32) -> Self {
+        Self(30 - size.leading_zeros())
+    }
+    pub fn mask(&self) -> u32 {
+        (!0 as u32) >> (32 - self.0)
+    }
+    pub fn chunk_target_average(&self) -> u32 {
+        1 << (self.0 + 1)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct HashConfig {
+    pub filter_bits: HashFilterBits,
+    pub min_chunk_size: usize,
+    pub max_chunk_size: usize,
+    pub window_size: usize,
+}
+
+#[derive(Clone, Debug)]
+pub enum ChunkerConfig {
+    BuzHash(HashConfig),
+    RollSum(HashConfig),
+    FixedSize(usize),
+}
+
+impl ChunkerConfig {
+    pub fn is_hash(&self) -> bool {
+        match self {
+            ChunkerConfig::BuzHash(_) | ChunkerConfig::RollSum(_) => true,
+            ChunkerConfig::FixedSize(_) => false,
+        }
+    }
+}
+
+impl std::fmt::Display for ChunkerConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}",
             match self {
-                RollingHashType::BuzHash => "BuzHash",
-                RollingHashType::RollSum => "RollSum",
+                ChunkerConfig::BuzHash(_) => "BuzHash",
+                ChunkerConfig::RollSum(_) => "RollSum",
+                ChunkerConfig::FixedSize(_) => "Fixed Size",
             }
         )
-    }
-}
-
-#[derive(Clone)]
-pub struct ChunkerParams {
-    pub filter_bits: u32,
-    pub min_chunk_size: usize,
-    pub max_chunk_size: usize,
-    pub rolling_hash: RollingHashType,
-    pub rolling_window_size: usize,
-    pub buzhash_seed: u32,
-}
-
-impl ChunkerParams {
-    pub fn new(
-        chunk_filter_bits: u32,
-        min_chunk_size: usize,
-        max_chunk_size: usize,
-        rolling_hash: RollingHashType,
-        rolling_window_size: usize,
-        buzhash_seed: u32,
-    ) -> Self {
-        ChunkerParams {
-            filter_bits: chunk_filter_bits,
-            min_chunk_size,
-            max_chunk_size,
-            rolling_window_size,
-            buzhash_seed,
-            rolling_hash,
-        }
-    }
-
-    pub fn filter_mask(&self) -> u32 {
-        (!0 as u32) >> (32 - self.filter_bits)
-    }
-
-    pub fn chunk_target_average(&self) -> u32 {
-        1 << (self.filter_bits + 1)
     }
 }
 
@@ -80,19 +121,23 @@ where
 {
     BuzHash(InternalChunker<'a, T, BuzHash>),
     RollSum(InternalChunker<'a, T, RollSum>),
+    FixedSize(FixedSizeChunker<'a, T>),
 }
 
 impl<'a, T> Chunker<'a, T>
 where
     T: AsyncRead + Unpin,
 {
-    pub fn new(params: ChunkerParams, source: &'a mut T) -> Self {
-        match params.rolling_hash {
-            RollingHashType::BuzHash => {
-                Chunker::BuzHash(InternalChunker::<T, BuzHash>::new(params, source))
+    pub fn new(config: ChunkerConfig, source: &'a mut T) -> Self {
+        match config {
+            ChunkerConfig::BuzHash(hash_config) => {
+                Chunker::BuzHash(InternalChunker::<T, BuzHash>::new(hash_config, source))
             }
-            RollingHashType::RollSum => {
-                Chunker::RollSum(InternalChunker::<T, RollSum>::new(params, source))
+            ChunkerConfig::RollSum(hash_config) => {
+                Chunker::RollSum(InternalChunker::<T, RollSum>::new(hash_config, source))
+            }
+            ChunkerConfig::FixedSize(fixed_size) => {
+                Chunker::FixedSize(FixedSizeChunker::<T>::new(fixed_size, source))
             }
         }
     }
@@ -107,6 +152,67 @@ where
         match *self {
             Chunker::BuzHash(ref mut c) => c.poll_chunk(cx),
             Chunker::RollSum(ref mut c) => c.poll_chunk(cx),
+            Chunker::FixedSize(ref mut c) => c.poll_chunk(cx),
+        }
+    }
+}
+
+pub struct FixedSizeChunker<'a, T> {
+    source: &'a mut T,
+    chunk_size: usize,
+    source_index: u64,
+    chunk_start: u64,
+    read_buf: Vec<u8>,
+}
+
+impl<'a, T> FixedSizeChunker<'a, T>
+where
+    T: AsyncRead + Unpin,
+{
+    fn new(fixed_size: usize, source: &'a mut T) -> Self {
+        // Allow for chunk size less than buzhash window
+        Self {
+            chunk_size: fixed_size,
+            read_buf: Vec::with_capacity(fixed_size + CHUNKER_BUF_SIZE),
+            source,
+            chunk_start: 0,
+            source_index: 0,
+        }
+    }
+    #[allow(clippy::type_complexity)]
+    fn poll_chunk(&mut self, cx: &mut Context) -> Poll<Option<Result<(u64, Vec<u8>), io::Error>>> {
+        loop {
+            if self.read_buf.len() >= self.chunk_size {
+                let offset_and_chunk = (
+                    self.chunk_start,
+                    self.read_buf.drain(..self.chunk_size).collect::<Vec<u8>>(),
+                );
+                self.chunk_start = self.source_index;
+                return Poll::Ready(Some(Ok(offset_and_chunk)));
+            } else {
+                // Fill buffer from source
+                let rc = match refill_read_buf(
+                    cx,
+                    CHUNKER_BUF_SIZE,
+                    &mut self.read_buf,
+                    &mut self.source,
+                ) {
+                    Poll::Ready(Ok(n)) => n,
+                    Poll::Ready(Err(e)) => return Poll::Ready(Some(Err(e))),
+                    Poll::Pending => return Poll::Pending,
+                };
+                if rc == 0 {
+                    // EOF
+                    if !self.read_buf.is_empty() {
+                        let offset_and_chunk =
+                            (self.chunk_start, self.read_buf.drain(..).collect());
+                        self.chunk_start = self.source_index;
+                        return Poll::Ready(Some(Ok(offset_and_chunk)));
+                    } else {
+                        return Poll::Ready(None);
+                    }
+                }
+            }
         }
     }
 }
@@ -129,19 +235,19 @@ where
     T: AsyncRead + Unpin,
     H: RollingHash,
 {
-    fn new(params: ChunkerParams, source: &'a mut T) -> Self {
+    fn new(config: HashConfig, source: &'a mut T) -> Self {
         // Allow for chunk size less than buzhash window
-        let buzhash_input_limit = if params.min_chunk_size >= params.rolling_window_size {
-            params.min_chunk_size - params.rolling_window_size
+        let buzhash_input_limit = if config.min_chunk_size >= config.window_size {
+            config.min_chunk_size - config.window_size
         } else {
             0
         };
         Self {
-            filter_mask: params.filter_mask(),
-            min_chunk_size: params.min_chunk_size,
-            max_chunk_size: params.max_chunk_size,
-            hasher: RollingHash::new(params.rolling_window_size, params.buzhash_seed),
-            read_buf: Vec::with_capacity(params.max_chunk_size + CHUNKER_BUF_SIZE),
+            filter_mask: config.filter_bits.mask(),
+            min_chunk_size: config.min_chunk_size,
+            max_chunk_size: config.max_chunk_size,
+            hasher: RollingHash::new(config.window_size),
+            read_buf: Vec::with_capacity(config.max_chunk_size + CHUNKER_BUF_SIZE),
             source,
             buzhash_input_limit,
             source_index: 0,
@@ -150,48 +256,17 @@ where
         }
     }
 
-    fn refill_read_buf(&mut self, cx: &mut Context, want: usize) -> Poll<Result<usize, io::Error>> {
-        let mut read_count = 0;
-        let before_size = self.read_buf.len();
-        {
-            // Use set_len() here instead of resize as we don't care for zeroing the content of buf.
-            let new_size = before_size + want;
-            if self.read_buf.capacity() < new_size {
-                self.read_buf.reserve(want);
-            }
-            unsafe {
-                self.read_buf.set_len(new_size);
-            }
-        }
-        while read_count < want {
-            let offset = before_size + read_count;
-            let rc = match Pin::new(&mut self.source).poll_read(cx, &mut self.read_buf[offset..]) {
-                Poll::Ready(Ok(0)) => break, // EOF
-                Poll::Ready(Ok(rc)) => rc,
-                Poll::Ready(err) => {
-                    self.read_buf.resize(before_size + read_count, 0);
-                    return Poll::Ready(err);
-                }
-                Poll::Pending => {
-                    self.read_buf.resize(before_size + read_count, 0);
-                    if read_count > 0 {
-                        return Poll::Ready(Ok(read_count));
-                    }
-                    return Poll::Pending;
-                }
-            };
-            read_count += rc;
-        }
-        self.read_buf.resize(before_size + read_count, 0);
-        Poll::Ready(Ok(read_count))
-    }
-
     #[allow(clippy::type_complexity)]
     fn poll_chunk(&mut self, cx: &mut Context) -> Poll<Option<Result<(u64, Vec<u8>), io::Error>>> {
         loop {
             if self.buf_index >= self.read_buf.len() {
                 // Fill buffer from source
-                let rc = match self.refill_read_buf(cx, CHUNKER_BUF_SIZE) {
+                let rc = match refill_read_buf(
+                    cx,
+                    CHUNKER_BUF_SIZE,
+                    &mut self.read_buf,
+                    &mut self.source,
+                ) {
                     Poll::Ready(Ok(n)) => n,
                     Poll::Ready(Err(e)) => return Poll::Ready(Some(Err(e))),
                     Poll::Pending => return Poll::Pending,
@@ -283,10 +358,6 @@ mod tests {
     use std::cmp;
     use tokio::io::AsyncRead;
 
-    const BUZHASH_SEED: u32 = 0x1032_4195;
-    const ROLLING_HASHES: [RollingHashType; 2] =
-        [RollingHashType::BuzHash, RollingHashType::RollSum];
-
     // The MockSource will return bytes_per_read bytes every other read
     // and Pending every other, to replicate a source with limited I/O.
     struct MockSource {
@@ -329,7 +400,20 @@ mod tests {
 
     #[tokio::test]
     async fn single_byte_per_source_read() {
-        for rolling_hash in &ROLLING_HASHES {
+        for chunker_config in &[
+            ChunkerConfig::RollSum(HashConfig {
+                filter_bits: HashFilterBits(10),
+                min_chunk_size: 20,
+                max_chunk_size: 600,
+                window_size: 10,
+            }),
+            ChunkerConfig::BuzHash(HashConfig {
+                filter_bits: HashFilterBits(10),
+                min_chunk_size: 20,
+                max_chunk_size: 600,
+                window_size: 10,
+            }),
+        ] {
             let source_data: Vec<u8> = {
                 let mut seed: usize = 0xa3;
                 (0..10000)
@@ -339,9 +423,8 @@ mod tests {
                     })
                     .collect()
             };
-            let chunker_params = ChunkerParams::new(10, 20, 600, *rolling_hash, 10, BUZHASH_SEED);
             let expected_offsets = {
-                Chunker::new(chunker_params.clone(), &mut Box::new(&source_data[..]))
+                Chunker::new(chunker_config.clone(), &mut Box::new(&source_data[..]))
                     .map(|result| {
                         let (offset, _chunk) = result.unwrap();
                         offset
@@ -352,7 +435,7 @@ mod tests {
             // Only give back a single byte per read from source, should still result in the same
             // result as with unlimited I/O.
             let mut source = MockSource::new(source_data.clone(), 1);
-            let offsets = Chunker::new(chunker_params.clone(), &mut source)
+            let offsets = Chunker::new(chunker_config.clone(), &mut source)
                 .map(|result| {
                     let (offset, _chunk) = result.unwrap();
                     offset
@@ -364,63 +447,93 @@ mod tests {
     }
     #[tokio::test]
     async fn zero_data() {
-        for rolling_hash in &ROLLING_HASHES {
+        for chunker_config in &[
+            ChunkerConfig::RollSum(HashConfig {
+                filter_bits: HashFilterBits(5),
+                min_chunk_size: 3,
+                max_chunk_size: 640,
+                window_size: 5,
+            }),
+            ChunkerConfig::BuzHash(HashConfig {
+                filter_bits: HashFilterBits(5),
+                min_chunk_size: 3,
+                max_chunk_size: 640,
+                window_size: 5,
+            }),
+        ] {
             let expected_chunk_offsets: [u64; 0] = [0; 0];
             static SRC: [u8; 0] = [];
             assert_eq!(
-                Chunker::new(
-                    ChunkerParams::new(5, 3, 640, *rolling_hash, 5, BUZHASH_SEED),
-                    &mut Box::new(&SRC[..])
-                )
-                .map(|result| {
-                    let (offset, chunk) = result.unwrap();
-                    assert_eq!(chunk.len(), 0);
-                    offset
-                })
-                .collect::<Vec<u64>>()
-                .await,
+                Chunker::new(chunker_config.clone(), &mut Box::new(&SRC[..]))
+                    .map(|result| {
+                        let (offset, chunk) = result.unwrap();
+                        assert_eq!(chunk.len(), 0);
+                        offset
+                    })
+                    .collect::<Vec<u64>>()
+                    .await,
                 &expected_chunk_offsets
             );
         }
     }
     #[tokio::test]
     async fn source_smaller_than_hash_window() {
-        for rolling_hash in &ROLLING_HASHES {
+        for chunker_config in &[
+            ChunkerConfig::RollSum(HashConfig {
+                filter_bits: HashFilterBits(5),
+                min_chunk_size: 0,
+                max_chunk_size: 40,
+                window_size: 10,
+            }),
+            ChunkerConfig::BuzHash(HashConfig {
+                filter_bits: HashFilterBits(5),
+                min_chunk_size: 0,
+                max_chunk_size: 40,
+                window_size: 10,
+            }),
+        ] {
             let expected_chunk_offsets: [u64; 1] = [0; 1];
             static SRC: [u8; 5] = [0x1f, 0x55, 0x39, 0x5e, 0xfa];
             assert_eq!(
-                Chunker::new(
-                    ChunkerParams::new(5, 0, 40, *rolling_hash, 10, BUZHASH_SEED),
-                    &mut Box::new(&SRC[..])
-                )
-                .map(|result| {
-                    let (offset, chunk) = result.unwrap();
-                    assert_eq!(chunk, [0x1f, 0x55, 0x39, 0x5e, 0xfa]);
-                    offset
-                })
-                .collect::<Vec<u64>>()
-                .await,
+                Chunker::new(chunker_config.clone(), &mut Box::new(&SRC[..]))
+                    .map(|result| {
+                        let (offset, chunk) = result.unwrap();
+                        assert_eq!(chunk, [0x1f, 0x55, 0x39, 0x5e, 0xfa]);
+                        offset
+                    })
+                    .collect::<Vec<u64>>()
+                    .await,
                 &expected_chunk_offsets
             );
         }
     }
     #[tokio::test]
     async fn source_smaller_than_min_chunk() {
-        for rolling_hash in &ROLLING_HASHES {
+        for chunker_config in &[
+            ChunkerConfig::RollSum(HashConfig {
+                filter_bits: HashFilterBits(5),
+                min_chunk_size: 10,
+                max_chunk_size: 40,
+                window_size: 5,
+            }),
+            ChunkerConfig::BuzHash(HashConfig {
+                filter_bits: HashFilterBits(5),
+                min_chunk_size: 10,
+                max_chunk_size: 40,
+                window_size: 5,
+            }),
+        ] {
             let expected_chunk_offsets: [u64; 1] = [0; 1];
             static SRC: [u8; 5] = [0x1f, 0x55, 0x39, 0x5e, 0xfa];
             assert_eq!(
-                Chunker::new(
-                    ChunkerParams::new(5, 10, 40, *rolling_hash, 5, BUZHASH_SEED),
-                    &mut Box::new(&SRC[..]),
-                )
-                .map(|result| {
-                    let (offset, chunk) = result.unwrap();
-                    assert_eq!(chunk, [0x1f, 0x55, 0x39, 0x5e, 0xfa]);
-                    offset
-                })
-                .collect::<Vec<u64>>()
-                .await,
+                Chunker::new(chunker_config.clone(), &mut Box::new(&SRC[..]),)
+                    .map(|result| {
+                        let (offset, chunk) = result.unwrap();
+                        assert_eq!(chunk, [0x1f, 0x55, 0x39, 0x5e, 0xfa]);
+                        offset
+                    })
+                    .collect::<Vec<u64>>()
+                    .await,
                 &expected_chunk_offsets
             );
         }
@@ -459,7 +572,12 @@ mod tests {
         }
 
         let chunk_offsets = Chunker::new(
-            ChunkerParams::new(5, 3, 640, RollingHashType::BuzHash, 5, BUZHASH_SEED),
+            ChunkerConfig::BuzHash(HashConfig {
+                filter_bits: HashFilterBits(5),
+                min_chunk_size: 3,
+                max_chunk_size: 640,
+                window_size: 5,
+            }),
             &mut Box::new(unsafe { &SRC[..] }),
         )
         .map(|result| {
@@ -549,7 +667,12 @@ mod tests {
             }
         }
         let chunk_offsets = Chunker::new(
-            ChunkerParams::new(6, 64, 1024, RollingHashType::BuzHash, 20, BUZHASH_SEED),
+            ChunkerConfig::BuzHash(HashConfig {
+                filter_bits: HashFilterBits(6),
+                min_chunk_size: 64,
+                max_chunk_size: 1024,
+                window_size: 20,
+            }),
             &mut Box::new(unsafe { &SRC[..] }),
         )
         .map(|result| {

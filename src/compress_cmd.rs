@@ -14,7 +14,7 @@ use crate::config::CompressConfig;
 use crate::info_cmd;
 use bita::archive;
 use bita::chunk_dictionary;
-use bita::chunker::{Chunker, ChunkerParams, RollingHashType};
+use bita::chunker::{Chunker, ChunkerConfig};
 use bita::compression::Compression;
 use bita::error::Error;
 use bita::string_utils::*;
@@ -32,7 +32,7 @@ pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 async fn chunk_input<T>(
     mut input: T,
-    chunker_params: ChunkerParams,
+    chunker_config: ChunkerConfig,
     compression: Compression,
     temp_file_path: &std::path::Path,
     hash_length: usize,
@@ -64,7 +64,7 @@ where
         .await
         .map_err(|e| ("failed to open temp file", e))?;
     {
-        let chunker = Chunker::new(chunker_params, &mut input);
+        let chunker = Chunker::new(chunker_config, &mut input);
         let mut chunk_stream = chunker
             .map(|result| {
                 let (offset, chunk) = result.expect("error while chunking");
@@ -173,15 +173,8 @@ where
 }
 
 pub async fn run(config: CompressConfig) -> Result<(), Error> {
-    let chunker_params = ChunkerParams::new(
-        config.chunker_config.chunk_filter_bits,
-        config.chunker_config.min_chunk_size,
-        config.chunker_config.max_chunk_size,
-        config.chunker_config.rolling_hash,
-        config.chunker_config.rolling_window_size,
-        archive::BUZHASH_SEED,
-    );
-    let compression = config.chunker_config.compression;
+    let chunker_config = config.chunker_config.clone();
+    let compression = config.compression;
     let mut output_file = std::fs::OpenOptions::new()
         .write(true)
         .read(true)
@@ -197,7 +190,7 @@ pub async fn run(config: CompressConfig) -> Result<(), Error> {
                 File::open(input_path)
                     .await
                     .map_err(|err| ("failed to open input file", err))?,
-                chunker_params,
+                chunker_config,
                 compression,
                 &config.temp_file,
                 config.hash_length,
@@ -207,7 +200,7 @@ pub async fn run(config: CompressConfig) -> Result<(), Error> {
             // Read source from stdin
             chunk_input(
                 tokio::io::stdin(),
-                chunker_params,
+                chunker_config,
                 compression,
                 &config.temp_file,
                 config.hash_length,
@@ -216,6 +209,33 @@ pub async fn run(config: CompressConfig) -> Result<(), Error> {
         } else {
             panic!("Missing input");
         };
+
+    let chunker_params = match config.chunker_config {
+        ChunkerConfig::BuzHash(hash_config) => chunk_dictionary::ChunkerParameters {
+            chunk_filter_bits: hash_config.filter_bits.0,
+            min_chunk_size: hash_config.min_chunk_size as u32,
+            max_chunk_size: hash_config.max_chunk_size as u32,
+            rolling_hash_window_size: hash_config.window_size as u32,
+            chunk_hash_length: config.hash_length as u32,
+            chunking_algorithm: chunk_dictionary::ChunkerParameters_ChunkingAlgorithm::BUZHASH,
+            ..Default::default()
+        },
+        ChunkerConfig::RollSum(hash_config) => chunk_dictionary::ChunkerParameters {
+            chunk_filter_bits: hash_config.filter_bits.0,
+            min_chunk_size: hash_config.min_chunk_size as u32,
+            max_chunk_size: hash_config.max_chunk_size as u32,
+            rolling_hash_window_size: hash_config.window_size as u32,
+            chunk_hash_length: config.hash_length as u32,
+            chunking_algorithm: chunk_dictionary::ChunkerParameters_ChunkingAlgorithm::ROLLSUM,
+            ..Default::default()
+        },
+        ChunkerConfig::FixedSize(chunk_size) => chunk_dictionary::ChunkerParameters {
+            max_chunk_size: chunk_size as u32,
+            chunk_hash_length: config.hash_length as u32,
+            chunking_algorithm: chunk_dictionary::ChunkerParameters_ChunkingAlgorithm::FIXED_SIZE,
+            ..Default::default()
+        },
+    };
 
     // Build the final archive
     let file_header = chunk_dictionary::ChunkDictionary {
@@ -226,25 +246,9 @@ pub async fn run(config: CompressConfig) -> Result<(), Error> {
         application_version: PKG_VERSION.to_string(),
         chunk_descriptors: RepeatedField::from_vec(archive_chunks),
         source_checksum: source_hash,
-        chunk_compression: SingularPtrField::some(config.chunker_config.compression.into()),
+        chunk_compression: SingularPtrField::some(config.compression.into()),
         source_total_size: source_size,
-        chunker_params: SingularPtrField::some(chunk_dictionary::ChunkerParameters {
-            chunk_filter_bits: config.chunker_config.chunk_filter_bits,
-            min_chunk_size: config.chunker_config.min_chunk_size as u32,
-            max_chunk_size: config.chunker_config.max_chunk_size as u32,
-            rolling_hash_window_size: config.chunker_config.rolling_window_size as u32,
-            chunk_hash_length: config.hash_length as u32,
-            rolling_hash_type: match config.chunker_config.rolling_hash {
-                RollingHashType::BuzHash => {
-                    chunk_dictionary::ChunkerParameters_RollingHashType::BUZHASH
-                }
-                RollingHashType::RollSum => {
-                    chunk_dictionary::ChunkerParameters_RollingHashType::ROLLSUM
-                }
-            },
-            unknown_fields: std::default::Default::default(),
-            cached_size: std::default::Default::default(),
-        }),
+        chunker_params: SingularPtrField::some(chunker_params),
         unknown_fields: std::default::Default::default(),
         cached_size: std::default::Default::default(),
     };

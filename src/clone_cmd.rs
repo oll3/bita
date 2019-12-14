@@ -13,7 +13,7 @@ use tokio::sync::oneshot;
 use crate::config;
 use crate::info_cmd;
 use bita::archive_reader::ArchiveReader;
-use bita::chunker::{Chunker, ChunkerParams};
+use bita::chunker::{Chunker, ChunkerConfig};
 use bita::error::Error;
 use bita::reader_backend;
 use bita::string_utils::*;
@@ -22,7 +22,7 @@ use bita::HashSum;
 async fn seed_input<T>(
     mut input: T,
     seed_name: &str,
-    chunker_params: ChunkerParams,
+    chunker_config: ChunkerConfig,
     archive: &ArchiveReader,
     chunks_left: &mut HashSet<HashSum>,
     output_file: &mut File,
@@ -34,7 +34,7 @@ where
     let hash_length = archive.hash_length;
     let mut bytes_read_from_seed: u64 = 0;
     let mut found_chunks_count: usize = 0;
-    let seed_chunker = Chunker::new(chunker_params, &mut input);
+    let seed_chunker = Chunker::new(chunker_config, &mut input);
     let mut found_chunks = seed_chunker
         .map(|result| {
             let (_offset, chunk) = result.expect("error while chunking");
@@ -247,7 +247,7 @@ async fn clone_archive(
     );
 
     // Setup chunker to use when chunking seed input
-    let chunker_params = archive.chunker_params.clone();
+    let chunker_config = archive.chunker_config.clone();
 
     // Create or open output file
     let mut output_file = std::fs::OpenOptions::new()
@@ -275,7 +275,7 @@ async fn clone_archive(
         total_read_from_seed += seed_input(
             tokio::io::stdin(),
             "stdin",
-            chunker_params.clone(),
+            chunker_config.clone(),
             &archive,
             &mut chunks_left,
             &mut output_file,
@@ -289,7 +289,7 @@ async fn clone_archive(
         total_read_from_seed += seed_input(
             file,
             &format!("{}", seed_path.display()),
-            chunker_params.clone(),
+            chunker_config.clone(),
             &archive,
             &mut chunks_left,
             &mut output_file,

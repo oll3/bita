@@ -308,7 +308,7 @@ pub struct ChunkerParameters {
     pub max_chunk_size: u32,
     pub rolling_hash_window_size: u32,
     pub chunk_hash_length: u32,
-    pub rolling_hash_type: ChunkerParameters_RollingHashType,
+    pub chunking_algorithm: ChunkerParameters_ChunkingAlgorithm,
     // special fields
     pub unknown_fields: ::protobuf::UnknownFields,
     pub cached_size: ::protobuf::CachedSize,
@@ -400,19 +400,19 @@ impl ChunkerParameters {
         self.chunk_hash_length = v;
     }
 
-    // .chunk_dictionary.ChunkerParameters.RollingHashType rolling_hash_type = 6;
+    // .chunk_dictionary.ChunkerParameters.ChunkingAlgorithm chunking_algorithm = 6;
 
 
-    pub fn get_rolling_hash_type(&self) -> ChunkerParameters_RollingHashType {
-        self.rolling_hash_type
+    pub fn get_chunking_algorithm(&self) -> ChunkerParameters_ChunkingAlgorithm {
+        self.chunking_algorithm
     }
-    pub fn clear_rolling_hash_type(&mut self) {
-        self.rolling_hash_type = ChunkerParameters_RollingHashType::BUZHASH;
+    pub fn clear_chunking_algorithm(&mut self) {
+        self.chunking_algorithm = ChunkerParameters_ChunkingAlgorithm::BUZHASH;
     }
 
     // Param is passed by value, moved
-    pub fn set_rolling_hash_type(&mut self, v: ChunkerParameters_RollingHashType) {
-        self.rolling_hash_type = v;
+    pub fn set_chunking_algorithm(&mut self, v: ChunkerParameters_ChunkingAlgorithm) {
+        self.chunking_algorithm = v;
     }
 }
 
@@ -461,7 +461,7 @@ impl ::protobuf::Message for ChunkerParameters {
                     self.chunk_hash_length = tmp;
                 },
                 6 => {
-                    ::protobuf::rt::read_proto3_enum_with_unknown_fields_into(wire_type, is, &mut self.rolling_hash_type, 6, &mut self.unknown_fields)?
+                    ::protobuf::rt::read_proto3_enum_with_unknown_fields_into(wire_type, is, &mut self.chunking_algorithm, 6, &mut self.unknown_fields)?
                 },
                 _ => {
                     ::protobuf::rt::read_unknown_or_skip_group(field_number, wire_type, is, self.mut_unknown_fields())?;
@@ -490,8 +490,8 @@ impl ::protobuf::Message for ChunkerParameters {
         if self.chunk_hash_length != 0 {
             my_size += ::protobuf::rt::value_size(5, self.chunk_hash_length, ::protobuf::wire_format::WireTypeVarint);
         }
-        if self.rolling_hash_type != ChunkerParameters_RollingHashType::BUZHASH {
-            my_size += ::protobuf::rt::enum_size(6, self.rolling_hash_type);
+        if self.chunking_algorithm != ChunkerParameters_ChunkingAlgorithm::BUZHASH {
+            my_size += ::protobuf::rt::enum_size(6, self.chunking_algorithm);
         }
         my_size += ::protobuf::rt::unknown_fields_size(self.get_unknown_fields());
         self.cached_size.set(my_size);
@@ -514,8 +514,8 @@ impl ::protobuf::Message for ChunkerParameters {
         if self.chunk_hash_length != 0 {
             os.write_uint32(5, self.chunk_hash_length)?;
         }
-        if self.rolling_hash_type != ChunkerParameters_RollingHashType::BUZHASH {
-            os.write_enum(6, self.rolling_hash_type.value())?;
+        if self.chunking_algorithm != ChunkerParameters_ChunkingAlgorithm::BUZHASH {
+            os.write_enum(6, self.chunking_algorithm.value())?;
         }
         os.write_unknown_fields(self.get_unknown_fields())?;
         ::std::result::Result::Ok(())
@@ -584,10 +584,10 @@ impl ::protobuf::Message for ChunkerParameters {
                     |m: &ChunkerParameters| { &m.chunk_hash_length },
                     |m: &mut ChunkerParameters| { &mut m.chunk_hash_length },
                 ));
-                fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeEnum<ChunkerParameters_RollingHashType>>(
-                    "rolling_hash_type",
-                    |m: &ChunkerParameters| { &m.rolling_hash_type },
-                    |m: &mut ChunkerParameters| { &mut m.rolling_hash_type },
+                fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeEnum<ChunkerParameters_ChunkingAlgorithm>>(
+                    "chunking_algorithm",
+                    |m: &ChunkerParameters| { &m.chunking_algorithm },
+                    |m: &mut ChunkerParameters| { &mut m.chunking_algorithm },
                 ));
                 ::protobuf::reflect::MessageDescriptor::new::<ChunkerParameters>(
                     "ChunkerParameters",
@@ -616,7 +616,7 @@ impl ::protobuf::Clear for ChunkerParameters {
         self.max_chunk_size = 0;
         self.rolling_hash_window_size = 0;
         self.chunk_hash_length = 0;
-        self.rolling_hash_type = ChunkerParameters_RollingHashType::BUZHASH;
+        self.chunking_algorithm = ChunkerParameters_ChunkingAlgorithm::BUZHASH;
         self.unknown_fields.clear();
     }
 }
@@ -634,28 +634,31 @@ impl ::protobuf::reflect::ProtobufValue for ChunkerParameters {
 }
 
 #[derive(Clone,PartialEq,Eq,Debug,Hash)]
-pub enum ChunkerParameters_RollingHashType {
+pub enum ChunkerParameters_ChunkingAlgorithm {
     BUZHASH = 0,
     ROLLSUM = 1,
+    FIXED_SIZE = 2,
 }
 
-impl ::protobuf::ProtobufEnum for ChunkerParameters_RollingHashType {
+impl ::protobuf::ProtobufEnum for ChunkerParameters_ChunkingAlgorithm {
     fn value(&self) -> i32 {
         *self as i32
     }
 
-    fn from_i32(value: i32) -> ::std::option::Option<ChunkerParameters_RollingHashType> {
+    fn from_i32(value: i32) -> ::std::option::Option<ChunkerParameters_ChunkingAlgorithm> {
         match value {
-            0 => ::std::option::Option::Some(ChunkerParameters_RollingHashType::BUZHASH),
-            1 => ::std::option::Option::Some(ChunkerParameters_RollingHashType::ROLLSUM),
+            0 => ::std::option::Option::Some(ChunkerParameters_ChunkingAlgorithm::BUZHASH),
+            1 => ::std::option::Option::Some(ChunkerParameters_ChunkingAlgorithm::ROLLSUM),
+            2 => ::std::option::Option::Some(ChunkerParameters_ChunkingAlgorithm::FIXED_SIZE),
             _ => ::std::option::Option::None
         }
     }
 
     fn values() -> &'static [Self] {
-        static values: &'static [ChunkerParameters_RollingHashType] = &[
-            ChunkerParameters_RollingHashType::BUZHASH,
-            ChunkerParameters_RollingHashType::ROLLSUM,
+        static values: &'static [ChunkerParameters_ChunkingAlgorithm] = &[
+            ChunkerParameters_ChunkingAlgorithm::BUZHASH,
+            ChunkerParameters_ChunkingAlgorithm::ROLLSUM,
+            ChunkerParameters_ChunkingAlgorithm::FIXED_SIZE,
         ];
         values
     }
@@ -667,22 +670,22 @@ impl ::protobuf::ProtobufEnum for ChunkerParameters_RollingHashType {
         };
         unsafe {
             descriptor.get(|| {
-                ::protobuf::reflect::EnumDescriptor::new("ChunkerParameters_RollingHashType", file_descriptor_proto())
+                ::protobuf::reflect::EnumDescriptor::new("ChunkerParameters_ChunkingAlgorithm", file_descriptor_proto())
             })
         }
     }
 }
 
-impl ::std::marker::Copy for ChunkerParameters_RollingHashType {
+impl ::std::marker::Copy for ChunkerParameters_ChunkingAlgorithm {
 }
 
-impl ::std::default::Default for ChunkerParameters_RollingHashType {
+impl ::std::default::Default for ChunkerParameters_ChunkingAlgorithm {
     fn default() -> Self {
-        ChunkerParameters_RollingHashType::BUZHASH
+        ChunkerParameters_ChunkingAlgorithm::BUZHASH
     }
 }
 
-impl ::protobuf::reflect::ProtobufValue for ChunkerParameters_RollingHashType {
+impl ::protobuf::reflect::ProtobufValue for ChunkerParameters_ChunkingAlgorithm {
     fn as_ref(&self) -> ::protobuf::reflect::ProtobufValueRef {
         ::protobuf::reflect::ProtobufValueRef::Enum(self.descriptor())
     }
@@ -1397,28 +1400,29 @@ static file_descriptor_proto_data: &'static [u8] = b"\
     kDescriptor\x12\x1a\n\x08checksum\x18\x01\x20\x01(\x0cR\x08checksum\x12!\
     \n\x0carchive_size\x18\x03\x20\x01(\rR\x0barchiveSize\x12%\n\x0earchive_\
     offset\x18\x04\x20\x01(\x04R\rarchiveOffset\x12\x1f\n\x0bsource_size\x18\
-    \x05\x20\x01(\rR\nsourceSize\"\xfe\x02\n\x11ChunkerParameters\x12*\n\x11\
+    \x05\x20\x01(\rR\nsourceSize\"\x95\x03\n\x11ChunkerParameters\x12*\n\x11\
     chunk_filter_bits\x18\x01\x20\x01(\rR\x0fchunkFilterBits\x12$\n\x0emin_c\
     hunk_size\x18\x02\x20\x01(\rR\x0cminChunkSize\x12$\n\x0emax_chunk_size\
     \x18\x03\x20\x01(\rR\x0cmaxChunkSize\x127\n\x18rolling_hash_window_size\
     \x18\x04\x20\x01(\rR\x15rollingHashWindowSize\x12*\n\x11chunk_hash_lengt\
-    h\x18\x05\x20\x01(\rR\x0fchunkHashLength\x12_\n\x11rolling_hash_type\x18\
-    \x06\x20\x01(\x0e23.chunk_dictionary.ChunkerParameters.RollingHashTypeR\
-    \x0frollingHashType\"+\n\x0fRollingHashType\x12\x0b\n\x07BUZHASH\x10\0\
-    \x12\x0b\n\x07ROLLSUM\x10\x01\"\xd2\x01\n\x10ChunkCompression\x12T\n\x0b\
-    compression\x18\x02\x20\x01(\x0e22.chunk_dictionary.ChunkCompression.Com\
-    pressionTypeR\x0bcompression\x12+\n\x11compression_level\x18\x03\x20\x01\
-    (\rR\x10compressionLevel\";\n\x0fCompressionType\x12\x08\n\x04NONE\x10\0\
-    \x12\x08\n\x04LZMA\x10\x01\x12\x08\n\x04ZSTD\x10\x02\x12\n\n\x06BROTLI\
-    \x10\x03\"\xa9\x03\n\x0fChunkDictionary\x12/\n\x13application_version\
-    \x18\x01\x20\x01(\tR\x12applicationVersion\x12'\n\x0fsource_checksum\x18\
-    \x02\x20\x01(\x0cR\x0esourceChecksum\x12*\n\x11source_total_size\x18\x03\
-    \x20\x01(\x04R\x0fsourceTotalSize\x12J\n\x0echunker_params\x18\x04\x20\
-    \x01(\x0b2#.chunk_dictionary.ChunkerParametersR\rchunkerParams\x12O\n\
-    \x11chunk_compression\x18\x05\x20\x01(\x0b2\".chunk_dictionary.ChunkComp\
-    ressionR\x10chunkCompression\x12#\n\rrebuild_order\x18\x06\x20\x03(\rR\
-    \x0crebuildOrder\x12N\n\x11chunk_descriptors\x18\x07\x20\x03(\x0b2!.chun\
-    k_dictionary.ChunkDescriptorR\x10chunkDescriptorsb\x06proto3\
+    h\x18\x05\x20\x01(\rR\x0fchunkHashLength\x12d\n\x12chunking_algorithm\
+    \x18\x06\x20\x01(\x0e25.chunk_dictionary.ChunkerParameters.ChunkingAlgor\
+    ithmR\x11chunkingAlgorithm\"=\n\x11ChunkingAlgorithm\x12\x0b\n\x07BUZHAS\
+    H\x10\0\x12\x0b\n\x07ROLLSUM\x10\x01\x12\x0e\n\nFIXED_SIZE\x10\x02\"\xd2\
+    \x01\n\x10ChunkCompression\x12T\n\x0bcompression\x18\x02\x20\x01(\x0e22.\
+    chunk_dictionary.ChunkCompression.CompressionTypeR\x0bcompression\x12+\n\
+    \x11compression_level\x18\x03\x20\x01(\rR\x10compressionLevel\";\n\x0fCo\
+    mpressionType\x12\x08\n\x04NONE\x10\0\x12\x08\n\x04LZMA\x10\x01\x12\x08\
+    \n\x04ZSTD\x10\x02\x12\n\n\x06BROTLI\x10\x03\"\xa9\x03\n\x0fChunkDiction\
+    ary\x12/\n\x13application_version\x18\x01\x20\x01(\tR\x12applicationVers\
+    ion\x12'\n\x0fsource_checksum\x18\x02\x20\x01(\x0cR\x0esourceChecksum\
+    \x12*\n\x11source_total_size\x18\x03\x20\x01(\x04R\x0fsourceTotalSize\
+    \x12J\n\x0echunker_params\x18\x04\x20\x01(\x0b2#.chunk_dictionary.Chunke\
+    rParametersR\rchunkerParams\x12O\n\x11chunk_compression\x18\x05\x20\x01(\
+    \x0b2\".chunk_dictionary.ChunkCompressionR\x10chunkCompression\x12#\n\rr\
+    ebuild_order\x18\x06\x20\x03(\rR\x0crebuildOrder\x12N\n\x11chunk_descrip\
+    tors\x18\x07\x20\x03(\x0b2!.chunk_dictionary.ChunkDescriptorR\x10chunkDe\
+    scriptorsb\x06proto3\
 ";
 
 static mut file_descriptor_proto_lazy: ::protobuf::lazy::Lazy<::protobuf::descriptor::FileDescriptorProto> = ::protobuf::lazy::Lazy {

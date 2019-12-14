@@ -16,16 +16,18 @@ message ChunkDescriptor {
 }
 
 message ChunkerParameters {
-  enum RollingHashType {
+  enum ChunkingAlgorithm {
     BUZHASH = 0;
     ROLLSUM = 1;
+    FIXED_SIZE = 2;
   }
   uint32 chunk_filter_bits = 1;
   uint32 min_chunk_size = 2;
+  // max_chunk_size is also the fixed chunk size when FIXED_SIZE is set
   uint32 max_chunk_size = 3;
   uint32 rolling_hash_window_size = 4;
   uint32 chunk_hash_length = 5;
-  RollingHashType rolling_hash_type = 6;
+  ChunkingAlgorithm chunking_algorithm = 6;
 }
 
 message ChunkCompression {

@@ -5,7 +5,7 @@ use std::fmt;
 
 use crate::archive;
 use crate::chunk_dictionary;
-use crate::chunker::{ChunkerParams, RollingHashType};
+use crate::chunker::{ChunkerConfig, HashConfig, HashFilterBits};
 use crate::compression::Compression;
 use crate::error::Error;
 use crate::reader_backend;
@@ -42,7 +42,7 @@ pub struct ArchiveReader {
     pub source_checksum: HashSum,
 
     // Chunker parameters used when this archive was created
-    pub chunker_params: ChunkerParams,
+    pub chunker_config: ChunkerConfig,
     pub hash_length: usize,
 }
 
@@ -139,7 +139,29 @@ impl ArchiveReader {
                 current_offset += u64::from(chunk_size);
             });
 
-        let chunker_params = dictionary.chunker_params.unwrap();
+        let cp = dictionary.chunker_params.unwrap();
+        let chunker_config = match cp.chunking_algorithm {
+            chunk_dictionary::ChunkerParameters_ChunkingAlgorithm::BUZHASH => {
+                ChunkerConfig::BuzHash(HashConfig {
+                    filter_bits: HashFilterBits(cp.chunk_filter_bits),
+                    min_chunk_size: cp.min_chunk_size as usize,
+                    max_chunk_size: cp.max_chunk_size as usize,
+                    window_size: cp.rolling_hash_window_size as usize,
+                })
+            }
+            chunk_dictionary::ChunkerParameters_ChunkingAlgorithm::ROLLSUM => {
+                ChunkerConfig::RollSum(HashConfig {
+                    filter_bits: HashFilterBits(cp.chunk_filter_bits),
+                    min_chunk_size: cp.min_chunk_size as usize,
+                    max_chunk_size: cp.max_chunk_size as usize,
+                    window_size: cp.rolling_hash_window_size as usize,
+                })
+            }
+            chunk_dictionary::ChunkerParameters_ChunkingAlgorithm::FIXED_SIZE => {
+                ChunkerConfig::FixedSize(cp.max_chunk_size as usize)
+            }
+        };
+
         Ok(Self {
             chunk_map,
             chunk_descriptors,
@@ -156,22 +178,8 @@ impl ArchiveReader {
                 .map(|s| s as usize)
                 .collect(),
             archive_chunks_offset: chunk_data_offset as u64,
-            chunker_params: ChunkerParams::new(
-                chunker_params.chunk_filter_bits,
-                chunker_params.min_chunk_size as usize,
-                chunker_params.max_chunk_size as usize,
-                match chunker_params.rolling_hash_type {
-                    chunk_dictionary::ChunkerParameters_RollingHashType::BUZHASH => {
-                        RollingHashType::BuzHash
-                    }
-                    chunk_dictionary::ChunkerParameters_RollingHashType::ROLLSUM => {
-                        RollingHashType::RollSum
-                    }
-                },
-                chunker_params.rolling_hash_window_size as usize,
-                archive::BUZHASH_SEED,
-            ),
-            hash_length: chunker_params.chunk_hash_length as usize,
+            chunker_config,
+            hash_length: cp.chunk_hash_length as usize,
         })
     }
 

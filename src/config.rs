@@ -1,18 +1,7 @@
-use bita::chunker::RollingHashType;
+use bita::chunker::ChunkerConfig;
 use bita::compression::Compression;
 use bita::HashSum;
 use std::path::PathBuf;
-
-#[derive(Debug, Clone)]
-pub struct ChunkerConfig {
-    pub chunk_filter_bits: u32,
-    pub min_chunk_size: usize,
-    pub max_chunk_size: usize,
-    pub rolling_window_size: usize,
-    pub compression_level: u32,
-    pub compression: Compression,
-    pub rolling_hash: RollingHashType,
-}
 
 #[derive(Debug, Clone)]
 pub struct CompressConfig {
@@ -24,6 +13,8 @@ pub struct CompressConfig {
     pub temp_file: PathBuf,
     pub hash_length: usize,
     pub chunker_config: ChunkerConfig,
+    pub compression_level: u32,
+    pub compression: Compression,
 }
 
 #[derive(Debug, Clone)]
@@ -50,6 +41,8 @@ pub struct DiffConfig {
     pub input_a: PathBuf,
     pub input_b: PathBuf,
     pub chunker_config: ChunkerConfig,
+    pub compression_level: u32,
+    pub compression: Compression,
 }
 
 #[derive(Debug, Clone)]

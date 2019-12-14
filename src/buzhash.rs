@@ -1,5 +1,7 @@
 use crate::rolling_hash::RollingHash;
 
+const BUZHASH_SEED: u32 = 0x1032_4195;
+
 #[allow(clippy::unreadable_literal)]
 static BUZHASH_TABLE: &[u32] = &[
     0xa40cc360, 0xbb785af8, 0x32c790bc, 0x6c64cd34, 0x83b4aa73, 0x36b691a5, 0x4631ad79, 0x5e49d231,
@@ -49,13 +51,13 @@ pub struct BuzHash {
 }
 
 impl BuzHash {
-    pub fn new(window: usize, seed: u32) -> Self {
+    pub fn new(window: usize) -> Self {
         BuzHash {
             index: 0,
             buf: vec![0; window],
             window,
             hash_sum: 0,
-            buzhash_table: Self::generate_seeded_table(seed),
+            buzhash_table: Self::generate_seeded_table(BUZHASH_SEED),
             window_full: false,
             last_input: 0,
             repeated_input: 0,
@@ -117,8 +119,8 @@ impl BuzHash {
 }
 
 impl RollingHash for BuzHash {
-    fn new(window_size: usize, hash_seed: u32) -> Self {
-        Self::new(window_size, hash_seed)
+    fn new(window_size: usize) -> Self {
+        Self::new(window_size)
     }
     fn window_size(&self) -> usize {
         self.window
@@ -137,7 +139,7 @@ mod tests {
     #[test]
     fn equal_sums_for_equal_range() {
         let window_size = 8;
-        let mut h = BuzHash::new(window_size, 0x10324195);
+        let mut h = BuzHash::new(window_size);
         let data1 = vec![
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
         ];
@@ -166,7 +168,7 @@ mod tests {
     fn first_valid_correct_sum() {
         let window_size = 5;
         let sums: Vec<u32> = {
-            let mut h = BuzHash::new(window_size, 0x10324195);
+            let mut h = BuzHash::new(window_size);
             [1, 2, 3, 4, 5]
                 .iter()
                 .filter_map(|&v| {
@@ -188,7 +190,7 @@ mod tests {
     fn last_valid_correct_sum() {
         let window_size = 5;
         let sums: Vec<u32> = {
-            let mut h = BuzHash::new(window_size, 0x10324195);
+            let mut h = BuzHash::new(window_size);
             [10, 20, 30, 40, 50, 60, 70, 80, 90, 1, 2, 3, 4, 5]
                 .iter()
                 .filter_map(|&v| {

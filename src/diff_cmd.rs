@@ -8,7 +8,8 @@ use tokio::fs::File;
 use tokio::sync::oneshot;
 
 use crate::config::DiffConfig;
-use bita::chunker::{Chunker, ChunkerParams};
+use crate::info_cmd;
+use bita::chunker::{Chunker, ChunkerConfig};
 use bita::compression::Compression;
 use bita::error::Error;
 use bita::string_utils::*;
@@ -31,7 +32,7 @@ struct ChunkerResult {
 
 async fn chunk_file(
     path: &Path,
-    chunker_params: &ChunkerParams,
+    chunker_config: &ChunkerConfig,
     compression: Compression,
 ) -> Result<ChunkerResult, Error> {
     let mut descriptors: HashMap<Vec<u8>, ChunkDescriptor> = HashMap::new();
@@ -44,7 +45,7 @@ async fn chunk_file(
             .await
             .map_err(|e| ("failed to open output file", e))?;
         let mut unique_chunk = HashSet::new();
-        let chunker = Chunker::new(chunker_params.clone(), &mut file);
+        let chunker = Chunker::new(chunker_config.clone(), &mut file);
         let mut chunk_stream = chunker
             .map(|result| {
                 let (offset, chunk) = result.expect("error while chunking");
@@ -165,43 +166,18 @@ fn selection_string(
 }
 
 pub async fn run(config: DiffConfig) -> Result<(), Error> {
-    let chunker_params = ChunkerParams::new(
-        config.chunker_config.chunk_filter_bits,
-        config.chunker_config.min_chunk_size,
-        config.chunker_config.max_chunk_size,
-        config.chunker_config.rolling_hash,
-        config.chunker_config.rolling_window_size,
-        bita::archive::BUZHASH_SEED,
-    );
-    let compression = config.chunker_config.compression;
+    let chunker_config = &config.chunker_config;
+    let compression = config.compression;
 
     info!("Chunker config:");
-    info!(
-        "  Chunk minimum size: {}",
-        size_to_str(chunker_params.min_chunk_size),
-    );
-    info!(
-        "  Chunk maximum size: {}",
-        size_to_str(chunker_params.max_chunk_size),
-    );
-    info!(
-        "  Chunk average target size: {} (mask: {:#b})",
-        size_to_str(chunker_params.chunk_target_average()),
-        chunker_params.filter_mask(),
-    );
-    info!("  Chunk compression: {}", compression);
-    info!("  Rolling hash: {}", chunker_params.rolling_hash);
-    info!(
-        "  Rolling hash window size: {}",
-        size_to_str(chunker_params.rolling_window_size)
-    );
+    info_cmd::print_chunker_config(chunker_config);
     println!();
 
     info!("Scanning {} ...", config.input_a.display());
-    let a = chunk_file(&config.input_a, &chunker_params, compression).await?;
+    let a = chunk_file(&config.input_a, chunker_config, compression).await?;
 
     info!("Scanning {} ...", config.input_b.display());
-    let b = chunk_file(&config.input_b, &chunker_params, compression).await?;
+    let b = chunk_file(&config.input_b, chunker_config, compression).await?;
 
     let mut descriptors_ab: HashMap<Vec<u8>, ChunkDescriptor> = HashMap::new();
     for descriptor in a.descriptors.iter().chain(&b.descriptors) {

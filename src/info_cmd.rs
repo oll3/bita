@@ -3,6 +3,7 @@ use std::path::Path;
 
 use crate::config;
 use bita::archive_reader::ArchiveReader;
+use bita::chunker::{ChunkerConfig, HashConfig};
 use bita::error::Error;
 use bita::reader_backend;
 use bita::string_utils::*;
@@ -13,34 +14,41 @@ pub async fn print_archive_backend(builder: reader_backend::Builder) -> Result<(
     Ok(())
 }
 
+fn print_rolling_hash_config(hc: &HashConfig) {
+    info!(
+        "  Rolling hash window size: {}",
+        size_to_str(hc.window_size)
+    );
+    info!("  Chunk minimum size: {}", size_to_str(hc.min_chunk_size));
+    info!("  Chunk maximum size: {}", size_to_str(hc.max_chunk_size));
+    info!(
+        "  Chunk average target size: {} (mask: {:#b})",
+        size_to_str(hc.filter_bits.chunk_target_average()),
+        hc.filter_bits.mask(),
+    );
+}
+
+pub fn print_chunker_config(config: &ChunkerConfig) {
+    info!("  Chunking algorithm: {}", config);
+    match config {
+        ChunkerConfig::BuzHash(hc) => print_rolling_hash_config(hc),
+        ChunkerConfig::RollSum(hc) => print_rolling_hash_config(hc),
+        ChunkerConfig::FixedSize(chunk_size) => {
+            info!("  Fixed chunk size: {}", size_to_str(*chunk_size));
+        }
+    }
+}
+
 pub fn print_archive(archive: &ArchiveReader) {
     info!("Archive: ");
     info!("  Version: {}", archive.created_by_app_version);
-    info!(
-        "  Chunk minimum size: {}",
-        size_to_str(archive.chunker_params.min_chunk_size),
-    );
-    info!(
-        "  Chunk maximum size: {}",
-        size_to_str(archive.chunker_params.max_chunk_size),
-    );
-    info!(
-        "  Chunk average target size: {} (mask: {:#b})",
-        size_to_str(archive.chunker_params.chunk_target_average()),
-        archive.chunker_params.filter_mask(),
-    );
-    info!("  Chunk compression: {}", archive.chunk_compression);
-    info!("  Chunk hash length: {} bytes", archive.hash_length);
-    info!("  Rolling hash: {}", archive.chunker_params.rolling_hash);
-    info!(
-        "  Rolling hash window size: {}",
-        size_to_str(archive.chunker_params.rolling_window_size)
-    );
     info!(
         "  Archive size: {}",
         size_to_str(archive.compressed_size() + archive.header_size as u64)
     );
     info!("  Header checksum: {}", archive.header_checksum);
+
+    print_chunker_config(&archive.chunker_config);
 
     info!("Source:");
     info!("  Source checksum: {}", archive.source_checksum);
