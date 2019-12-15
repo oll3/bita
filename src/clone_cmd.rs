@@ -1,6 +1,5 @@
 use blake2::{Blake2b, Digest};
 use futures_util::future;
-use futures_util::future::FutureExt;
 use futures_util::stream::StreamExt;
 use log::*;
 use std::collections::HashSet;
@@ -8,7 +7,6 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use tokio::io::AsyncRead;
-use tokio::sync::oneshot;
 
 use crate::config;
 use crate::info_cmd;
@@ -39,7 +37,7 @@ where
         .map(|result| {
             let (_offset, chunk) = result.expect("error while chunking");
             // Build hash of full source
-            async move {
+            tokio::task::spawn(async move {
                 // Calculate strong hash for each chunk
                 let mut chunk_hasher = Blake2b::new();
                 chunk_hasher.input(&chunk);
@@ -47,11 +45,12 @@ where
                     HashSum::from_slice(&chunk_hasher.result()[0..hash_length as usize]),
                     chunk,
                 )
-            }
+            })
         })
         .buffered(8)
-        .filter_map(|(hash, chunk)| {
+        .filter_map(|result| {
             // Filter unique chunks to be compressed
+            let (hash, chunk) = result.expect("error while hashing chunk");
             if chunks_left.remove(&hash) {
                 future::ready(Some((hash, chunk)))
             } else {
@@ -104,12 +103,10 @@ async fn finish_using_archive(
             .enumerate()
             .map(|(chunk_index, chunk)| {
                 let chunk = chunk.expect("failed to read archive");
-                //let chunk_descriptor = &group[chunk_index];
                 let chunk_checksum = group[chunk_index].checksum.clone();
                 let chunk_source_size = group[chunk_index].source_size as usize;
-                let (tx, rx) = oneshot::channel();
-                tokio::spawn(async move {
-                    tx.send((
+                tokio::task::spawn(async move {
+                    (
                         chunk_checksum.clone(),
                         ArchiveReader::decompress_and_verify(
                             compression,
@@ -117,16 +114,15 @@ async fn finish_using_archive(
                             chunk_source_size,
                             chunk,
                         )
-                        .expect("failed to decompresss chunk"),
-                    ))
-                    .expect("failed to send");
-                });
-                rx.map(|v| v.expect("failed to receive"))
+                        .expect("failed to decompress chunk"),
+                    )
+                })
             })
             .buffered(8);
 
-        while let Some((hash, chunk)) = archive_chunk_stream.next().await {
+        while let Some(result) = archive_chunk_stream.next().await {
             // For each chunk read from archive
+            let (hash, chunk) = result.expect("failed to decompress from archive");
             debug!(
                 "Chunk '{}', size {} used from archive",
                 hash,

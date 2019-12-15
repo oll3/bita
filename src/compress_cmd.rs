@@ -1,6 +1,5 @@
 use blake2::{Blake2b, Digest};
 use futures_util::future;
-use futures_util::future::FutureExt;
 use futures_util::stream::StreamExt;
 use log::*;
 use protobuf::{RepeatedField, SingularPtrField};
@@ -8,7 +7,6 @@ use std::collections::HashMap;
 use std::io::Write;
 use tokio::fs::{File, OpenOptions};
 use tokio::prelude::*;
-use tokio::sync::oneshot;
 
 use crate::config::CompressConfig;
 use crate::info_cmd;
@@ -71,23 +69,21 @@ where
                 // Build hash of full source
                 source_hasher.input(&chunk);
                 source_size += chunk.len() as u64;
-                let (tx, rx) = oneshot::channel();
-                tokio::spawn(async move {
+                tokio::task::spawn(async move {
                     // Calculate strong hash for each chunk
                     let mut chunk_hasher = Blake2b::new();
                     chunk_hasher.input(&chunk);
-                    tx.send((
+                    (
                         HashSum::from_slice(&chunk_hasher.result()[0..hash_length as usize]),
                         offset,
                         chunk,
-                    ))
-                    .unwrap();
-                });
-                rx.map(|v| v.expect("failed to receive"))
+                    )
+                })
             })
             .buffered(8)
-            .filter_map(|(hash, offset, chunk)| {
+            .filter_map(|result| {
                 // Filter unique chunks to be compressed
+                let (hash, offset, chunk) = result.expect("error while hashing chunk");
                 let (unique, chunk_index) = if unique_chunks.contains_key(&hash) {
                     (false, *unique_chunks.get(&hash).unwrap())
                 } else {
@@ -112,20 +108,19 @@ where
                 }
             })
             .map(|(chunk_index, hash, offset, chunk)| {
-                let (tx, rx) = oneshot::channel();
-                tokio::spawn(async move {
+                tokio::task::spawn(async move {
                     // Compress each chunk
                     let compressed_chunk = compression
                         .compress(&chunk)
                         .expect("failed to compress chunk");
-                    tx.send((chunk_index, hash, offset, chunk, compressed_chunk))
-                        .expect("failed to send");
-                });
-                rx.map(|v| v.expect("failed to receive"))
+                    (chunk_index, hash, offset, chunk, compressed_chunk)
+                })
             })
             .buffered(8);
 
-        while let Some((index, hash, offset, chunk, compressed_chunk)) = chunk_stream.next().await {
+        while let Some(result) = chunk_stream.next().await {
+            let (index, hash, offset, chunk, compressed_chunk) =
+                result.expect("error while compressing chunk");
             let chunk_len = chunk.len();
             let use_uncompressed_chunk = compressed_chunk.len() >= chunk_len;
             debug!(

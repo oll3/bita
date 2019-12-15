@@ -1,11 +1,9 @@
 use blake2::{Blake2b, Digest};
-use futures_util::future::FutureExt;
 use futures_util::stream::StreamExt;
 use log::*;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use tokio::fs::File;
-use tokio::sync::oneshot;
 
 use crate::config::DiffConfig;
 use crate::info_cmd;
@@ -49,18 +47,16 @@ async fn chunk_file(
         let mut chunk_stream = chunker
             .map(|result| {
                 let (offset, chunk) = result.expect("error while chunking");
-                let (tx, rx) = oneshot::channel();
-                tokio::spawn(async move {
+                tokio::task::spawn(async move {
                     // Calculate strong hash for each chunk
                     let mut chunk_hasher = Blake2b::new();
                     chunk_hasher.input(&chunk);
-                    tx.send((chunk_hasher.result().to_vec(), offset, chunk))
-                        .expect("failed to send")
-                });
-                rx.map(|v| v.expect("failed to receive"))
+                    (chunk_hasher.result().to_vec(), offset, chunk)
+                })
             })
             .buffered(8)
-            .map(|(hash, offset, chunk)| {
+            .map(|result| {
+                let (hash, offset, chunk) = result.expect("error while hashing chunk");
                 if unique_chunk.contains(&hash) {
                     (hash, offset, chunk, false)
                 } else {
@@ -69,25 +65,23 @@ async fn chunk_file(
                 }
             })
             .map(|(hash, offset, chunk, do_compress)| {
-                let (tx, rx) = oneshot::channel();
-                tokio::spawn(async move {
+                tokio::task::spawn(async move {
                     if do_compress {
                         // Compress unique chunks
                         let compressed_chunk = compression
                             .compress(&chunk)
                             .expect("failed to compress chunk");
-                        tx.send((hash, offset, chunk.len(), Some(compressed_chunk.len())))
-                            .expect("failed to send");
+                        (hash, offset, chunk.len(), Some(compressed_chunk.len()))
                     } else {
-                        tx.send((hash, offset, chunk.len(), None))
-                            .expect("failed to send");
+                        (hash, offset, chunk.len(), None)
                     }
-                });
-                rx.map(|v| v.expect("failed to receive"))
+                })
             })
             .buffered(8);
 
-        while let Some((hash, offset, chunk_size, compressed_size)) = chunk_stream.next().await {
+        while let Some(result) = chunk_stream.next().await {
+            let (hash, offset, chunk_size, compressed_size) =
+                result.expect("error while compressing chunk");
             total_chunks += 1;
             total_size += chunk_size as u64;
             chunks.insert(hash.clone());
