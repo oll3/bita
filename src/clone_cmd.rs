@@ -2,15 +2,15 @@ use blake2::{Blake2b, Digest};
 use futures_util::future;
 use futures_util::stream::StreamExt;
 use log::*;
-use std::collections::HashSet;
-use std::fs::File;
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::SeekFrom;
 use std::path::Path;
-use tokio::io::AsyncRead;
+use tokio::fs::File;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 
 use crate::config;
 use crate::info_cmd;
 use bita::archive_reader::ArchiveReader;
+use bita::chunk_index::ChunkIndex;
 use bita::chunker::{Chunker, ChunkerConfig};
 use bita::error::Error;
 use bita::reader_backend;
@@ -22,7 +22,7 @@ async fn seed_input<T>(
     seed_name: &str,
     chunker_config: &ChunkerConfig,
     archive: &ArchiveReader,
-    chunks_left: &mut HashSet<HashSum>,
+    chunks_left: &mut ChunkIndex,
     output_file: &mut File,
 ) -> Result<u64, Error>
 where
@@ -59,13 +59,19 @@ where
             size_to_str(chunk.len()),
             seed_name,
         );
-        for offset in archive.chunk_source_offsets(&hash) {
+        for offset in archive
+            .source_index()
+            .offsets(&hash)
+            .ok_or(format!("missing chunk ({}) in source!?", hash))?
+        {
             bytes_read_from_seed += chunk.len() as u64;
             output_file
-                .seek(SeekFrom::Start(*offset))
+                .seek(SeekFrom::Start(offset))
+                .await
                 .map_err(|err| ("failed to seek output", err))?;
             output_file
                 .write_all(&chunk)
+                .await
                 .map_err(|err| ("failed to write output", err))?;
         }
         found_chunks_count += 1;
@@ -83,7 +89,7 @@ where
 async fn finish_using_archive(
     reader_builder: reader_backend::Builder,
     archive: &ArchiveReader,
-    chunks_left: HashSet<HashSum>,
+    chunks_left: ChunkIndex,
     output_file: &mut File,
 ) -> Result<u64, Error> {
     let fetch_count = chunks_left.len();
@@ -129,13 +135,19 @@ async fn finish_using_archive(
                 hash,
                 size_to_str(chunk.len()),
             );
-            for offset in archive.chunk_source_offsets(&hash) {
+            for offset in archive
+                .source_index()
+                .offsets(&hash)
+                .ok_or(format!("missing chunk ({}) in source!?", hash))?
+            {
                 total_written += chunk.len() as u64;
                 output_file
-                    .seek(SeekFrom::Start(*offset))
+                    .seek(SeekFrom::Start(offset))
+                    .await
                     .map_err(|err| ("failed to seek output", err))?;
                 output_file
                     .write_all(&chunk)
+                    .await
                     .map_err(|err| ("failed to write output", err))?;
             }
         }
@@ -157,12 +169,14 @@ async fn verify_output(
     info!("Verifying checksum of {}...", config.output.display());
     output_file
         .seek(SeekFrom::Start(0))
+        .await
         .map_err(|err| ("failed to seek output", err))?;
     let mut output_hasher = Blake2b::new();
     let mut buffer: Vec<u8> = vec![0; 4 * 1024 * 1024];
     loop {
         let rc = output_file
             .read(&mut buffer)
+            .await
             .map_err(|err| ("failed to read output", err))?;
         if rc == 0 {
             break;
@@ -185,15 +199,17 @@ async fn verify_output(
 }
 
 #[cfg(unix)]
-fn prepare_unpack_output(output_file: &mut File, source_file_size: u64) -> Result<(), Error> {
+async fn prepare_unpack_output(output_file: &mut File, source_file_size: u64) -> Result<(), Error> {
     use std::os::linux::fs::MetadataExt;
     let meta = output_file
         .metadata()
+        .await
         .map_err(|e| ("unable to get file meta data", e))?;
     if meta.st_mode() & 0x6000 == 0x6000 {
         // Output is a block device
         let size = output_file
             .seek(SeekFrom::End(0))
+            .await
             .map_err(|e| ("unable to seek output file", e))?;
         if size != source_file_size {
             panic!(
@@ -204,11 +220,13 @@ fn prepare_unpack_output(output_file: &mut File, source_file_size: u64) -> Resul
         }
         output_file
             .seek(SeekFrom::Start(0))
+            .await
             .map_err(|e| ("unable to seek output file", e))?;
     } else {
         // Output is a reqular file
         output_file
             .set_len(source_file_size)
+            .await
             .map_err(|e| ("unable to resize output file", e))?;
     }
     Ok(())
@@ -227,7 +245,7 @@ async fn clone_archive(
     config: &config::CloneConfig,
 ) -> Result<(), Error> {
     let archive = ArchiveReader::try_init(reader_builder.clone()).await?;
-    let mut chunks_left = archive.chunk_hash_set();
+    let mut chunks_left = archive.source_index().clone();
     let mut total_read_from_seed = 0u64;
 
     info_cmd::print_archive(&archive);
@@ -253,12 +271,13 @@ async fn clone_archive(
     let chunker_config = archive.chunker_config().clone();
 
     // Create or open output file
-    let mut output_file = std::fs::OpenOptions::new()
+    let mut output_file = tokio::fs::OpenOptions::new()
         .write(true)
         .read(config.verify_output)
         .create(config.force_create)
         .create_new(!config.force_create)
         .open(&config.output)
+        .await
         .map_err(|e| {
             (
                 format!("failed to open output file ({})", config.output.display()),
@@ -271,7 +290,7 @@ async fn clone_archive(
     // Check if the given output file is a regular file or block device.
     // If it is a block device we should check its size against the target size before
     // writing. If a regular file then resize that file to target size.
-    prepare_unpack_output(&mut output_file, archive.total_source_size())?;
+    prepare_unpack_output(&mut output_file, archive.total_source_size()).await?;
 
     // Read chunks from seed files
     if config.seed_stdin && !atty::is(atty::Stream::Stdin) {
@@ -286,7 +305,7 @@ async fn clone_archive(
         .await?;
     }
     for seed_path in &config.seed_files {
-        let file = tokio::fs::File::open(seed_path)
+        let file = File::open(seed_path)
             .await
             .map_err(|e| ("failed to open seed file", e))?;
         total_read_from_seed += seed_input(

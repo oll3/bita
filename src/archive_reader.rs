@@ -1,9 +1,8 @@
 use blake2::{Blake2b, Digest};
-use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
 
 use crate::archive;
 use crate::chunk_dictionary;
+use crate::chunk_index::ChunkIndex;
 use crate::chunker::ChunkerConfig;
 use crate::compression::Compression;
 use crate::error::Error;
@@ -16,27 +15,25 @@ pub struct ChunkDescriptor {
     pub archive_size: u32,
     pub archive_offset: u64,
     pub source_size: u32,
-    pub source_offsets: Vec<u64>,
 }
 
-impl From<(chunk_dictionary::ChunkDescriptor, Vec<u64>)> for ChunkDescriptor {
-    fn from((dict, source_offsets): (chunk_dictionary::ChunkDescriptor, Vec<u64>)) -> Self {
+impl From<chunk_dictionary::ChunkDescriptor> for ChunkDescriptor {
+    fn from(dict: chunk_dictionary::ChunkDescriptor) -> Self {
         ChunkDescriptor {
             checksum: dict.checksum.into(),
             archive_size: dict.archive_size,
             archive_offset: dict.archive_offset,
             source_size: dict.source_size,
-            source_offsets,
         }
     }
 }
 
 pub struct ArchiveReader {
-    // Go from chunk hash to archive chunk index (chunks vector)
-    chunk_map: HashMap<HashSum, Rc<ChunkDescriptor>>,
+    // Array representing the order of chunks in archive
+    chunk_order: Vec<ChunkDescriptor>,
 
-    // Array representing the order chunks in source
-    chunk_descriptors: Vec<Rc<ChunkDescriptor>>,
+    // Chunk index describing the source file construct
+    source_index: ChunkIndex,
 
     total_chunks: usize,
     header_size: usize,
@@ -71,39 +68,13 @@ impl ArchiveReader {
         Ok(())
     }
 
-    fn map_chunks(
-        dictionary: &chunk_dictionary::ChunkDictionary,
-    ) -> (
-        Vec<Rc<ChunkDescriptor>>,
-        HashMap<HashSum, Rc<ChunkDescriptor>>,
-    ) {
-        // Create chunk offset vector, to go from chunk index to source file offsets
-        let source_offsets = {
-            let mut offsets: Vec<Vec<u64>> = vec![vec![]; dictionary.chunk_descriptors.len()];
-            let mut offset: u64 = 0;
-            dictionary.rebuild_order.iter().for_each(|&i| {
-                let i = i as usize;
-                let chunk_size = dictionary.chunk_descriptors[i].source_size;
-                offsets[i].push(offset);
-                offset += u64::from(chunk_size);
-            });
-            offsets
-        };
-
-        // Create map to go from chunk hash to descriptor index
-        let mut chunk_descriptors: Vec<Rc<ChunkDescriptor>> = Vec::new();
-        let mut chunk_map: HashMap<HashSum, Rc<ChunkDescriptor>> = HashMap::new();
-
-        for (desc, chunk_source_offsets) in dictionary
-            .chunk_descriptors
-            .iter()
-            .zip(source_offsets.into_iter())
-        {
-            let desc: Rc<ChunkDescriptor> = Rc::new((desc.clone(), chunk_source_offsets).into());
-            chunk_map.insert(desc.checksum.clone(), desc.clone());
+    fn map_chunks(dictionary: &chunk_dictionary::ChunkDictionary) -> Vec<ChunkDescriptor> {
+        let mut chunk_descriptors: Vec<ChunkDescriptor> = Vec::new();
+        for desc in dictionary.chunk_descriptors.iter() {
+            let desc: ChunkDescriptor = desc.clone().into();
             chunk_descriptors.push(desc);
         }
-        (chunk_descriptors, chunk_map)
+        chunk_descriptors
     }
 
     pub async fn try_init(mut builder: reader_backend::Builder) -> Result<Self, Error> {
@@ -152,11 +123,12 @@ impl ArchiveReader {
             archive::u64_from_le_slice(&header[offs..(offs + 8)])
         };
 
-        let (chunk_descriptors, chunk_map) = Self::map_chunks(&dictionary);
+        let source_index = ChunkIndex::from_dictionary(&dictionary);
+
+        let chunk_order = Self::map_chunks(&dictionary);
         let chunker_params = dictionary.chunker_params.unwrap();
         Ok(Self {
-            chunk_map,
-            chunk_descriptors,
+            chunk_order,
             header_checksum,
             header_size: header.len(),
             source_total_size: dictionary.source_total_size,
@@ -167,6 +139,7 @@ impl ArchiveReader {
             chunk_data_offset,
             chunk_hash_length: chunker_params.chunk_hash_length as usize,
             chunker_config: chunker_params.into(),
+            source_index,
         })
     }
 
@@ -174,10 +147,10 @@ impl ArchiveReader {
         self.total_chunks
     }
     pub fn unique_chunks(&self) -> usize {
-        self.chunk_descriptors.len()
+        self.chunk_order.len()
     }
     pub fn compressed_size(&self) -> u64 {
-        self.chunk_descriptors
+        self.chunk_order
             .iter()
             .map(|c| u64::from(c.archive_size))
             .sum()
@@ -185,8 +158,8 @@ impl ArchiveReader {
     pub fn chunk_data_offset(&self) -> u64 {
         self.chunk_data_offset
     }
-    pub fn chunk_descriptors(&self) -> &[Rc<ChunkDescriptor>] {
-        &self.chunk_descriptors
+    pub fn chunk_descriptors(&self) -> &[ChunkDescriptor] {
+        &self.chunk_order
     }
     pub fn total_source_size(&self) -> u64 {
         self.source_total_size
@@ -212,25 +185,14 @@ impl ArchiveReader {
     pub fn built_with_version(&self) -> &str {
         &self.created_by_app_version
     }
-
-    // Get a set of all chunks present in archive
-    pub fn chunk_hash_set(&self) -> HashSet<HashSum> {
-        self.chunk_map.iter().map(|x| x.0.clone()).collect()
-    }
-
-    // Get source offsets of a chunk
-    pub fn chunk_source_offsets(&self, hash: &HashSum) -> &[u64] {
-        if let Some(descriptor) = self.chunk_map.get(hash) {
-            &descriptor.source_offsets
-        } else {
-            &[]
-        }
+    pub fn source_index(&self) -> &ChunkIndex {
+        &self.source_index
     }
 
     // Group chunks which are placed in sequence inside archive
-    pub fn grouped_chunks(&self, chunks: &HashSet<HashSum>) -> Vec<Vec<Rc<ChunkDescriptor>>> {
-        let mut descriptors: Vec<Rc<ChunkDescriptor>> = self
-            .chunk_descriptors
+    pub fn grouped_chunks(&self, chunks: &ChunkIndex) -> Vec<Vec<ChunkDescriptor>> {
+        let mut descriptors: Vec<ChunkDescriptor> = self
+            .chunk_order
             .iter()
             .filter(|chunk| chunks.contains(&chunk.checksum))
             .cloned()
