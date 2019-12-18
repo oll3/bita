@@ -1,13 +1,13 @@
 [package]
 name = "bita"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Olle Sandberg <olle@b3rg.se>"]
 license = "MIT"
 edition = '2018'
 description = "Differential file synchronization over http(s)."
 repository = "https://github.com/oll3/bita"
 readme = "README.md"
-keywords = ["sofware-update", "file-synchronization", "delta-update",  "differential", "ota", "iot"]
+keywords = ["sofware-update", "file-synchronization", "delta-update",  "differential"]
 categories = ["command-line-utilities", "compression"]
 
 [build-dependencies]

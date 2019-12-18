@@ -50,7 +50,7 @@ dependencies = [
 
 [[package]]
 name = "bita"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "atty 0.2.13 (registry+https://github.com/rust-lang/crates.io-index)",
  "blake2 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)",
