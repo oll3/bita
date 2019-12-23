@@ -301,31 +301,31 @@ where
                 // There is no need to check the hash sum here since we're still below the minimal
                 // chunk size. Still we need the bytes in the hash window to get correct sum when
                 // reaching above the minimal chunk size.
-                for val in self.read_buf[self.buf_index..]
+                let hasher = &mut self.hasher;
+                let buf_index = &mut self.buf_index;
+                self.read_buf[*buf_index..]
                     .iter()
-                    .take(self.min_chunk_size - self.buf_index - 1)
-                {
-                    self.buf_index += 1;
-                    self.hasher.input(*val);
-                }
+                    .take(self.min_chunk_size - *buf_index - 1)
+                    .for_each(|val| {
+                        *buf_index += 1;
+                        hasher.input(*val);
+                    });
             }
             // Scan until end of buffer, chunk boundary (hash sum match) or max chunk size reached
-            let mut got_chunk = false;
-            for &val in self.read_buf[self.buf_index..]
+            let hasher = &mut self.hasher;
+            let buf_index = &mut self.buf_index;
+            let filter_mask = self.filter_mask;
+            let got_chunk = self.read_buf[*buf_index..]
                 .iter()
-                .take(self.max_chunk_size - self.buf_index)
-            {
-                self.buf_index += 1;
-                self.hasher.input(val);
-                let sum = self.hasher.sum();
-                if sum | self.filter_mask == sum {
-                    got_chunk = true;
-                    break;
-                }
-            }
-            if self.buf_index >= self.max_chunk_size {
-                got_chunk = true;
-            }
+                .take(self.max_chunk_size - *buf_index)
+                .map(|&val| {
+                    *buf_index += 1;
+                    hasher.input(val);
+                    hasher.sum()
+                })
+                .any(|sum| sum | filter_mask == sum)
+                || self.buf_index >= self.max_chunk_size;
+
             self.source_index += (self.buf_index - start_buf_index) as u64;
             if got_chunk {
                 let offset_and_chunk = (self.chunk_start, self.read_buf[..self.buf_index].to_vec());
