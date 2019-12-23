@@ -24,8 +24,8 @@ chrono = "0.4.10"
 brotli = "3.3.0"
 futures-core = {version = "0.3.1" }
 futures-util = {version = "0.3.1" }
-tokio = { version = "0.2.4", features = ["fs", "io-std", "sync", "io-util", "macros", "time", "rt-threaded"] }
-hyper = { version = "0.13.0", features = ["stream"] }
+tokio = { version = "0.2.6", features = ["fs", "io-std", "sync", "io-util", "macros", "time", "rt-threaded"] }
+hyper = { version = "0.13.1", features = ["stream"] }
 hyper-rustls = "0.19.0"
 
 rust-lzma = {version = "0.4.0", optional = true}
