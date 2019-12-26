@@ -1,68 +1,40 @@
 use blake2::{Blake2b, Digest};
-
 use std::collections::{HashMap, HashSet};
-use std::fmt;
+use std::rc::Rc;
 
 use crate::archive;
 use crate::chunk_dictionary;
-use crate::chunker::{ChunkerConfig, HashConfig, HashFilterBits};
+use crate::chunker::ChunkerConfig;
 use crate::compression::Compression;
 use crate::error::Error;
 use crate::reader_backend;
-use crate::string_utils::*;
 use crate::HashSum;
 
 pub struct ArchiveReader {
     // Go from chunk hash to archive chunk index (chunks vector)
-    chunk_map: HashMap<HashSum, usize>,
+    chunk_map: HashMap<HashSum, Rc<archive::ChunkDescriptor>>,
 
     // Array of chunk descriptors
-    pub chunk_descriptors: Vec<archive::ChunkDescriptor>,
+    chunk_descriptors: Vec<Rc<archive::ChunkDescriptor>>,
 
-    // Go from archive chunk index to array of source offsets
-    chunk_offsets: Vec<Vec<u64>>,
+    total_chunks: usize,
+    header_size: usize,
+    header_checksum: HashSum,
+    chunk_compression: Compression,
+    created_by_app_version: String,
 
-    // The order of chunks in source
-    rebuild_order: Vec<usize>,
+    // Where the chunk data starts inside archive
+    chunk_data_offset: u64,
 
-    // The total archive header size
-    pub header_size: usize,
+    source_total_size: u64,
+    source_checksum: HashSum,
 
-    // Checksum (blake2) of header.
-    pub header_checksum: HashSum,
-
-    // Compression used for all chunks
-    pub chunk_compression: Compression,
-
-    pub created_by_app_version: String,
-    pub archive_chunks_offset: u64,
-
-    // Size of the original source file
-    pub source_total_size: u64,
-    pub source_checksum: HashSum,
-
-    // Chunker parameters used when this archive was created
-    pub chunker_config: ChunkerConfig,
-    pub hash_length: usize,
-}
-
-impl fmt::Display for ArchiveReader {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "build version: {}, chunks: {} (unique: {}), compression: {}, decompressed size: {}, source checksum: {}",
-            self.created_by_app_version,
-            self.total_chunks(),
-            self.unique_chunks(),
-            self.chunk_compression,
-            size_to_str(self.source_total_size),
-            self.source_checksum,
-        )
-    }
+    chunker_config: ChunkerConfig,
+    chunk_hash_length: usize,
 }
 
 impl ArchiveReader {
-    pub fn verify_pre_header(pre_header: &[u8]) -> Result<(), Error> {
+    fn verify_pre_header(pre_header: &[u8]) -> Result<(), Error> {
         if pre_header.len() < archive::FILE_MAGIC.len() {
             return Err(Error::NotAnArchive(
                 "failed to read header of archive".to_owned(),
@@ -73,12 +45,48 @@ impl ArchiveReader {
         if &pre_header[0..archive::FILE_MAGIC.len()] != archive::FILE_MAGIC
             && &pre_header[0..archive::FILE_MAGIC.len()] != b"\0BITA1"
         {
-            return Err(Error::NotAnArchive("invalid file magic".to_owned()));
+            return Err(Error::NotAnArchive("invalid bita archive magic".to_owned()));
         }
         Ok(())
     }
 
-    pub async fn init(mut builder: reader_backend::Builder) -> Result<Self, Error> {
+    fn map_chunks(
+        dictionary: &chunk_dictionary::ChunkDictionary,
+    ) -> (
+        Vec<Rc<archive::ChunkDescriptor>>,
+        HashMap<HashSum, Rc<archive::ChunkDescriptor>>,
+    ) {
+        // Create chunk offset vector, to go from chunk index to source file offsets
+        let source_offsets = {
+            let mut offsets: Vec<Vec<u64>> = vec![vec![]; dictionary.chunk_descriptors.len()];
+            let mut offset: u64 = 0;
+            dictionary.rebuild_order.iter().for_each(|&i| {
+                let i = i as usize;
+                let chunk_size = dictionary.chunk_descriptors[i].source_size;
+                offsets[i].push(offset);
+                offset += u64::from(chunk_size);
+            });
+            offsets
+        };
+
+        // Create map to go from chunk hash to descriptor index
+        let mut chunk_descriptors: Vec<Rc<archive::ChunkDescriptor>> = Vec::new();
+        let mut chunk_map: HashMap<HashSum, Rc<archive::ChunkDescriptor>> = HashMap::new();
+
+        for (desc, chunk_source_offsets) in dictionary
+            .chunk_descriptors
+            .iter()
+            .zip(source_offsets.into_iter())
+        {
+            let desc: Rc<archive::ChunkDescriptor> =
+                Rc::new((desc.clone(), chunk_source_offsets).into());
+            chunk_map.insert(desc.checksum.clone(), desc.clone());
+            chunk_descriptors.push(desc);
+        }
+        (chunk_descriptors, chunk_map)
+    }
+
+    pub async fn try_init(mut builder: reader_backend::Builder) -> Result<Self, Error> {
         // Read the pre-header (file magic and size)
         let mut header = builder
             .read_at(0, archive::PRE_HEADER_SIZE)?
@@ -99,103 +107,90 @@ impl ArchiveReader {
                 .map_err(|err| err.wrap("unable to read archive"))?,
         );
 
-        // Verify the header against the header hash
-        let mut hasher = Blake2b::new();
-        let offs = archive::PRE_HEADER_SIZE + dictionary_size + 8;
-        hasher.input(&header[..offs]);
-        let header_checksum = HashSum::from_slice(&header[offs..(offs + 64)]);
-        if header_checksum != &hasher.result()[..] {
-            return Err(Error::NotAnArchive("corrupt archive header".to_owned()));
-        }
-
-        // Deserialize the chunk dictionary
-        let offs = archive::PRE_HEADER_SIZE;
-        let dictionary: chunk_dictionary::ChunkDictionary =
-            protobuf::parse_from_bytes(&header[offs..(offs + dictionary_size)])
-                .map_err(|e| ("unable to unpack archive header", e))?;
-
-        // Get chunk data offset
-        let offs = archive::PRE_HEADER_SIZE + dictionary_size;
-        let chunk_data_offset = archive::u64_from_le_slice(&header[offs..(offs + 8)]) as usize;
-
-        // Create map to go from chunk hash to descriptor index
-        let mut chunk_descriptors: Vec<archive::ChunkDescriptor> = Vec::new();
-        let mut chunk_map: HashMap<HashSum, usize> = HashMap::new();
-        for (index, desc) in dictionary.chunk_descriptors.into_iter().enumerate() {
-            chunk_map.insert(HashSum::from_slice(&desc.checksum[..]), index);
-            chunk_descriptors.push(desc.into());
-        }
-
-        // Create chunk offset vector, to go from chunk index to source file offsets
-        let mut chunk_offsets = vec![vec![]; chunk_descriptors.len()];
-        let mut current_offset: u64 = 0;
-        dictionary
-            .rebuild_order
-            .iter()
-            .for_each(|descriptor_index| {
-                let descriptor_index = *descriptor_index as usize;
-                let chunk_size = chunk_descriptors[descriptor_index].source_size;
-                chunk_offsets[descriptor_index].push(current_offset);
-                current_offset += u64::from(chunk_size);
-            });
-
-        let cp = dictionary.chunker_params.unwrap();
-        let chunker_config = match cp.chunking_algorithm {
-            chunk_dictionary::ChunkerParameters_ChunkingAlgorithm::BUZHASH => {
-                ChunkerConfig::BuzHash(HashConfig {
-                    filter_bits: HashFilterBits(cp.chunk_filter_bits),
-                    min_chunk_size: cp.min_chunk_size as usize,
-                    max_chunk_size: cp.max_chunk_size as usize,
-                    window_size: cp.rolling_hash_window_size as usize,
-                })
+        // Verify the header against the header checksum
+        let header_checksum = {
+            let mut hasher = Blake2b::new();
+            let offs = archive::PRE_HEADER_SIZE + dictionary_size + 8;
+            hasher.input(&header[..offs]);
+            let header_checksum = HashSum::from_slice(&header[offs..(offs + 64)]);
+            if header_checksum != &hasher.result()[..] {
+                return Err(Error::NotAnArchive("corrupt archive header".to_owned()));
             }
-            chunk_dictionary::ChunkerParameters_ChunkingAlgorithm::ROLLSUM => {
-                ChunkerConfig::RollSum(HashConfig {
-                    filter_bits: HashFilterBits(cp.chunk_filter_bits),
-                    min_chunk_size: cp.min_chunk_size as usize,
-                    max_chunk_size: cp.max_chunk_size as usize,
-                    window_size: cp.rolling_hash_window_size as usize,
-                })
-            }
-            chunk_dictionary::ChunkerParameters_ChunkingAlgorithm::FIXED_SIZE => {
-                ChunkerConfig::FixedSize(cp.max_chunk_size as usize)
-            }
+            header_checksum
         };
 
+        // Deserialize the chunk dictionary
+        let dictionary: chunk_dictionary::ChunkDictionary = {
+            let offs = archive::PRE_HEADER_SIZE;
+            protobuf::parse_from_bytes(&header[offs..(offs + dictionary_size)])
+                .map_err(|e| ("unable to unpack archive header", e))?
+        };
+
+        // Get chunk data offset
+        let chunk_data_offset = {
+            let offs = archive::PRE_HEADER_SIZE + dictionary_size;
+            archive::u64_from_le_slice(&header[offs..(offs + 8)])
+        };
+
+        let (chunk_descriptors, chunk_map) = Self::map_chunks(&dictionary);
+        let chunker_params = dictionary.chunker_params.unwrap();
         Ok(Self {
             chunk_map,
             chunk_descriptors,
-            chunk_offsets,
             header_checksum,
             header_size: header.len(),
             source_total_size: dictionary.source_total_size,
             source_checksum: dictionary.source_checksum.into(),
             created_by_app_version: dictionary.application_version,
             chunk_compression: dictionary.chunk_compression.unwrap().into(),
-            rebuild_order: dictionary
-                .rebuild_order
-                .into_iter()
-                .map(|s| s as usize)
-                .collect(),
-            archive_chunks_offset: chunk_data_offset as u64,
-            chunker_config,
-            hash_length: cp.chunk_hash_length as usize,
+            total_chunks: dictionary.rebuild_order.into_iter().count(),
+            chunk_data_offset,
+            chunk_hash_length: chunker_params.chunk_hash_length as usize,
+            chunker_config: chunker_params.into(),
         })
     }
 
     pub fn total_chunks(&self) -> usize {
-        self.rebuild_order.len()
+        self.total_chunks
     }
-
     pub fn unique_chunks(&self) -> usize {
         self.chunk_descriptors.len()
     }
-
     pub fn compressed_size(&self) -> u64 {
         self.chunk_descriptors
             .iter()
             .map(|c| u64::from(c.archive_size))
             .sum()
+    }
+    pub fn chunk_data_offset(&self) -> u64 {
+        self.chunk_data_offset
+    }
+    pub fn chunk_descriptors(&self) -> &[Rc<archive::ChunkDescriptor>] {
+        &self.chunk_descriptors
+    }
+    pub fn total_source_size(&self) -> u64 {
+        self.source_total_size
+    }
+    pub fn chunker_config(&self) -> &ChunkerConfig {
+        &self.chunker_config
+    }
+    pub fn header_checksum(&self) -> &HashSum {
+        &self.header_checksum
+    }
+    pub fn source_checksum(&self) -> &HashSum {
+        &self.source_checksum
+    }
+    pub fn header_size(&self) -> usize {
+        self.header_size
+    }
+    pub fn chunk_hash_length(&self) -> usize {
+        self.chunk_hash_length
+    }
+    pub fn chunk_compression(&self) -> Compression {
+        self.chunk_compression
+    }
+    pub fn built_with_version(&self) -> &str {
+        &self.created_by_app_version
     }
 
     // Get a set of all chunks present in archive
@@ -205,19 +200,23 @@ impl ArchiveReader {
 
     // Get source offsets of a chunk
     pub fn chunk_source_offsets(&self, hash: &HashSum) -> &[u64] {
-        if let Some(&index) = self.chunk_map.get(hash) {
-            &self.chunk_offsets[index]
+        if let Some(descriptor) = self.chunk_map.get(hash) {
+            &descriptor.source_offsets
         } else {
             &[]
         }
     }
 
     // Group chunks which are placed in sequence inside archive
-    pub fn grouped_chunks(&self, chunks: &HashSet<HashSum>) -> Vec<Vec<&archive::ChunkDescriptor>> {
-        let mut descriptors: Vec<&archive::ChunkDescriptor> = self
+    pub fn grouped_chunks(
+        &self,
+        chunks: &HashSet<HashSum>,
+    ) -> Vec<Vec<Rc<archive::ChunkDescriptor>>> {
+        let mut descriptors: Vec<Rc<archive::ChunkDescriptor>> = self
             .chunk_descriptors
             .iter()
             .filter(|chunk| chunks.contains(&chunk.checksum))
+            .cloned()
             .collect();
 
         let mut group_list = vec![];

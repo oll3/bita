@@ -29,7 +29,7 @@ where
     T: AsyncRead + Unpin,
 {
     info!("Scanning {} for chunks...", seed_name);
-    let hash_length = archive.hash_length;
+    let hash_length = archive.chunk_hash_length();
     let mut bytes_read_from_seed: u64 = 0;
     let mut found_chunks_count: usize = 0;
     let seed_chunker = Chunker::new(chunker_config, &mut input);
@@ -94,8 +94,8 @@ async fn finish_using_archive(
     let grouped_chunks = archive.grouped_chunks(&chunks_left);
     for group in grouped_chunks {
         // For each group of chunks
-        let start_offset = archive.archive_chunks_offset + group[0].archive_offset;
-        let compression = archive.chunk_compression;
+        let start_offset = archive.chunk_data_offset() + group[0].archive_offset;
+        let compression = archive.chunk_compression();
         let chunk_sizes: Vec<usize> = group.iter().map(|c| c.archive_size as usize).collect();
 
         let mut archive_chunk_stream = reader_builder
@@ -219,7 +219,7 @@ async fn clone_archive(
     reader_builder: reader_backend::Builder,
     config: &config::CloneConfig,
 ) -> Result<(), Error> {
-    let archive = ArchiveReader::init(reader_builder.clone()).await?;
+    let archive = ArchiveReader::try_init(reader_builder.clone()).await?;
     let mut chunks_left = archive.chunk_hash_set();
     let mut total_read_from_seed = 0u64;
 
@@ -228,7 +228,7 @@ async fn clone_archive(
 
     // Verify the header checksum if requested
     if let Some(ref expected_checksum) = config.header_checksum {
-        if *expected_checksum != archive.header_checksum {
+        if *expected_checksum != *archive.header_checksum() {
             return Err(Error::ChecksumMismatch(
                 "Header checksum mismatch!".to_owned(),
             ));
@@ -243,7 +243,7 @@ async fn clone_archive(
     );
 
     // Setup chunker to use when chunking seed input
-    let chunker_config = archive.chunker_config.clone();
+    let chunker_config = archive.chunker_config().clone();
 
     // Create or open output file
     let mut output_file = std::fs::OpenOptions::new()
@@ -264,7 +264,7 @@ async fn clone_archive(
     // Check if the given output file is a regular file or block device.
     // If it is a block device we should check its size against the target size before
     // writing. If a regular file then resize that file to target size.
-    prepare_unpack_output(&mut output_file, archive.source_total_size)?;
+    prepare_unpack_output(&mut output_file, archive.total_source_size())?;
 
     // Read chunks from seed files
     if config.seed_stdin && !atty::is(atty::Stream::Stdin) {
@@ -299,7 +299,7 @@ async fn clone_archive(
 
     if config.verify_output {
         // Verify output
-        verify_output(&config, &archive.source_checksum, &mut output_file).await?;
+        verify_output(&config, &archive.source_checksum(), &mut output_file).await?;
     }
 
     info!(

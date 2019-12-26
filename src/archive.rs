@@ -1,13 +1,11 @@
 use protobuf::Message;
 
 use blake2::{Blake2b, Digest};
-use std::fmt;
 use std::mem;
 
 use crate::chunk_dictionary;
-use crate::compression::Compression;
+use crate::chunker::{ChunkerConfig, HashConfig, HashFilterBits};
 use crate::error::Error;
-use crate::string_utils::*;
 use crate::HashSum;
 
 pub const BUZHASH_SEED: u32 = 0x1032_4195;
@@ -24,6 +22,7 @@ pub struct ChunkDescriptor {
     pub archive_size: u32,
     pub archive_offset: u64,
     pub source_size: u32,
+    pub source_offsets: Vec<u64>,
 }
 
 impl From<ChunkDescriptor> for chunk_dictionary::ChunkDescriptor {
@@ -39,28 +38,41 @@ impl From<ChunkDescriptor> for chunk_dictionary::ChunkDescriptor {
     }
 }
 
-impl From<chunk_dictionary::ChunkDescriptor> for ChunkDescriptor {
-    fn from(dict: chunk_dictionary::ChunkDescriptor) -> Self {
+impl From<chunk_dictionary::ChunkerParameters> for ChunkerConfig {
+    fn from(params: chunk_dictionary::ChunkerParameters) -> Self {
+        match params.chunking_algorithm {
+            chunk_dictionary::ChunkerParameters_ChunkingAlgorithm::BUZHASH => {
+                ChunkerConfig::BuzHash(HashConfig {
+                    filter_bits: HashFilterBits(params.chunk_filter_bits),
+                    min_chunk_size: params.min_chunk_size as usize,
+                    max_chunk_size: params.max_chunk_size as usize,
+                    window_size: params.rolling_hash_window_size as usize,
+                })
+            }
+            chunk_dictionary::ChunkerParameters_ChunkingAlgorithm::ROLLSUM => {
+                ChunkerConfig::RollSum(HashConfig {
+                    filter_bits: HashFilterBits(params.chunk_filter_bits),
+                    min_chunk_size: params.min_chunk_size as usize,
+                    max_chunk_size: params.max_chunk_size as usize,
+                    window_size: params.rolling_hash_window_size as usize,
+                })
+            }
+            chunk_dictionary::ChunkerParameters_ChunkingAlgorithm::FIXED_SIZE => {
+                ChunkerConfig::FixedSize(params.max_chunk_size as usize)
+            }
+        }
+    }
+}
+
+impl From<(chunk_dictionary::ChunkDescriptor, Vec<u64>)> for ChunkDescriptor {
+    fn from((dict, source_offsets): (chunk_dictionary::ChunkDescriptor, Vec<u64>)) -> Self {
         ChunkDescriptor {
             checksum: dict.checksum.into(),
             archive_size: dict.archive_size,
             archive_offset: dict.archive_offset,
             source_size: dict.source_size,
+            source_offsets,
         }
-    }
-}
-
-impl fmt::Display for chunk_dictionary::ChunkDictionary {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "version: {}, chunks: {}, source hash: {}, source size: {}, compression: {}",
-            self.application_version,
-            self.chunk_descriptors.len(),
-            HashSum::from_vec(self.source_checksum.clone()),
-            size_to_str(self.source_total_size),
-            Compression::from(self.get_chunk_compression().clone())
-        )
     }
 }
 

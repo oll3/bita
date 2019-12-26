@@ -9,7 +9,7 @@ use bita::reader_backend;
 use bita::string_utils::*;
 
 pub async fn print_archive_backend(builder: reader_backend::Builder) -> Result<(), Error> {
-    let archive = ArchiveReader::init(builder).await?;
+    let archive = ArchiveReader::try_init(builder).await?;
     print_archive(&archive);
     Ok(())
 }
@@ -41,17 +41,17 @@ pub fn print_chunker_config(config: &ChunkerConfig) {
 
 pub fn print_archive(archive: &ArchiveReader) {
     info!("Archive: ");
-    info!("  Version: {}", archive.created_by_app_version);
+    info!("  Version: {}", archive.built_with_version());
     info!(
         "  Archive size: {}",
-        size_to_str(archive.compressed_size() + archive.header_size as u64)
+        size_to_str(archive.compressed_size() + archive.header_size() as u64)
     );
-    info!("  Header checksum: {}", archive.header_checksum);
+    info!("  Header checksum: {}", archive.header_checksum());
 
-    print_chunker_config(&archive.chunker_config);
+    print_chunker_config(&archive.chunker_config());
 
     info!("Source:");
-    info!("  Source checksum: {}", archive.source_checksum);
+    info!("  Source checksum: {}", archive.source_checksum());
     info!(
         "  Chunks in source: {} (unique: {})",
         archive.total_chunks(),
@@ -61,14 +61,17 @@ pub fn print_archive(archive: &ArchiveReader) {
         "  Average chunk size: {}",
         size_to_str(
             archive
-                .chunk_descriptors
+                .chunk_descriptors()
                 .iter()
                 .map(|cdesc| u64::from(cdesc.source_size))
                 .sum::<u64>()
-                / archive.chunk_descriptors.len() as u64
+                / archive.chunk_descriptors().len() as u64
         )
     );
-    info!("  Source size: {}", size_to_str(archive.source_total_size));
+    info!(
+        "  Source size: {}",
+        size_to_str(archive.total_source_size())
+    );
 }
 
 pub async fn run(config: config::InfoConfig) -> Result<(), Error> {

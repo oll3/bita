@@ -40,3 +40,5 @@ default = []
 lzma-compression = ["rust-lzma"]
 zstd-compression = ["zstd"]
 
+[profile.release]
+debug = true
