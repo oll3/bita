@@ -42,6 +42,12 @@ impl Builder {
     pub fn new_local(path: &Path) -> Self {
         Self::Local(path.to_path_buf())
     }
+    pub fn source(&self) -> String {
+        match self {
+            Builder::Remote { uri, .. } => uri.to_string(),
+            Builder::Local(p) => p.display().to_string(),
+        }
+    }
     pub fn read_at(&mut self, offset: u64, size: usize) -> Result<Single, Error> {
         match self {
             Self::Remote {

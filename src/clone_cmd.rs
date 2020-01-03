@@ -71,8 +71,10 @@ where
         found_chunks_count += 1;
     }
     info!(
-        "Used {} chunks from seed file {}",
-        found_chunks_count, seed_name
+        "Used {} chunks ({}) from {}",
+        found_chunks_count,
+        size_to_str(bytes_read_from_seed),
+        seed_name
     );
 
     Ok(bytes_read_from_seed)
@@ -84,7 +86,11 @@ async fn finish_using_archive(
     chunks_left: HashSet<HashSum>,
     output_file: &mut File,
 ) -> Result<u64, Error> {
-    let mut total_read_from_archive: u64 = 0;
+    let fetch_count = chunks_left.len();
+    let source = reader_builder.source();
+    info!("Fetching {} chunks from {}...", fetch_count, &source);
+    let mut total_written = 0u64;
+    let mut total_fetched = 0u64;
     let grouped_chunks = archive.grouped_chunks(&chunks_left);
     for group in grouped_chunks {
         // For each group of chunks
@@ -95,10 +101,11 @@ async fn finish_using_archive(
         let mut archive_chunk_stream = reader_builder
             .read_chunks(start_offset, &chunk_sizes)?
             .enumerate()
-            .map(|(chunk_index, chunk)| {
-                let chunk = chunk.expect("failed to read archive");
+            .map(|(chunk_index, compressed_chunk)| {
+                let compressed_chunk = compressed_chunk.expect("failed to read archive");
                 let chunk_checksum = group[chunk_index].checksum.clone();
                 let chunk_source_size = group[chunk_index].source_size as usize;
+                total_fetched += compressed_chunk.len() as u64;
                 tokio::task::spawn(async move {
                     (
                         chunk_checksum.clone(),
@@ -106,7 +113,7 @@ async fn finish_using_archive(
                             compression,
                             &chunk_checksum,
                             chunk_source_size,
-                            chunk,
+                            compressed_chunk,
                         )
                         .expect("failed to decompress chunk"),
                     )
@@ -123,7 +130,7 @@ async fn finish_using_archive(
                 size_to_str(chunk.len()),
             );
             for offset in archive.chunk_source_offsets(&hash) {
-                total_read_from_archive += chunk.len() as u64;
+                total_written += chunk.len() as u64;
                 output_file
                     .seek(SeekFrom::Start(*offset))
                     .map_err(|err| ("failed to seek output", err))?;
@@ -133,7 +140,13 @@ async fn finish_using_archive(
             }
         }
     }
-    Ok(total_read_from_archive)
+    info!(
+        "Fetched {} chunks ({} transferred) from {}",
+        fetch_count,
+        size_to_str(total_fetched),
+        &source,
+    );
+    Ok(total_written)
 }
 
 async fn verify_output(
@@ -288,17 +301,16 @@ async fn clone_archive(
     }
 
     // Read the rest from archive
-    let total_read_from_archive =
+    let total_output_from_remote =
         finish_using_archive(reader_builder, &archive, chunks_left, &mut output_file).await?;
 
     if config.verify_output {
-        // Verify output
         verify_output(&config, &archive.source_checksum(), &mut output_file).await?;
     }
 
     info!(
         "Successfully cloned archive using {} from remote and {} from seeds.",
-        size_to_str(total_read_from_archive),
+        size_to_str(total_output_from_remote),
         size_to_str(total_read_from_seed)
     );
 
