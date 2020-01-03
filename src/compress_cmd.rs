@@ -30,7 +30,7 @@ pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 async fn chunk_input<T>(
     mut input: T,
-    chunker_config: ChunkerConfig,
+    chunker_config: &ChunkerConfig,
     compression: Compression,
     temp_file_path: &std::path::Path,
     hash_length: usize,
@@ -185,7 +185,7 @@ pub async fn run(config: CompressConfig) -> Result<(), Error> {
                 File::open(input_path)
                     .await
                     .map_err(|err| ("failed to open input file", err))?,
-                chunker_config,
+                &chunker_config,
                 compression,
                 &config.temp_file,
                 config.hash_length,
@@ -195,7 +195,7 @@ pub async fn run(config: CompressConfig) -> Result<(), Error> {
             // Read source from stdin
             chunk_input(
                 tokio::io::stdin(),
-                chunker_config,
+                &chunker_config,
                 compression,
                 &config.temp_file,
                 config.hash_length,

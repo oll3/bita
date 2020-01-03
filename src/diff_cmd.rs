@@ -43,7 +43,7 @@ async fn chunk_file(
             .await
             .map_err(|e| ("failed to open output file", e))?;
         let mut unique_chunk = HashSet::new();
-        let chunker = Chunker::new(chunker_config.clone(), &mut file);
+        let chunker = Chunker::new(chunker_config, &mut file);
         let mut chunk_stream = chunker
             .map(|result| {
                 let (offset, chunk) = result.expect("error while chunking");

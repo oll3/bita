@@ -20,7 +20,7 @@ use bita::HashSum;
 async fn seed_input<T>(
     mut input: T,
     seed_name: &str,
-    chunker_config: ChunkerConfig,
+    chunker_config: &ChunkerConfig,
     archive: &ArchiveReader,
     chunks_left: &mut HashSet<HashSum>,
     output_file: &mut File,
@@ -271,7 +271,7 @@ async fn clone_archive(
         total_read_from_seed += seed_input(
             tokio::io::stdin(),
             "stdin",
-            chunker_config.clone(),
+            &chunker_config,
             &archive,
             &mut chunks_left,
             &mut output_file,
@@ -285,7 +285,7 @@ async fn clone_archive(
         total_read_from_seed += seed_input(
             file,
             &format!("{}", seed_path.display()),
-            chunker_config.clone(),
+            &chunker_config,
             &archive,
             &mut chunks_left,
             &mut output_file,

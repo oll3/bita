@@ -128,7 +128,7 @@ impl<'a, T> Chunker<'a, T>
 where
     T: AsyncRead + Unpin,
 {
-    pub fn new(config: ChunkerConfig, source: &'a mut T) -> Self {
+    pub fn new(config: &ChunkerConfig, source: &'a mut T) -> Self {
         match config {
             ChunkerConfig::BuzHash(hash_config) => {
                 Chunker::BuzHash(InternalChunker::<T, BuzHash>::new(hash_config, source))
@@ -137,7 +137,7 @@ where
                 Chunker::RollSum(InternalChunker::<T, RollSum>::new(hash_config, source))
             }
             ChunkerConfig::FixedSize(fixed_size) => {
-                Chunker::FixedSize(FixedSizeChunker::<T>::new(fixed_size, source))
+                Chunker::FixedSize(FixedSizeChunker::<T>::new(*fixed_size, source))
             }
         }
     }
@@ -235,7 +235,7 @@ where
     T: AsyncRead + Unpin,
     H: RollingHash,
 {
-    fn new(config: HashConfig, source: &'a mut T) -> Self {
+    fn new(config: &HashConfig, source: &'a mut T) -> Self {
         // Allow for chunk size less than buzhash window
         let buzhash_input_limit = if config.min_chunk_size >= config.window_size {
             config.min_chunk_size - config.window_size
@@ -424,7 +424,7 @@ mod tests {
                     .collect()
             };
             let expected_offsets = {
-                Chunker::new(chunker_config.clone(), &mut Box::new(&source_data[..]))
+                Chunker::new(&chunker_config, &mut Box::new(&source_data[..]))
                     .map(|result| {
                         let (offset, _chunk) = result.unwrap();
                         offset
@@ -435,7 +435,7 @@ mod tests {
             // Only give back a single byte per read from source, should still result in the same
             // result as with unlimited I/O.
             let mut source = MockSource::new(source_data.clone(), 1);
-            let offsets = Chunker::new(chunker_config.clone(), &mut source)
+            let offsets = Chunker::new(&chunker_config, &mut source)
                 .map(|result| {
                     let (offset, _chunk) = result.unwrap();
                     offset
@@ -464,7 +464,7 @@ mod tests {
             let expected_chunk_offsets: [u64; 0] = [0; 0];
             static SRC: [u8; 0] = [];
             assert_eq!(
-                Chunker::new(chunker_config.clone(), &mut Box::new(&SRC[..]))
+                Chunker::new(chunker_config, &mut Box::new(&SRC[..]))
                     .map(|result| {
                         let (offset, chunk) = result.unwrap();
                         assert_eq!(chunk.len(), 0);
@@ -495,7 +495,7 @@ mod tests {
             let expected_chunk_offsets: [u64; 1] = [0; 1];
             static SRC: [u8; 5] = [0x1f, 0x55, 0x39, 0x5e, 0xfa];
             assert_eq!(
-                Chunker::new(chunker_config.clone(), &mut Box::new(&SRC[..]))
+                Chunker::new(chunker_config, &mut Box::new(&SRC[..]))
                     .map(|result| {
                         let (offset, chunk) = result.unwrap();
                         assert_eq!(chunk, [0x1f, 0x55, 0x39, 0x5e, 0xfa]);
@@ -526,7 +526,7 @@ mod tests {
             let expected_chunk_offsets: [u64; 1] = [0; 1];
             static SRC: [u8; 5] = [0x1f, 0x55, 0x39, 0x5e, 0xfa];
             assert_eq!(
-                Chunker::new(chunker_config.clone(), &mut Box::new(&SRC[..]),)
+                Chunker::new(chunker_config, &mut Box::new(&SRC[..]),)
                     .map(|result| {
                         let (offset, chunk) = result.unwrap();
                         assert_eq!(chunk, [0x1f, 0x55, 0x39, 0x5e, 0xfa]);
@@ -572,7 +572,7 @@ mod tests {
         }
 
         let chunk_offsets = Chunker::new(
-            ChunkerConfig::BuzHash(HashConfig {
+            &ChunkerConfig::BuzHash(HashConfig {
                 filter_bits: HashFilterBits(5),
                 min_chunk_size: 3,
                 max_chunk_size: 640,
@@ -667,7 +667,7 @@ mod tests {
             }
         }
         let chunk_offsets = Chunker::new(
-            ChunkerConfig::BuzHash(HashConfig {
+            &ChunkerConfig::BuzHash(HashConfig {
                 filter_bits: HashFilterBits(6),
                 min_chunk_size: 64,
                 max_chunk_size: 1024,
