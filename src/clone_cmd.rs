@@ -37,15 +37,9 @@ where
         .map(|result| {
             let (_offset, chunk) = result.expect("error while chunking");
             // Build hash of full source
-            tokio::task::spawn(async move {
-                // Calculate strong hash for each chunk
-                let mut chunk_hasher = Blake2b::new();
-                chunk_hasher.input(&chunk);
-                (
-                    HashSum::from_slice(&chunk_hasher.result()[0..hash_length as usize]),
-                    chunk,
-                )
-            })
+            tokio::task::spawn(
+                async move { (HashSum::b2_digest(&chunk, hash_length as usize), chunk) },
+            )
         })
         .buffered(8)
         .filter_map(|result| {

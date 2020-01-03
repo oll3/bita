@@ -1,3 +1,4 @@
+use blake2::{Blake2b, Digest};
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
@@ -7,6 +8,13 @@ pub struct HashSum(Vec<u8>);
 impl HashSum {
     pub fn new() -> Self {
         Self::default()
+    }
+    pub fn b2_digest(data: &[u8], hash_length: usize) -> Self {
+        let mut b2 = Blake2b::new();
+        b2.input(data);
+        Self {
+            0: b2.result()[0..hash_length].to_vec(),
+        }
     }
     pub fn from_vec(v: Vec<u8>) -> Self {
         Self { 0: v }

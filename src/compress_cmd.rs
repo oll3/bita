@@ -70,11 +70,8 @@ where
                 source_hasher.input(&chunk);
                 source_size += chunk.len() as u64;
                 tokio::task::spawn(async move {
-                    // Calculate strong hash for each chunk
-                    let mut chunk_hasher = Blake2b::new();
-                    chunk_hasher.input(&chunk);
                     (
-                        HashSum::from_slice(&chunk_hasher.result()[0..hash_length as usize]),
+                        HashSum::b2_digest(&chunk, hash_length as usize),
                         offset,
                         chunk,
                     )

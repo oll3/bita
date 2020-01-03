@@ -1,4 +1,3 @@
-use blake2::{Blake2b, Digest};
 use futures_util::stream::StreamExt;
 use log::*;
 use std::collections::{HashMap, HashSet};
@@ -11,6 +10,7 @@ use bita::chunker::{Chunker, ChunkerConfig};
 use bita::compression::Compression;
 use bita::error::Error;
 use bita::string_utils::*;
+use bita::HashSum;
 
 #[derive(Clone, Debug)]
 struct ChunkDescriptor {
@@ -21,8 +21,8 @@ struct ChunkDescriptor {
 
 #[derive(Clone, Debug)]
 struct ChunkerResult {
-    chunks: HashSet<Vec<u8>>,
-    descriptors: HashMap<Vec<u8>, ChunkDescriptor>,
+    chunks: HashSet<HashSum>,
+    descriptors: HashMap<HashSum, ChunkDescriptor>,
     total_size: u64,
     total_compressed_size: u64,
     total_chunks: usize,
@@ -33,7 +33,7 @@ async fn chunk_file(
     chunker_config: &ChunkerConfig,
     compression: Compression,
 ) -> Result<ChunkerResult, Error> {
-    let mut descriptors: HashMap<Vec<u8>, ChunkDescriptor> = HashMap::new();
+    let mut descriptors: HashMap<HashSum, ChunkDescriptor> = HashMap::new();
     let mut chunks = HashSet::new();
     let mut total_size = 0u64;
     let mut total_compressed_size = 0u64;
@@ -47,12 +47,7 @@ async fn chunk_file(
         let mut chunk_stream = chunker
             .map(|result| {
                 let (offset, chunk) = result.expect("error while chunking");
-                tokio::task::spawn(async move {
-                    // Calculate strong hash for each chunk
-                    let mut chunk_hasher = Blake2b::new();
-                    chunk_hasher.input(&chunk);
-                    (chunk_hasher.result().to_vec(), offset, chunk)
-                })
+                tokio::task::spawn(async move { (HashSum::b2_digest(&chunk, 64), offset, chunk) })
             })
             .buffered(8)
             .map(|result| {
@@ -114,7 +109,7 @@ async fn chunk_file(
     })
 }
 
-fn print_info(path: &Path, result: &ChunkerResult, diff: &[Vec<u8>]) {
+fn print_info(path: &Path, result: &ChunkerResult, diff: &[HashSum]) {
     let avarage_chunk_size: u64 = result
         .descriptors
         .iter()
@@ -140,8 +135,8 @@ fn print_info(path: &Path, result: &ChunkerResult, diff: &[Vec<u8>]) {
 }
 
 fn selection_string(
-    selection: &[Vec<u8>],
-    descriptors: &HashMap<Vec<u8>, ChunkDescriptor>,
+    selection: &[HashSum],
+    descriptors: &HashMap<HashSum, ChunkDescriptor>,
 ) -> String {
     let mut size = 0u64;
     let mut compressed_size = 0u64;
@@ -173,7 +168,7 @@ pub async fn run(config: DiffConfig) -> Result<(), Error> {
     info!("Scanning {} ...", config.input_b.display());
     let b = chunk_file(&config.input_b, chunker_config, compression).await?;
 
-    let mut descriptors_ab: HashMap<Vec<u8>, ChunkDescriptor> = HashMap::new();
+    let mut descriptors_ab: HashMap<HashSum, ChunkDescriptor> = HashMap::new();
     for descriptor in a.descriptors.iter().chain(&b.descriptors) {
         if let Some(d) = descriptors_ab.get_mut(descriptor.0) {
             d.occurrences.append(&mut d.occurrences.clone());
@@ -182,10 +177,10 @@ pub async fn run(config: DiffConfig) -> Result<(), Error> {
         }
     }
 
-    let union_ab: Vec<Vec<u8>> = a.chunks.union(&b.chunks).cloned().collect();
-    let intersection_ab: Vec<Vec<u8>> = a.chunks.intersection(&b.chunks).cloned().collect();
-    let diff_ab: Vec<Vec<u8>> = a.chunks.difference(&b.chunks).cloned().collect();
-    let diff_ba: Vec<Vec<u8>> = b.chunks.difference(&a.chunks).cloned().collect();
+    let union_ab: Vec<HashSum> = a.chunks.union(&b.chunks).cloned().collect();
+    let intersection_ab: Vec<HashSum> = a.chunks.intersection(&b.chunks).cloned().collect();
+    let diff_ab: Vec<HashSum> = a.chunks.difference(&b.chunks).cloned().collect();
+    let diff_ba: Vec<HashSum> = b.chunks.difference(&a.chunks).cloned().collect();
 
     println!();
     info!(
