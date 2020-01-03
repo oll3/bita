@@ -18,14 +18,6 @@ use bita::error::Error;
 use bita::string_utils::*;
 use bita::HashSum;
 
-#[derive(Debug, Clone)]
-pub struct ChunkSourceDescriptor {
-    pub unique_chunk_index: usize,
-    pub offset: u64,
-    pub size: usize,
-    pub hash: HashSum,
-}
-
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 async fn chunk_input<T>(
@@ -39,7 +31,7 @@ async fn chunk_input<T>(
         Vec<u8>,
         Vec<bita::chunk_dictionary::ChunkDescriptor>,
         u64,
-        Vec<ChunkSourceDescriptor>,
+        Vec<usize>,
     ),
     Error,
 >
@@ -49,7 +41,7 @@ where
     let mut source_hasher = Blake2b::new();
     let mut unique_chunks = HashMap::new();
     let mut source_size: u64 = 0;
-    let mut source_chunks = Vec::new();
+    let mut chunk_order = Vec::new();
     let mut archive_offset: u64 = 0;
     let mut unique_chunk_index: usize = 0;
     let mut archive_chunks = Vec::new();
@@ -89,20 +81,14 @@ where
                     unique_chunk_index += 1;
                     (true, chunk_index)
                 };
-                {
-                    // Also store a descriptor of each chunk
-                    source_chunks.push(ChunkSourceDescriptor {
-                        unique_chunk_index: chunk_index,
-                        offset,
-                        size: chunk.len(),
-                        hash: hash.clone(),
-                    });
-                }
-                if unique {
-                    future::ready(Some((chunk_index, hash, offset, chunk)))
+                // Store a pointer (as index) to unique chunk index for each chunk
+                chunk_order.push(chunk_index);
+
+                future::ready(if unique {
+                    Some((chunk_index, hash, offset, chunk))
                 } else {
-                    future::ready(None)
-                }
+                    None
+                })
             })
             .map(|(chunk_index, hash, offset, chunk)| {
                 tokio::task::spawn(async move {
@@ -160,7 +146,7 @@ where
         source_hasher.result().to_vec(),
         archive_chunks,
         source_size,
-        source_chunks,
+        chunk_order,
     ))
 }
 
@@ -176,7 +162,7 @@ pub async fn run(config: CompressConfig) -> Result<(), Error> {
         .open(config.output.clone())
         .map_err(|e| ("failed to open output file", e))?;
 
-    let (source_hash, archive_chunks, source_size, source_chunks) =
+    let (source_hash, archive_chunks, source_size, chunk_order) =
         if let Some(input_path) = config.input {
             chunk_input(
                 File::open(input_path)
@@ -231,10 +217,7 @@ pub async fn run(config: CompressConfig) -> Result<(), Error> {
 
     // Build the final archive
     let file_header = chunk_dictionary::ChunkDictionary {
-        rebuild_order: source_chunks
-            .iter()
-            .map(|source_descriptor| source_descriptor.unique_chunk_index as u32)
-            .collect(),
+        rebuild_order: chunk_order.iter().map(|&index| index as u32).collect(),
         application_version: PKG_VERSION.to_string(),
         chunk_descriptors: RepeatedField::from_vec(archive_chunks),
         source_checksum: source_hash,

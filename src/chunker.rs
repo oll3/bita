@@ -11,12 +11,6 @@ use crate::rollsum::RollSum;
 
 const CHUNKER_BUF_SIZE: usize = 1024 * 1024;
 
-#[derive(Debug, Clone)]
-pub struct Chunk {
-    pub offset: usize,
-    pub data: Vec<u8>,
-}
-
 fn refill_read_buf<T>(
     cx: &mut Context,
     want: usize,
