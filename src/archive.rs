@@ -6,7 +6,6 @@ use std::mem;
 use crate::chunk_dictionary;
 use crate::chunker::{ChunkerConfig, HashConfig, HashFilterBits};
 use crate::error::Error;
-use crate::HashSum;
 
 pub const BUZHASH_SEED: u32 = 0x1032_4195;
 
@@ -15,28 +14,6 @@ pub const FILE_MAGIC: &[u8; 6] = b"BITA1\0";
 
 // Pre header is the file magic + the size of the dictionary length value (u64)
 pub const PRE_HEADER_SIZE: usize = 6 + mem::size_of::<u64>();
-
-#[derive(Clone)]
-pub struct ChunkDescriptor {
-    pub checksum: HashSum,
-    pub archive_size: u32,
-    pub archive_offset: u64,
-    pub source_size: u32,
-    pub source_offsets: Vec<u64>,
-}
-
-impl From<ChunkDescriptor> for chunk_dictionary::ChunkDescriptor {
-    fn from(dict: ChunkDescriptor) -> Self {
-        chunk_dictionary::ChunkDescriptor {
-            checksum: dict.checksum.to_vec(),
-            archive_size: dict.archive_size,
-            archive_offset: dict.archive_offset,
-            source_size: dict.source_size,
-            unknown_fields: std::default::Default::default(),
-            cached_size: std::default::Default::default(),
-        }
-    }
-}
 
 impl From<chunk_dictionary::ChunkerParameters> for ChunkerConfig {
     fn from(params: chunk_dictionary::ChunkerParameters) -> Self {
@@ -60,18 +37,6 @@ impl From<chunk_dictionary::ChunkerParameters> for ChunkerConfig {
             chunk_dictionary::ChunkerParameters_ChunkingAlgorithm::FIXED_SIZE => {
                 ChunkerConfig::FixedSize(params.max_chunk_size as usize)
             }
-        }
-    }
-}
-
-impl From<(chunk_dictionary::ChunkDescriptor, Vec<u64>)> for ChunkDescriptor {
-    fn from((dict, source_offsets): (chunk_dictionary::ChunkDescriptor, Vec<u64>)) -> Self {
-        ChunkDescriptor {
-            checksum: dict.checksum.into(),
-            archive_size: dict.archive_size,
-            archive_offset: dict.archive_offset,
-            source_size: dict.source_size,
-            source_offsets,
         }
     }
 }

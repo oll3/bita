@@ -10,12 +10,33 @@ use crate::error::Error;
 use crate::reader_backend;
 use crate::HashSum;
 
+#[derive(Clone)]
+pub struct ChunkDescriptor {
+    pub checksum: HashSum,
+    pub archive_size: u32,
+    pub archive_offset: u64,
+    pub source_size: u32,
+    pub source_offsets: Vec<u64>,
+}
+
+impl From<(chunk_dictionary::ChunkDescriptor, Vec<u64>)> for ChunkDescriptor {
+    fn from((dict, source_offsets): (chunk_dictionary::ChunkDescriptor, Vec<u64>)) -> Self {
+        ChunkDescriptor {
+            checksum: dict.checksum.into(),
+            archive_size: dict.archive_size,
+            archive_offset: dict.archive_offset,
+            source_size: dict.source_size,
+            source_offsets,
+        }
+    }
+}
+
 pub struct ArchiveReader {
     // Go from chunk hash to archive chunk index (chunks vector)
-    chunk_map: HashMap<HashSum, Rc<archive::ChunkDescriptor>>,
+    chunk_map: HashMap<HashSum, Rc<ChunkDescriptor>>,
 
-    // Array of chunk descriptors
-    chunk_descriptors: Vec<Rc<archive::ChunkDescriptor>>,
+    // Array representing the order chunks in source
+    chunk_descriptors: Vec<Rc<ChunkDescriptor>>,
 
     total_chunks: usize,
     header_size: usize,
@@ -53,8 +74,8 @@ impl ArchiveReader {
     fn map_chunks(
         dictionary: &chunk_dictionary::ChunkDictionary,
     ) -> (
-        Vec<Rc<archive::ChunkDescriptor>>,
-        HashMap<HashSum, Rc<archive::ChunkDescriptor>>,
+        Vec<Rc<ChunkDescriptor>>,
+        HashMap<HashSum, Rc<ChunkDescriptor>>,
     ) {
         // Create chunk offset vector, to go from chunk index to source file offsets
         let source_offsets = {
@@ -70,16 +91,15 @@ impl ArchiveReader {
         };
 
         // Create map to go from chunk hash to descriptor index
-        let mut chunk_descriptors: Vec<Rc<archive::ChunkDescriptor>> = Vec::new();
-        let mut chunk_map: HashMap<HashSum, Rc<archive::ChunkDescriptor>> = HashMap::new();
+        let mut chunk_descriptors: Vec<Rc<ChunkDescriptor>> = Vec::new();
+        let mut chunk_map: HashMap<HashSum, Rc<ChunkDescriptor>> = HashMap::new();
 
         for (desc, chunk_source_offsets) in dictionary
             .chunk_descriptors
             .iter()
             .zip(source_offsets.into_iter())
         {
-            let desc: Rc<archive::ChunkDescriptor> =
-                Rc::new((desc.clone(), chunk_source_offsets).into());
+            let desc: Rc<ChunkDescriptor> = Rc::new((desc.clone(), chunk_source_offsets).into());
             chunk_map.insert(desc.checksum.clone(), desc.clone());
             chunk_descriptors.push(desc);
         }
@@ -165,7 +185,7 @@ impl ArchiveReader {
     pub fn chunk_data_offset(&self) -> u64 {
         self.chunk_data_offset
     }
-    pub fn chunk_descriptors(&self) -> &[Rc<archive::ChunkDescriptor>] {
+    pub fn chunk_descriptors(&self) -> &[Rc<ChunkDescriptor>] {
         &self.chunk_descriptors
     }
     pub fn total_source_size(&self) -> u64 {
@@ -208,11 +228,8 @@ impl ArchiveReader {
     }
 
     // Group chunks which are placed in sequence inside archive
-    pub fn grouped_chunks(
-        &self,
-        chunks: &HashSet<HashSum>,
-    ) -> Vec<Vec<Rc<archive::ChunkDescriptor>>> {
-        let mut descriptors: Vec<Rc<archive::ChunkDescriptor>> = self
+    pub fn grouped_chunks(&self, chunks: &HashSet<HashSum>) -> Vec<Vec<Rc<ChunkDescriptor>>> {
+        let mut descriptors: Vec<Rc<ChunkDescriptor>> = self
             .chunk_descriptors
             .iter()
             .filter(|chunk| chunks.contains(&chunk.checksum))
