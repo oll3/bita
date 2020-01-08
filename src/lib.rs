@@ -3,6 +3,7 @@ pub mod archive_reader;
 pub mod buzhash;
 pub mod chunk_dictionary;
 pub mod chunk_index;
+pub mod chunk_location_map;
 pub mod chunker;
 pub mod compression;
 pub mod error;
