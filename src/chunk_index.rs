@@ -41,7 +41,7 @@ impl<'a> PartialOrd for MoveChunk<'a> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ChunkIndex(HashMap<HashSum, (usize, BinaryHeap<u64>)>);
 
 impl ChunkIndex {
@@ -159,54 +159,60 @@ impl ChunkIndex {
     // the in memory chunk to its new place.
     fn build_reorder_ops<'a>(
         &'a self,
-        chunk: MoveChunk<'a>,
+        root_chunk: MoveChunk<'a>,
         new_order: &ChunkIndex,
         source_layout: &ChunkLocationMap<&'a HashSum>,
         visited: &mut HashSet<&'a HashSum>,
         ops: &mut Vec<ReorderOp<'a>>,
     ) {
-        visited.insert(chunk.hash);
-        let mut destinations = Vec::new();
-        let source_location = ChunkLocation::new(chunk.source_offset, chunk.size);
+        let mut stack: Vec<(MoveChunk, Option<ReorderOp>)> = Vec::new();
+        stack.push((root_chunk, None));
+        while let Some((chunk, op)) = stack.last_mut() {
+            if !visited.contains(chunk.hash) {
+                visited.insert(chunk.hash);
 
-        if let Some((size, target_offsets)) = new_order.get(&chunk.hash) {
-            target_offsets.iter().for_each(|&target_offset| {
-                let dest_location = ChunkLocation::new(target_offset, *size);
-                source_layout
-                    .iter_overlapping(&dest_location)
-                    // filter overlapping chunks with same hash
-                    .filter(|(_, &overlapped_hash)| chunk.hash != overlapped_hash)
-                    .for_each(|(_location, &overlapped_hash)| {
-                        let (chunk_size, chunk_offset) =
-                            self.get_first_offset(overlapped_hash).unwrap();
-                        if visited.contains(overlapped_hash) {
-                            ops.push(ReorderOp::StoreInMem {
-                                hash: overlapped_hash,
-                                source: ChunkLocation::new(chunk_offset, chunk_size),
+                let mut child_stack = Vec::new();
+                let mut destinations = Vec::new();
+
+                if let Some((size, target_offsets)) = new_order.get(&chunk.hash) {
+                    target_offsets.iter().for_each(|&target_offset| {
+                        let dest_location = ChunkLocation::new(target_offset, *size);
+                        source_layout
+                            .iter_overlapping(&dest_location)
+                            // filter overlapping chunks with same hash
+                            .filter(|(_, &overlapped_hash)| chunk.hash != overlapped_hash)
+                            .for_each(|(_location, &overlapped_hash)| {
+                                let (chunk_size, chunk_offset) =
+                                    self.get_first_offset(overlapped_hash).unwrap();
+                                if visited.contains(overlapped_hash) {
+                                    ops.push(ReorderOp::StoreInMem {
+                                        hash: overlapped_hash,
+                                        source: ChunkLocation::new(chunk_offset, chunk_size),
+                                    });
+                                } else {
+                                    child_stack.push((
+                                        MoveChunk {
+                                            hash: overlapped_hash,
+                                            source_offset: chunk_offset,
+                                            size: chunk_size,
+                                        },
+                                        None,
+                                    ));
+                                }
                             });
-                        } else {
-                            self.build_reorder_ops(
-                                MoveChunk {
-                                    hash: overlapped_hash,
-                                    source_offset: chunk_offset,
-                                    size: chunk_size,
-                                },
-                                new_order,
-                                source_layout,
-                                visited,
-                                ops,
-                            );
-                        }
+                        destinations.push(dest_location.offset);
                     });
-                destinations.push(dest_location.offset);
-            });
+                }
+                *op = Some(ReorderOp::Copy {
+                    hash: chunk.hash,
+                    source: ChunkLocation::new(chunk.source_offset, chunk.size),
+                    dest: destinations,
+                });
+                stack.append(&mut child_stack);
+            } else if let Some((_chunk, Some(op))) = stack.pop() {
+                ops.push(op);
+            }
         }
-
-        ops.push(ReorderOp::Copy {
-            hash: chunk.hash,
-            source: source_location,
-            dest: destinations,
-        });
     }
 
     pub fn reorder_ops(&self, new_order: &Self) -> Vec<ReorderOp> {
@@ -269,7 +275,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn reorder_with_overlap_and_circle() {
+    fn reorder_with_overlap_and_loop() {
         let current_index = {
             let mut chunks: HashMap<HashSum, (usize, BinaryHeap<u64>)> = HashMap::new();
             chunks.insert(HashSum::from_slice(&[1]), (10, vec![0].into()));
