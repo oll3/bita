@@ -24,6 +24,7 @@ pub struct CloneConfig {
     pub output: PathBuf,
     pub seed_stdin: bool,
     pub seed_files: Vec<PathBuf>,
+    pub seed_output: bool,
     pub header_checksum: Option<HashSum>,
     pub http_retry_count: u32,
     pub http_retry_delay: Option<std::time::Duration>,

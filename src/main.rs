@@ -259,6 +259,11 @@ fn parse_opts() -> Result<Config, Error> {
                 .multiple(true),
         )
         .arg(
+            Arg::with_name("seed-output")
+                .long("seed-output")
+                .help("Use the output file as seed and update in-place."),
+        )
+        .arg(
             Arg::with_name("force-create")
                 .short("f")
                 .long("force-create")
@@ -379,7 +384,7 @@ fn parse_opts() -> Result<Config, Error> {
             })
             .map(|s| Path::new(s).to_path_buf())
             .collect();
-
+        let seed_output = matches.is_present("seed-output");
         let verify_header = matches
             .value_of("verify-header")
             .map(|c| HashSum::from_vec(hex_str_to_vec(c).expect("failed to parse checksum")));
@@ -409,6 +414,7 @@ fn parse_opts() -> Result<Config, Error> {
             http_retry_delay,
             http_timeout,
             verify_output: matches.is_present("verify-output"),
+            seed_output,
         }))
     } else if let Some(matches) = matches.subcommand_matches("info") {
         let input = matches.value_of("INPUT").unwrap();

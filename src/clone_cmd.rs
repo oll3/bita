@@ -2,6 +2,7 @@ use blake2::{Blake2b, Digest};
 use futures_util::future;
 use futures_util::stream::StreamExt;
 use log::*;
+use std::collections::HashMap;
 use std::io::SeekFrom;
 use std::path::Path;
 use tokio::fs::File;
@@ -10,12 +11,32 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use crate::config;
 use crate::info_cmd;
 use bita::archive_reader::ArchiveReader;
-use bita::chunk_index::ChunkIndex;
+use bita::chunk_index::{ChunkIndex, ReorderOp};
 use bita::chunker::{Chunker, ChunkerConfig};
 use bita::error::Error;
 use bita::reader_backend;
 use bita::string_utils::*;
 use bita::HashSum;
+
+async fn seek_write(file: &mut File, offset: u64, buf: &[u8]) -> Result<(), Error> {
+    file.seek(SeekFrom::Start(offset))
+        .await
+        .map_err(|err| ("error seeking file", err))?;
+    file.write_all(buf)
+        .await
+        .map_err(|err| ("error writing file", err))?;
+    Ok(())
+}
+
+async fn seek_read(file: &mut File, offset: u64, buf: &mut [u8]) -> Result<(), Error> {
+    file.seek(SeekFrom::Start(offset))
+        .await
+        .map_err(|err| ("error seeking file", err))?;
+    file.read_exact(buf)
+        .await
+        .map_err(|e| ("error reading file", e))?;
+    Ok(())
+}
 
 async fn seed_input<T>(
     mut input: T,
@@ -65,14 +86,7 @@ where
             .ok_or(format!("missing chunk ({}) in source!?", hash))?
         {
             bytes_read_from_seed += chunk.len() as u64;
-            output_file
-                .seek(SeekFrom::Start(offset))
-                .await
-                .map_err(|err| ("failed to seek output", err))?;
-            output_file
-                .write_all(&chunk)
-                .await
-                .map_err(|err| ("failed to write output", err))?;
+            seek_write(output_file, offset, &chunk).await?;
         }
         found_chunks_count += 1;
     }
@@ -84,6 +98,56 @@ where
     );
 
     Ok(bytes_read_from_seed)
+}
+
+async fn update_in_place(
+    output_file: &mut File,
+    output_index: &ChunkIndex,
+    chunks_left: &mut ChunkIndex,
+) -> Result<u64, Error> {
+    let mut total_read: u64 = 0;
+    let chunks_before = chunks_left.len();
+    let now = std::time::Instant::now();
+    let reorder_ops = output_index.reorder_ops(chunks_left);
+    debug!(
+        "Built reordering ops ({}) in {} ms",
+        reorder_ops.len(),
+        now.elapsed().as_secs_f64() * 1000.0
+    );
+
+    // Move chunks around internally in the output file
+    let mut temp_store: HashMap<&HashSum, Vec<u8>> = HashMap::new();
+    for op in &reorder_ops {
+        match op {
+            ReorderOp::Copy { hash, source, dest } => {
+                let buf = if let Some(buf) = temp_store.remove(hash) {
+                    buf
+                } else {
+                    let mut buf: Vec<u8> = Vec::new();
+                    buf.resize(source.size, 0);
+                    seek_read(output_file, source.offset, &mut buf[..]).await?;
+                    buf
+                };
+                for &offset in dest {
+                    seek_write(output_file, offset, &buf[..]).await?;
+                    total_read += source.size as u64;
+                }
+                chunks_left.remove(hash);
+            }
+            ReorderOp::StoreInMem { hash, source } => {
+                let mut buf: Vec<u8> = Vec::new();
+                buf.resize(source.size, 0);
+                seek_read(output_file, source.offset, &mut buf[..]).await?;
+                temp_store.insert(hash, buf);
+            }
+        }
+    }
+    info!(
+        "Reorganized {} chunks ({}) in place",
+        chunks_before - chunks_left.len(),
+        size_to_str(total_read),
+    );
+    Ok(total_read)
 }
 
 async fn finish_using_archive(
@@ -199,7 +263,7 @@ async fn verify_output(
 }
 
 #[cfg(unix)]
-async fn prepare_unpack_output(output_file: &mut File, source_file_size: u64) -> Result<(), Error> {
+async fn validate_output_file(output_file: &mut File, source_file_size: u64) -> Result<(), Error> {
     use std::os::linux::fs::MetadataExt;
     let meta = output_file
         .metadata()
@@ -222,20 +286,22 @@ async fn prepare_unpack_output(output_file: &mut File, source_file_size: u64) ->
             .seek(SeekFrom::Start(0))
             .await
             .map_err(|e| ("unable to seek output file", e))?;
-    } else {
-        // Output is a reqular file
-        output_file
-            .set_len(source_file_size)
-            .await
-            .map_err(|e| ("unable to resize output file", e))?;
     }
     Ok(())
 }
 
 #[cfg(not(unix))]
-fn prepare_unpack_output(output_file: &mut File, source_file_size: u64) -> Result<(), Error> {
+async fn validate_output_file(
+    _output_file: &mut File,
+    _source_file_size: u64,
+) -> Result<(), Error> {
+    Ok(())
+}
+
+async fn resize_output(output_file: &mut File, source_file_size: u64) -> Result<(), Error> {
     output_file
         .set_len(source_file_size)
+        .await
         .map_err(|e| ("unable to resize output file", e))?;
     Ok(())
 }
@@ -273,9 +339,9 @@ async fn clone_archive(
     // Create or open output file
     let mut output_file = tokio::fs::OpenOptions::new()
         .write(true)
-        .read(config.verify_output)
-        .create(config.force_create)
-        .create_new(!config.force_create)
+        .read(config.verify_output || config.seed_output)
+        .create(config.force_create && !config.seed_output)
+        .create_new(!config.force_create && !config.seed_output)
         .open(&config.output)
         .await
         .map_err(|e| {
@@ -285,12 +351,34 @@ async fn clone_archive(
             )
         })?;
 
-    // Clone and unpack archive
-
     // Check if the given output file is a regular file or block device.
     // If it is a block device we should check its size against the target size before
     // writing. If a regular file then resize that file to target size.
-    prepare_unpack_output(&mut output_file, archive.total_source_size()).await?;
+    validate_output_file(&mut output_file, archive.total_source_size()).await?;
+
+    let output_chunk_index = if config.seed_output {
+        // Build an index of the output file's chunks
+        Some(
+            ChunkIndex::try_build_from_file(
+                &chunker_config,
+                archive.chunk_hash_length(),
+                &mut output_file,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
+
+    if let Some(output_index) = output_chunk_index {
+        let already_in_place = output_index.strip_chunks_already_in_place(&mut chunks_left);
+        info!("{} chunks are already in place", already_in_place);
+        total_read_from_seed +=
+            update_in_place(&mut output_file, &output_index, &mut chunks_left).await?;
+    }
+
+    // TODO: Should not be executed on block file
+    resize_output(&mut output_file, archive.total_source_size()).await?;
 
     // Read chunks from seed files
     if config.seed_stdin && !atty::is(atty::Stream::Stdin) {
@@ -320,8 +408,11 @@ async fn clone_archive(
     }
 
     // Read the rest from archive
-    let total_output_from_remote =
-        finish_using_archive(reader_builder, &archive, chunks_left, &mut output_file).await?;
+    let total_output_from_remote = if !chunks_left.is_empty() {
+        finish_using_archive(reader_builder, &archive, chunks_left, &mut output_file).await?
+    } else {
+        0
+    };
 
     if config.verify_output {
         verify_output(&config, &archive.source_checksum(), &mut output_file).await?;
