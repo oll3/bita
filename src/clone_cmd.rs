@@ -135,10 +135,12 @@ async fn update_in_place(
                 chunks_left.remove(hash);
             }
             ReorderOp::StoreInMem { hash, source } => {
-                let mut buf: Vec<u8> = Vec::new();
-                buf.resize(source.size, 0);
-                seek_read(output_file, source.offset, &mut buf[..]).await?;
-                temp_store.insert(hash, buf);
+                if !temp_store.contains_key(hash) {
+                    let mut buf: Vec<u8> = Vec::new();
+                    buf.resize(source.size, 0);
+                    seek_read(output_file, source.offset, &mut buf[..]).await?;
+                    temp_store.insert(hash, buf);
+                }
             }
         }
     }
