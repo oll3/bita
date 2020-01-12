@@ -52,6 +52,11 @@ The average target chunk size and the upper/lower limit of a chunk's size is run
 The server serving *bita* archives can be any http(s) server supporting [range requests](https://developer.mozilla.org/en-US/docs/Web/HTTP/Range_requests "range requests"), which should be most.
 
 ## Install from crates.io
+First ensure you have the `protoc` tool installed (Protocol Buffers code generator). On Ubuntu install with the following:
+```console
+olle@home:~$ sudo apt install protobuf-compiler
+```
+Then install bita with cargo:
 ```console
 olle@home:~$ cargo install bita
 ```
