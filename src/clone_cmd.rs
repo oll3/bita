@@ -342,7 +342,7 @@ async fn clone_archive(
     let mut output_file = tokio::fs::OpenOptions::new()
         .write(true)
         .read(config.verify_output || config.seed_output)
-        .create(config.force_create && !config.seed_output)
+        .create(config.force_create || config.seed_output)
         .create_new(!config.force_create && !config.seed_output)
         .open(&config.output)
         .await
