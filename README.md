@@ -33,6 +33,8 @@ On clone the dictionary and chunker configuration is first fetched from the remo
 Any chunk found in a seed file will be copied into the output file at the location(s) specified by the dictionary.
 When all seeds has been consumed the chunks still missing, if any, is fetched from the remote archive, decompressed and inserted into the output file.
 
+*bita* can also use the output file as seed and reorganize chunks in place. Except using this for the obvious reason of saving bandwidth this will also let *bita* avoid writing chunks that are already in place in the output file. This may be useful if writing to storage is either slow or we want to avoid tearing on the storage device.
+
 Each chunk, both fetched from seed and from archive, is verified by its strong hash before written to the output. *bita* avoids using any extra storage space while cloning, the only file written to is the given output file.
 
 
@@ -73,6 +75,18 @@ Clone using block device `/dev/mmcblk0p1` as seed and `/dev/mmcblk0p2` as target
 
 ```console
 upgrader@device:~$ bita clone --seed /dev/mmcblk0p1 https://host/release_v1.1.ext4.cba /dev/mmcblk0p2
+```
+
+Clone and use output (`/dev/mmcblk0p1`) as seed while cloning:
+
+```console
+upgrader@device:~$ bita clone --seed-output https://host/release_v1.1.ext4.cba /dev/mmcblk0p1
+```
+
+Local archives can also be cloned:
+
+```console
+upgrader@device:~$ bita clone --seed-output local.cba local_output.file
 ```
 
 Clone file at `https://host/new.tar.cba` using stdin (-) and block device `/dev/sda1` as seed:
