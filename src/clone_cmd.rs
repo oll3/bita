@@ -145,7 +145,7 @@ async fn update_in_place(
         }
     }
     info!(
-        "Reorganized {} chunks ({}) in place",
+        "Reorganized {} chunks ({}) in output",
         chunks_before - chunks_left.len(),
         size_to_str(total_read),
     );
@@ -265,7 +265,10 @@ async fn verify_output(
 }
 
 #[cfg(unix)]
-async fn validate_output_file(output_file: &mut File, source_file_size: u64) -> Result<(), Error> {
+async fn validate_output_file(
+    output_file: &mut File,
+    source_file_size: u64,
+) -> Result<bool, Error> {
     use std::os::linux::fs::MetadataExt;
     let meta = output_file
         .metadata()
@@ -288,16 +291,18 @@ async fn validate_output_file(output_file: &mut File, source_file_size: u64) -> 
             .seek(SeekFrom::Start(0))
             .await
             .map_err(|e| ("unable to seek output file", e))?;
+        Ok(true)
+    } else {
+        Ok(false)
     }
-    Ok(())
 }
 
 #[cfg(not(unix))]
 async fn validate_output_file(
     _output_file: &mut File,
     _source_file_size: u64,
-) -> Result<(), Error> {
-    Ok(())
+) -> Result<bool, Error> {
+    Ok(false)
 }
 
 async fn resize_output(output_file: &mut File, source_file_size: u64) -> Result<(), Error> {
@@ -356,7 +361,8 @@ async fn clone_archive(
     // Check if the given output file is a regular file or block device.
     // If it is a block device we should check its size against the target size before
     // writing. If a regular file then resize that file to target size.
-    validate_output_file(&mut output_file, archive.total_source_size()).await?;
+    let output_is_blockdev =
+        validate_output_file(&mut output_file, archive.total_source_size()).await?;
 
     let output_chunk_index = if config.seed_output {
         // Build an index of the output file's chunks
@@ -374,13 +380,15 @@ async fn clone_archive(
 
     if let Some(output_index) = output_chunk_index {
         let already_in_place = output_index.strip_chunks_already_in_place(&mut chunks_left);
-        info!("{} chunks are already in place", already_in_place);
+        info!("{} chunks are already in place in output", already_in_place,);
         total_read_from_seed +=
             update_in_place(&mut output_file, &output_index, &mut chunks_left).await?;
     }
 
-    // TODO: Should not be executed on block file
-    resize_output(&mut output_file, archive.total_source_size()).await?;
+    if !output_is_blockdev {
+        // Resize output file to same size as the archive source
+        resize_output(&mut output_file, archive.total_source_size()).await?;
+    }
 
     // Read chunks from seed files
     if config.seed_stdin && !atty::is(atty::Stream::Stdin) {
