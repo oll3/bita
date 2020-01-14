@@ -29,8 +29,8 @@ impl std::fmt::Display for Compression {
     }
 }
 
-impl From<chunk_dictionary::ChunkCompression> for Compression {
-    fn from(compression: chunk_dictionary::ChunkCompression) -> Self {
+impl From<&chunk_dictionary::ChunkCompression> for Compression {
+    fn from(compression: &chunk_dictionary::ChunkCompression) -> Self {
         match compression.compression {
             #[cfg(feature = "lzma-compression")]
             ChunkCompression_CompressionType::LZMA => {

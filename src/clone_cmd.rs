@@ -17,23 +17,15 @@ use bita::reader_backend;
 use bita::string_utils::*;
 use bita::HashSum;
 
-async fn seek_write(file: &mut File, offset: u64, buf: &[u8]) -> Result<(), Error> {
-    file.seek(SeekFrom::Start(offset))
-        .await
-        .map_err(|err| ("error seeking file", err))?;
-    file.write_all(buf)
-        .await
-        .map_err(|err| ("error writing file", err))?;
+async fn seek_write(file: &mut File, offset: u64, buf: &[u8]) -> Result<(), std::io::Error> {
+    file.seek(SeekFrom::Start(offset)).await?;
+    file.write_all(buf).await?;
     Ok(())
 }
 
-async fn seek_read(file: &mut File, offset: u64, buf: &mut [u8]) -> Result<(), Error> {
-    file.seek(SeekFrom::Start(offset))
-        .await
-        .map_err(|err| ("error seeking file", err))?;
-    file.read_exact(buf)
-        .await
-        .map_err(|e| ("error reading file", e))?;
+async fn seek_read(file: &mut File, offset: u64, buf: &mut [u8]) -> Result<(), std::io::Error> {
+    file.seek(SeekFrom::Start(offset)).await?;
+    file.read_exact(buf).await?;
     Ok(())
 }
 
@@ -55,24 +47,32 @@ where
     let seed_chunker = Chunker::new(chunker_config, &mut input);
     let mut found_chunks = seed_chunker
         .map(|result| {
-            let (_offset, chunk) = result.expect("error while chunking");
-            // Build hash of full source
-            tokio::task::spawn(
-                async move { (HashSum::b2_digest(&chunk, hash_length as usize), chunk) },
-            )
+            tokio::task::spawn(async move {
+                result
+                    .map(|(_offset, chunk)| {
+                        (HashSum::b2_digest(&chunk, hash_length as usize), chunk)
+                    })
+                    .map_err(|err| Error::from(("error while chunking seed", err)))
+            })
         })
         .buffered(8)
         .filter_map(|result| {
             // Filter unique chunks to be compressed
-            let (hash, chunk) = result.expect("error while hashing chunk");
-            if chunks_left.remove(&hash) {
-                future::ready(Some((hash, chunk)))
-            } else {
-                future::ready(None)
-            }
+            future::ready(match result {
+                Ok(Ok((hash, chunk))) => {
+                    if chunks_left.remove(&hash) {
+                        Some(Ok((hash, chunk)))
+                    } else {
+                        None
+                    }
+                }
+                Ok(Err(err)) => Some(Err(err)),
+                Err(err) => Some(Err(("error while chunking seed", err).into())),
+            })
         });
 
-    while let Some((hash, chunk)) = found_chunks.next().await {
+    while let Some(result) = found_chunks.next().await {
+        let (hash, chunk) = result?;
         debug!(
             "Chunk '{}', size {} used from {}",
             hash,
@@ -85,7 +85,9 @@ where
             .ok_or_else(|| format!("missing chunk ({}) in source!?", hash))?
         {
             bytes_read_from_seed += chunk.len() as u64;
-            seek_write(output_file, offset, &chunk).await?;
+            seek_write(output_file, offset, &chunk)
+                .await
+                .map_err(|err| ("error writing output", err))?;
         }
         found_chunks_count += 1;
     }
@@ -124,11 +126,15 @@ async fn update_in_place(
                 } else {
                     let mut buf: Vec<u8> = Vec::new();
                     buf.resize(source.size, 0);
-                    seek_read(output_file, source.offset, &mut buf[..]).await?;
+                    seek_read(output_file, source.offset, &mut buf[..])
+                        .await
+                        .map_err(|err| ("error reading output", err))?;
                     buf
                 };
                 for &offset in dest {
-                    seek_write(output_file, offset, &buf[..]).await?;
+                    seek_write(output_file, offset, &buf[..])
+                        .await
+                        .map_err(|err| ("error writing output", err))?;
                     total_read += source.size as u64;
                 }
                 chunks_left.remove(hash);
@@ -137,7 +143,9 @@ async fn update_in_place(
                 if !temp_store.contains_key(hash) {
                     let mut buf: Vec<u8> = Vec::new();
                     buf.resize(source.size, 0);
-                    seek_read(output_file, source.offset, &mut buf[..]).await?;
+                    seek_read(output_file, source.offset, &mut buf[..])
+                        .await
+                        .map_err(|err| ("error reading output", err))?;
                     temp_store.insert(hash, buf);
                 }
             }
@@ -194,7 +202,8 @@ async fn finish_using_archive(
 
         while let Some(result) = archive_chunk_stream.next().await {
             // For each chunk read from archive
-            let (hash, chunk) = result.expect("failed to decompress from archive");
+            let (hash, chunk) =
+                result.map_err(|err| Error::Other(format!("spawn error {:?}", err)))?;
             debug!(
                 "Chunk '{}', size {} used from archive",
                 hash,
@@ -251,16 +260,17 @@ async fn verify_output(
     let sum = HashSum::from_slice(&output_hasher.result()[..]);
     if sum == *expected_checksum {
         info!("Checksum verified Ok");
+        Ok(())
     } else {
-        panic!(format!(
+        Err(format!(
             "Checksum mismatch. {}: {}, {}: {}.",
             cmd.output.display(),
             sum,
             cmd.input,
             expected_checksum
-        ));
+        )
+        .into())
     }
-    Ok(())
 }
 
 #[cfg(unix)]
@@ -280,11 +290,12 @@ async fn validate_output_file(
             .await
             .map_err(|e| ("unable to seek output file", e))?;
         if size != source_file_size {
-            panic!(
+            return Err(format!(
                 "Size of output device ({}) differ from size of archive target file ({})",
                 size_to_str(size),
                 size_to_str(source_file_size)
-            );
+            )
+            .into());
         }
         output_file
             .seek(SeekFrom::Start(0))
@@ -455,7 +466,9 @@ impl Command {
     pub async fn run(self) -> Result<(), Error> {
         let reader_builder = if &self.input[0..7] == "http://" || &self.input[0..8] == "https://" {
             reader_backend::Builder::new_remote(
-                self.input.parse().unwrap(),
+                self.input.parse().map_err(|err| {
+                    Error::InvalidUri(format!("failed to parse uri '{}'", self.input), err)
+                })?,
                 self.http_retry_count,
                 self.http_retry_delay,
                 self.http_timeout,

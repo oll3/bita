@@ -39,6 +39,12 @@ impl From<Vec<u8>> for HashSum {
     }
 }
 
+impl From<&[u8]> for HashSum {
+    fn from(v: &[u8]) -> Self {
+        Self::from_slice(v)
+    }
+}
+
 impl Hash for HashSum {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.hash(state);

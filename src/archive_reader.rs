@@ -126,16 +126,16 @@ impl ArchiveReader {
         let source_index = ChunkIndex::from_dictionary(&dictionary);
 
         let chunk_order = Self::map_chunks(&dictionary);
-        let chunker_params = dictionary.chunker_params.unwrap();
+        let chunker_params = dictionary.get_chunker_params();
         Ok(Self {
             chunk_order,
             header_checksum,
             header_size: header.len(),
             source_total_size: dictionary.source_total_size,
-            source_checksum: dictionary.source_checksum.into(),
-            created_by_app_version: dictionary.application_version,
-            chunk_compression: dictionary.chunk_compression.unwrap().into(),
-            total_chunks: dictionary.rebuild_order.into_iter().count(),
+            source_checksum: dictionary.get_source_checksum().into(),
+            created_by_app_version: dictionary.application_version.clone(),
+            chunk_compression: dictionary.get_chunk_compression().into(),
+            total_chunks: dictionary.rebuild_order.iter().count(),
             chunk_data_offset,
             chunk_hash_length: chunker_params.chunk_hash_length as usize,
             chunker_config: chunker_params.into(),

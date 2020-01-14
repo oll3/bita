@@ -15,8 +15,8 @@ pub const FILE_MAGIC: &[u8; 6] = b"BITA1\0";
 // Pre header is the file magic + the size of the dictionary length value (u64)
 pub const PRE_HEADER_SIZE: usize = 6 + mem::size_of::<u64>();
 
-impl From<chunk_dictionary::ChunkerParameters> for ChunkerConfig {
-    fn from(params: chunk_dictionary::ChunkerParameters) -> Self {
+impl From<&chunk_dictionary::ChunkerParameters> for ChunkerConfig {
+    fn from(params: &chunk_dictionary::ChunkerParameters) -> Self {
         match params.chunking_algorithm {
             chunk_dictionary::ChunkerParameters_ChunkingAlgorithm::BUZHASH => {
                 ChunkerConfig::BuzHash(HashConfig {

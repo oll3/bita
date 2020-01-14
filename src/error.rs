@@ -7,6 +7,8 @@ pub enum Error {
     LZMA(String, lzma::LzmaError),
     Hyper(String, hyper::Error),
     Http(String, hyper::http::Error),
+    InvalidUri(String, hyper::http::uri::InvalidUri),
+    JoinError(String, tokio::task::JoinError),
     Other(String),
     Wrapped(String, Box<Error>),
 }
@@ -53,6 +55,18 @@ impl From<(&str, hyper::http::Error)> for Error {
     }
 }
 
+impl From<(&str, hyper::http::uri::InvalidUri)> for Error {
+    fn from((desc, e): (&str, hyper::http::uri::InvalidUri)) -> Self {
+        Error::InvalidUri(desc.to_owned(), e)
+    }
+}
+
+impl From<(&str, tokio::task::JoinError)> for Error {
+    fn from((desc, e): (&str, tokio::task::JoinError)) -> Self {
+        Error::JoinError(desc.to_owned(), e)
+    }
+}
+
 impl From<&str> for Error {
     fn from(desc: &str) -> Self {
         Error::Other(desc.to_owned())
@@ -76,6 +90,8 @@ impl std::fmt::Debug for Error {
             Error::LZMA(desc, e) => write!(f, "{}: {:?}", desc, e),
             Error::Hyper(desc, e) => write!(f, "{}: {:?}", desc, e),
             Error::Http(desc, e) => write!(f, "{}: {:?}", desc, e),
+            Error::InvalidUri(desc, e) => write!(f, "{}: {:?}", desc, e),
+            Error::JoinError(desc, e) => write!(f, "{}: {:?}", desc, e),
             Error::Other(desc) => write!(f, "{}", desc),
             Error::Wrapped(desc, e) => write!(f, "{}: {:?}", desc, e),
         }
@@ -93,6 +109,8 @@ impl std::fmt::Display for Error {
             Error::LZMA(ref desc, ref e) => write!(f, "{}: {}", desc, e),
             Error::Hyper(ref desc, ref e) => write!(f, "{}: {}", desc, e),
             Error::Http(ref desc, ref e) => write!(f, "{}: {}", desc, e),
+            Error::InvalidUri(desc, e) => write!(f, "{}: {}", desc, e),
+            Error::JoinError(desc, e) => write!(f, "{}: {:?}", desc, e),
             Error::Other(ref desc) => write!(f, "{}", desc),
             Error::Wrapped(desc, e) => write!(f, "{}: {}", desc, e),
         }
