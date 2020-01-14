@@ -5,10 +5,10 @@ use log::*;
 use protobuf::{RepeatedField, SingularPtrField};
 use std::collections::HashMap;
 use std::io::Write;
+use std::path::PathBuf;
 use tokio::fs::{File, OpenOptions};
 use tokio::prelude::*;
 
-use crate::config::CompressConfig;
 use crate::info_cmd;
 use bita::archive;
 use bita::chunk_dictionary;
@@ -150,99 +150,116 @@ where
     ))
 }
 
-pub async fn run(config: CompressConfig) -> Result<(), Error> {
-    let chunker_config = config.chunker_config.clone();
-    let compression = config.compression;
-    let mut output_file = std::fs::OpenOptions::new()
-        .write(true)
-        .read(true)
-        .create(config.force_create)
-        .truncate(config.force_create)
-        .create_new(!config.force_create)
-        .open(config.output.clone())
-        .map_err(|e| ("failed to open output file", e))?;
+#[derive(Debug, Clone)]
+pub struct Command {
+    pub force_create: bool,
 
-    let (source_hash, archive_chunks, source_size, chunk_order) =
-        if let Some(input_path) = config.input {
-            chunk_input(
-                File::open(input_path)
-                    .await
-                    .map_err(|err| ("failed to open input file", err))?,
-                &chunker_config,
-                compression,
-                &config.temp_file,
-                config.hash_length,
-            )
-            .await?
-        } else if !atty::is(atty::Stream::Stdin) {
-            // Read source from stdin
-            chunk_input(
-                tokio::io::stdin(),
-                &chunker_config,
-                compression,
-                &config.temp_file,
-                config.hash_length,
-            )
-            .await?
-        } else {
-            panic!("Missing input");
+    // Use stdin if input not given
+    pub input: Option<PathBuf>,
+    pub output: PathBuf,
+    pub temp_file: PathBuf,
+    pub hash_length: usize,
+    pub chunker_config: ChunkerConfig,
+    pub compression_level: u32,
+    pub compression: Compression,
+}
+impl Command {
+    pub async fn run(self) -> Result<(), Error> {
+        let chunker_config = self.chunker_config.clone();
+        let compression = self.compression;
+        let mut output_file = std::fs::OpenOptions::new()
+            .write(true)
+            .read(true)
+            .create(self.force_create)
+            .truncate(self.force_create)
+            .create_new(!self.force_create)
+            .open(self.output.clone())
+            .map_err(|e| ("failed to open output file", e))?;
+
+        let (source_hash, archive_chunks, source_size, chunk_order) =
+            if let Some(input_path) = self.input {
+                chunk_input(
+                    File::open(input_path)
+                        .await
+                        .map_err(|err| ("failed to open input file", err))?,
+                    &chunker_config,
+                    compression,
+                    &self.temp_file,
+                    self.hash_length,
+                )
+                .await?
+            } else if !atty::is(atty::Stream::Stdin) {
+                // Read source from stdin
+                chunk_input(
+                    tokio::io::stdin(),
+                    &chunker_config,
+                    compression,
+                    &self.temp_file,
+                    self.hash_length,
+                )
+                .await?
+            } else {
+                panic!("Missing input");
+            };
+
+        let chunker_params = match self.chunker_config {
+            ChunkerConfig::BuzHash(hash_config) => chunk_dictionary::ChunkerParameters {
+                chunk_filter_bits: hash_config.filter_bits.0,
+                min_chunk_size: hash_config.min_chunk_size as u32,
+                max_chunk_size: hash_config.max_chunk_size as u32,
+                rolling_hash_window_size: hash_config.window_size as u32,
+                chunk_hash_length: self.hash_length as u32,
+                chunking_algorithm: chunk_dictionary::ChunkerParameters_ChunkingAlgorithm::BUZHASH,
+                ..Default::default()
+            },
+            ChunkerConfig::RollSum(hash_config) => chunk_dictionary::ChunkerParameters {
+                chunk_filter_bits: hash_config.filter_bits.0,
+                min_chunk_size: hash_config.min_chunk_size as u32,
+                max_chunk_size: hash_config.max_chunk_size as u32,
+                rolling_hash_window_size: hash_config.window_size as u32,
+                chunk_hash_length: self.hash_length as u32,
+                chunking_algorithm: chunk_dictionary::ChunkerParameters_ChunkingAlgorithm::ROLLSUM,
+                ..Default::default()
+            },
+            ChunkerConfig::FixedSize(chunk_size) => chunk_dictionary::ChunkerParameters {
+                max_chunk_size: chunk_size as u32,
+                chunk_hash_length: self.hash_length as u32,
+                chunking_algorithm:
+                    chunk_dictionary::ChunkerParameters_ChunkingAlgorithm::FIXED_SIZE,
+                ..Default::default()
+            },
         };
 
-    let chunker_params = match config.chunker_config {
-        ChunkerConfig::BuzHash(hash_config) => chunk_dictionary::ChunkerParameters {
-            chunk_filter_bits: hash_config.filter_bits.0,
-            min_chunk_size: hash_config.min_chunk_size as u32,
-            max_chunk_size: hash_config.max_chunk_size as u32,
-            rolling_hash_window_size: hash_config.window_size as u32,
-            chunk_hash_length: config.hash_length as u32,
-            chunking_algorithm: chunk_dictionary::ChunkerParameters_ChunkingAlgorithm::BUZHASH,
-            ..Default::default()
-        },
-        ChunkerConfig::RollSum(hash_config) => chunk_dictionary::ChunkerParameters {
-            chunk_filter_bits: hash_config.filter_bits.0,
-            min_chunk_size: hash_config.min_chunk_size as u32,
-            max_chunk_size: hash_config.max_chunk_size as u32,
-            rolling_hash_window_size: hash_config.window_size as u32,
-            chunk_hash_length: config.hash_length as u32,
-            chunking_algorithm: chunk_dictionary::ChunkerParameters_ChunkingAlgorithm::ROLLSUM,
-            ..Default::default()
-        },
-        ChunkerConfig::FixedSize(chunk_size) => chunk_dictionary::ChunkerParameters {
-            max_chunk_size: chunk_size as u32,
-            chunk_hash_length: config.hash_length as u32,
-            chunking_algorithm: chunk_dictionary::ChunkerParameters_ChunkingAlgorithm::FIXED_SIZE,
-            ..Default::default()
-        },
-    };
-
-    // Build the final archive
-    let file_header = chunk_dictionary::ChunkDictionary {
-        rebuild_order: chunk_order.iter().map(|&index| index as u32).collect(),
-        application_version: PKG_VERSION.to_string(),
-        chunk_descriptors: RepeatedField::from_vec(archive_chunks),
-        source_checksum: source_hash,
-        chunk_compression: SingularPtrField::some(config.compression.into()),
-        source_total_size: source_size,
-        chunker_params: SingularPtrField::some(chunker_params),
-        unknown_fields: std::default::Default::default(),
-        cached_size: std::default::Default::default(),
-    };
-    let header_buf = archive::build_header(&file_header, None)?;
-    output_file
-        .write_all(&header_buf)
-        .map_err(|e| ("failed to write header", e))?;
-    {
-        let mut temp_file = std::fs::File::open(&config.temp_file)
-            .map_err(|e| ("failed to open temporary file", e))?;
-        std::io::copy(&mut temp_file, &mut output_file)
-            .map_err(|e| ("failed to write chunk data to output file", e))?;
+        // Build the final archive
+        let file_header = chunk_dictionary::ChunkDictionary {
+            rebuild_order: chunk_order.iter().map(|&index| index as u32).collect(),
+            application_version: PKG_VERSION.to_string(),
+            chunk_descriptors: RepeatedField::from_vec(archive_chunks),
+            source_checksum: source_hash,
+            chunk_compression: SingularPtrField::some(self.compression.into()),
+            source_total_size: source_size,
+            chunker_params: SingularPtrField::some(chunker_params),
+            unknown_fields: std::default::Default::default(),
+            cached_size: std::default::Default::default(),
+        };
+        let header_buf = archive::build_header(&file_header, None)?;
+        output_file
+            .write_all(&header_buf)
+            .map_err(|e| ("failed to write header", e))?;
+        {
+            let mut temp_file = std::fs::File::open(&self.temp_file)
+                .map_err(|e| ("failed to open temporary file", e))?;
+            std::io::copy(&mut temp_file, &mut output_file)
+                .map_err(|e| ("failed to write chunk data to output file", e))?;
+        }
+        std::fs::remove_file(&self.temp_file)
+            .map_err(|e| ("unable to remove temporary file", e))?;
+        drop(output_file);
+        {
+            // Print archive info
+            let builder = bita::reader_backend::Builder::new_local(&self.output);
+            info_cmd::print_archive_backend(builder).await?;
+        }
+        Ok(())
     }
-    std::fs::remove_file(&config.temp_file).map_err(|e| ("unable to remove temporary file", e))?;
-    drop(output_file);
-    {
-        // Print archive info
-        let builder = bita::reader_backend::Builder::new_local(&config.output);
-        info_cmd::print_archive_backend(builder).await?;
-    }
-    Ok(())
 }

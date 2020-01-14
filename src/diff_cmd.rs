@@ -1,10 +1,9 @@
 use futures_util::stream::StreamExt;
 use log::*;
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tokio::fs::File;
 
-use crate::config::DiffConfig;
 use crate::info_cmd;
 use bita::chunker::{Chunker, ChunkerConfig};
 use bita::compression::Compression;
@@ -154,49 +153,60 @@ fn selection_string(
     )
 }
 
-pub async fn run(config: DiffConfig) -> Result<(), Error> {
-    let chunker_config = &config.chunker_config;
-    let compression = config.compression;
+#[derive(Debug, Clone)]
+pub struct Command {
+    pub input_a: PathBuf,
+    pub input_b: PathBuf,
+    pub chunker_config: ChunkerConfig,
+    pub compression_level: u32,
+    pub compression: Compression,
+}
 
-    info!("Chunker config:");
-    info_cmd::print_chunker_config(chunker_config);
-    println!();
+impl Command {
+    pub async fn run(self) -> Result<(), Error> {
+        let chunker_config = &self.chunker_config;
+        let compression = self.compression;
 
-    info!("Scanning {} ...", config.input_a.display());
-    let a = chunk_file(&config.input_a, chunker_config, compression).await?;
+        info!("Chunker config:");
+        info_cmd::print_chunker_config(chunker_config);
+        println!();
 
-    info!("Scanning {} ...", config.input_b.display());
-    let b = chunk_file(&config.input_b, chunker_config, compression).await?;
+        info!("Scanning {} ...", self.input_a.display());
+        let a = chunk_file(&self.input_a, chunker_config, compression).await?;
 
-    let mut descriptors_ab: HashMap<HashSum, ChunkDescriptor> = HashMap::new();
-    for descriptor in a.descriptors.iter().chain(&b.descriptors) {
-        if let Some(d) = descriptors_ab.get_mut(descriptor.0) {
-            d.occurrences.append(&mut d.occurrences.clone());
-        } else {
-            descriptors_ab.insert(descriptor.0.clone(), descriptor.1.clone());
+        info!("Scanning {} ...", self.input_b.display());
+        let b = chunk_file(&self.input_b, chunker_config, compression).await?;
+
+        let mut descriptors_ab: HashMap<HashSum, ChunkDescriptor> = HashMap::new();
+        for descriptor in a.descriptors.iter().chain(&b.descriptors) {
+            if let Some(d) = descriptors_ab.get_mut(descriptor.0) {
+                d.occurrences.append(&mut d.occurrences.clone());
+            } else {
+                descriptors_ab.insert(descriptor.0.clone(), descriptor.1.clone());
+            }
         }
+
+        let union_ab: Vec<HashSum> = a.chunks.union(&b.chunks).cloned().collect();
+        let intersection_ab: Vec<HashSum> = a.chunks.intersection(&b.chunks).cloned().collect();
+        let diff_ab: Vec<HashSum> = a.chunks.difference(&b.chunks).cloned().collect();
+        let diff_ba: Vec<HashSum> = b.chunks.difference(&a.chunks).cloned().collect();
+
+        println!();
+        info!(
+            "Total unique chunks: {}",
+            selection_string(&union_ab, &descriptors_ab)
+        );
+        info!(
+            "Chunks shared: {}",
+            selection_string(&intersection_ab, &descriptors_ab)
+        );
+
+        println!();
+        print_info(&self.input_a, &a, &diff_ab);
+        println!();
+        print_info(&self.input_b, &b, &diff_ba);
+        println!();
+
+        Ok(())
     }
-
-    let union_ab: Vec<HashSum> = a.chunks.union(&b.chunks).cloned().collect();
-    let intersection_ab: Vec<HashSum> = a.chunks.intersection(&b.chunks).cloned().collect();
-    let diff_ab: Vec<HashSum> = a.chunks.difference(&b.chunks).cloned().collect();
-    let diff_ba: Vec<HashSum> = b.chunks.difference(&a.chunks).cloned().collect();
-
-    println!();
-    info!(
-        "Total unique chunks: {}",
-        selection_string(&union_ab, &descriptors_ab)
-    );
-    info!(
-        "Chunks shared: {}",
-        selection_string(&intersection_ab, &descriptors_ab)
-    );
-
-    println!();
-    print_info(&config.input_a, &a, &diff_ab);
-    println!();
-    print_info(&config.input_b, &b, &diff_ba);
-    println!();
-
-    Ok(())
 }

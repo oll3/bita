@@ -5,7 +5,6 @@ use log;
 
 mod clone_cmd;
 mod compress_cmd;
-mod config;
 mod diff_cmd;
 mod info_cmd;
 
@@ -15,7 +14,6 @@ use std::path::Path;
 use std::process;
 use tokio;
 
-use crate::config::*;
 use bita::chunker::{ChunkerConfig, HashConfig, HashFilterBits};
 use bita::compression::Compression;
 use bita::error::Error;
@@ -24,6 +22,14 @@ use bita::HashSum;
 
 pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+#[derive(Debug, Clone)]
+enum Command {
+    Compress(compress_cmd::Command),
+    Clone(clone_cmd::Command),
+    Info(info_cmd::Command),
+    Diff(diff_cmd::Command),
+}
 
 fn parse_hash_chunker_config(
     matches: &clap::ArgMatches<'_>,
@@ -207,7 +213,7 @@ fn add_chunker_args<'a, 'b>(
         )
 }
 
-fn parse_opts() -> Result<Config, Error> {
+fn parse_opts() -> Result<Command, Error> {
     let compression_desc = format!(
         "Set the chunk data compression type {}",
         compression_names()
@@ -357,7 +363,7 @@ fn parse_opts() -> Result<Config, Error> {
         let hash_length = matches.value_of("hash-length").unwrap_or("64");
         let chunker_config = parse_chunker_config(&matches);
         let (compression, compression_level) = parse_compression(matches);
-        Ok(Config::Compress(CompressConfig {
+        Ok(Command::Compress(compress_cmd::Command {
             input,
             output: output.to_path_buf(),
             hash_length: hash_length.parse().expect("invalid hash length value"),
@@ -403,7 +409,7 @@ fn parse_opts() -> Result<Config, Error> {
             std::time::Duration::from_secs(v.parse().expect("failed to parse http-timeout"))
         });
 
-        Ok(Config::Clone(CloneConfig {
+        Ok(Command::Clone(clone_cmd::Command {
             input: input.to_string(),
             output: Path::new(output).to_path_buf(),
             force_create: matches.is_present("force-create"),
@@ -418,7 +424,7 @@ fn parse_opts() -> Result<Config, Error> {
         }))
     } else if let Some(matches) = matches.subcommand_matches("info") {
         let input = matches.value_of("INPUT").unwrap();
-        Ok(Config::Info(InfoConfig {
+        Ok(Command::Info(info_cmd::Command {
             input: input.to_string(),
         }))
     } else if let Some(matches) = matches.subcommand_matches("diff") {
@@ -426,7 +432,7 @@ fn parse_opts() -> Result<Config, Error> {
         let input_b = Path::new(matches.value_of("B").unwrap());
         let chunker_config = parse_chunker_config(&matches);
         let (compression, compression_level) = parse_compression(matches);
-        Ok(Config::Diff(DiffConfig {
+        Ok(Command::Diff(diff_cmd::Command {
             input_a: input_a.to_path_buf(),
             input_b: input_b.to_path_buf(),
             chunker_config,
@@ -442,10 +448,10 @@ fn parse_opts() -> Result<Config, Error> {
 #[tokio::main]
 async fn main() {
     let result = match parse_opts() {
-        Ok(Config::Compress(config)) => compress_cmd::run(config).await,
-        Ok(Config::Clone(config)) => clone_cmd::run(config).await,
-        Ok(Config::Info(config)) => info_cmd::run(config).await,
-        Ok(Config::Diff(config)) => diff_cmd::run(config).await,
+        Ok(Command::Compress(cmd)) => cmd.run().await,
+        Ok(Command::Clone(cmd)) => cmd.run().await,
+        Ok(Command::Info(cmd)) => cmd.run().await,
+        Ok(Command::Diff(cmd)) => cmd.run().await,
         Err(e) => Err(e),
     };
     if let Err(ref e) = result {

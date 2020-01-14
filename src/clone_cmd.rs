@@ -4,11 +4,10 @@ use futures_util::stream::StreamExt;
 use log::*;
 use std::collections::HashMap;
 use std::io::SeekFrom;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tokio::fs::File;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 
-use crate::config;
 use crate::info_cmd;
 use bita::archive_reader::ArchiveReader;
 use bita::chunk_index::{ChunkIndex, ReorderOp};
@@ -83,7 +82,7 @@ where
         for offset in archive
             .source_index()
             .offsets(&hash)
-            .ok_or(format!("missing chunk ({}) in source!?", hash))?
+            .ok_or_else(|| format!("missing chunk ({}) in source!?", hash))?
         {
             bytes_read_from_seed += chunk.len() as u64;
             seek_write(output_file, offset, &chunk).await?;
@@ -204,7 +203,7 @@ async fn finish_using_archive(
             for offset in archive
                 .source_index()
                 .offsets(&hash)
-                .ok_or(format!("missing chunk ({}) in source!?", hash))?
+                .ok_or_else(|| format!("missing chunk ({}) in source!?", hash))?
             {
                 total_written += chunk.len() as u64;
                 output_file
@@ -228,11 +227,11 @@ async fn finish_using_archive(
 }
 
 async fn verify_output(
-    config: &config::CloneConfig,
+    cmd: &Command,
     expected_checksum: &HashSum,
     output_file: &mut File,
 ) -> Result<(), Error> {
-    info!("Verifying checksum of {}...", config.output.display());
+    info!("Verifying checksum of {}...", cmd.output.display());
     output_file
         .seek(SeekFrom::Start(0))
         .await
@@ -255,9 +254,9 @@ async fn verify_output(
     } else {
         panic!(format!(
             "Checksum mismatch. {}: {}, {}: {}.",
-            config.output.display(),
+            cmd.output.display(),
             sum,
-            config.input,
+            cmd.input,
             expected_checksum
         ));
     }
@@ -315,7 +314,7 @@ async fn resize_output(output_file: &mut File, source_file_size: u64) -> Result<
 
 async fn clone_archive(
     reader_builder: reader_backend::Builder,
-    config: &config::CloneConfig,
+    cmd: &Command,
 ) -> Result<(), Error> {
     let archive = ArchiveReader::try_init(reader_builder.clone()).await?;
     let mut chunks_left = archive.source_index().clone();
@@ -325,7 +324,7 @@ async fn clone_archive(
     println!();
 
     // Verify the header checksum if requested
-    if let Some(ref expected_checksum) = config.header_checksum {
+    if let Some(ref expected_checksum) = cmd.header_checksum {
         if *expected_checksum != *archive.header_checksum() {
             return Err(Error::ChecksumMismatch(
                 "Header checksum mismatch!".to_owned(),
@@ -336,8 +335,8 @@ async fn clone_archive(
     }
     info!(
         "Cloning archive {} to {}...",
-        config.input,
-        config.output.display()
+        cmd.input,
+        cmd.output.display()
     );
 
     // Setup chunker to use when chunking seed input
@@ -346,14 +345,14 @@ async fn clone_archive(
     // Create or open output file
     let mut output_file = tokio::fs::OpenOptions::new()
         .write(true)
-        .read(config.verify_output || config.seed_output)
-        .create(config.force_create || config.seed_output)
-        .create_new(!config.force_create && !config.seed_output)
-        .open(&config.output)
+        .read(cmd.verify_output || cmd.seed_output)
+        .create(cmd.force_create || cmd.seed_output)
+        .create_new(!cmd.force_create && !cmd.seed_output)
+        .open(&cmd.output)
         .await
         .map_err(|e| {
             (
-                format!("failed to open output file ({})", config.output.display()),
+                format!("failed to open output file ({})", cmd.output.display()),
                 e,
             )
         })?;
@@ -364,7 +363,7 @@ async fn clone_archive(
     let output_is_blockdev =
         validate_output_file(&mut output_file, archive.total_source_size()).await?;
 
-    let output_chunk_index = if config.seed_output {
+    let output_chunk_index = if cmd.seed_output {
         // Build an index of the output file's chunks
         Some(
             ChunkIndex::try_build_from_file(
@@ -391,7 +390,7 @@ async fn clone_archive(
     }
 
     // Read chunks from seed files
-    if config.seed_stdin && !atty::is(atty::Stream::Stdin) {
+    if cmd.seed_stdin && !atty::is(atty::Stream::Stdin) {
         total_read_from_seed += seed_input(
             tokio::io::stdin(),
             "stdin",
@@ -402,7 +401,7 @@ async fn clone_archive(
         )
         .await?;
     }
-    for seed_path in &config.seed_files {
+    for seed_path in &cmd.seed_files {
         let file = File::open(seed_path)
             .await
             .map_err(|e| ("failed to open seed file", e))?;
@@ -424,8 +423,8 @@ async fn clone_archive(
         0
     };
 
-    if config.verify_output {
-        verify_output(&config, &archive.source_checksum(), &mut output_file).await?;
+    if cmd.verify_output {
+        verify_output(&cmd, &archive.source_checksum(), &mut output_file).await?;
     }
 
     info!(
@@ -437,16 +436,33 @@ async fn clone_archive(
     Ok(())
 }
 
-pub async fn run(config: config::CloneConfig) -> Result<(), Error> {
-    let reader_builder = if &config.input[0..7] == "http://" || &config.input[0..8] == "https://" {
-        reader_backend::Builder::new_remote(
-            config.input.parse().unwrap(),
-            config.http_retry_count,
-            config.http_retry_delay,
-            config.http_timeout,
-        )
-    } else {
-        reader_backend::Builder::new_local(&Path::new(&config.input))
-    };
-    clone_archive(reader_builder, &config).await
+#[derive(Debug, Clone)]
+pub struct Command {
+    pub force_create: bool,
+    pub input: String,
+    pub output: PathBuf,
+    pub seed_stdin: bool,
+    pub seed_files: Vec<PathBuf>,
+    pub seed_output: bool,
+    pub header_checksum: Option<HashSum>,
+    pub http_retry_count: u32,
+    pub http_retry_delay: Option<std::time::Duration>,
+    pub http_timeout: Option<std::time::Duration>,
+    pub verify_output: bool,
+}
+
+impl Command {
+    pub async fn run(self) -> Result<(), Error> {
+        let reader_builder = if &self.input[0..7] == "http://" || &self.input[0..8] == "https://" {
+            reader_backend::Builder::new_remote(
+                self.input.parse().unwrap(),
+                self.http_retry_count,
+                self.http_retry_delay,
+                self.http_timeout,
+            )
+        } else {
+            reader_backend::Builder::new_local(&Path::new(&self.input))
+        };
+        clone_archive(reader_builder, &self).await
+    }
 }

@@ -1,7 +1,6 @@
 use log::*;
 use std::path::Path;
 
-use crate::config;
 use bita::archive_reader::ArchiveReader;
 use bita::chunker::{ChunkerConfig, HashConfig};
 use bita::error::Error;
@@ -74,12 +73,19 @@ pub fn print_archive(archive: &ArchiveReader) {
     );
 }
 
-pub async fn run(config: config::InfoConfig) -> Result<(), Error> {
-    let builder = if &config.input[0..7] == "http://" || &config.input[0..8] == "https://" {
-        reader_backend::Builder::new_remote(config.input.parse().unwrap(), 0, None, None)
-    } else {
-        reader_backend::Builder::new_local(&Path::new(&config.input))
-    };
-    print_archive_backend(builder).await?;
-    Ok(())
+#[derive(Debug, Clone)]
+pub struct Command {
+    pub input: String,
+}
+
+impl Command {
+    pub async fn run(self) -> Result<(), Error> {
+        let builder = if &self.input[0..7] == "http://" || &self.input[0..8] == "https://" {
+            reader_backend::Builder::new_remote(self.input.parse().unwrap(), 0, None, None)
+        } else {
+            reader_backend::Builder::new_local(&Path::new(&self.input))
+        };
+        print_archive_backend(builder).await?;
+        Ok(())
+    }
 }
