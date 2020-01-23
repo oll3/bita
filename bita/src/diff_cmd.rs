@@ -5,11 +5,11 @@ use std::path::{Path, PathBuf};
 use tokio::fs::File;
 
 use crate::info_cmd;
-use bita::chunker::{Chunker, ChunkerConfig};
-use bita::compression::Compression;
-use bita::error::Error;
-use bita::string_utils::*;
-use bita::HashSum;
+use crate::string_utils::*;
+use bitar::chunker::{Chunker, ChunkerConfig};
+use bitar::compression::Compression;
+use bitar::error::Error;
+use bitar::HashSum;
 
 #[derive(Clone, Debug)]
 struct ChunkDescriptor {

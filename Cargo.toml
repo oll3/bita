@@ -1,40 +1,5 @@
-[package]
-name = "bita"
-version = "0.5.0"
-authors = ["Olle Sandberg <olle@b3rg.se>"]
-license = "MIT"
-edition = '2018'
-description = "Differential file synchronization over http(s)."
-repository = "https://github.com/oll3/bita"
-readme = "README.md"
-keywords = ["sofware-update", "file-synchronization", "delta-update",  "differential"]
-categories = ["command-line-utilities", "compression"]
-
-[build-dependencies]
-protoc-rust = "2.10.1"
-
-[dependencies]
-clap = "2.33.0"
-blake2 = "0.8.1"
-atty = "0.2.14"
-protobuf = "2.10.1"
-log = "0.4.8"
-fern = "0.5.9"
-chrono = "0.4.10"
-brotli = "3.3.0"
-futures-core = {version = "0.3.1" }
-futures-util = {version = "0.3.1" }
-tokio = { version = "0.2.9", features = ["fs", "io-std", "sync", "io-util", "macros", "time", "rt-threaded"] }
-hyper = { version = "0.13.1", features = ["stream"] }
-hyper-rustls = "0.19.0"
-
-rust-lzma = {version = "0.4.0", optional = true}
-zstd = {version = "0.4.28", optional = true }
-
-[dev-dependencies]
-tempfile = "3.1.0"
-
-[features]
-default = []
-lzma-compression = ["rust-lzma"]
-zstd-compression = ["zstd"]
+[workspace]
+members = [
+  "bita",
+  "bitar"
+]

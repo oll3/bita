@@ -10,13 +10,13 @@ use tokio::fs::{File, OpenOptions};
 use tokio::prelude::*;
 
 use crate::info_cmd;
-use bita::archive;
-use bita::chunk_dictionary;
-use bita::chunker::{Chunker, ChunkerConfig};
-use bita::compression::Compression;
-use bita::error::Error;
-use bita::string_utils::*;
-use bita::HashSum;
+use crate::string_utils::*;
+use bitar::archive;
+use bitar::chunk_dictionary;
+use bitar::chunker::{Chunker, ChunkerConfig};
+use bitar::compression::Compression;
+use bitar::error::Error;
+use bitar::HashSum;
 
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -29,7 +29,7 @@ async fn chunk_input<T>(
 ) -> Result<
     (
         Vec<u8>,
-        Vec<bita::chunk_dictionary::ChunkDescriptor>,
+        Vec<bitar::chunk_dictionary::ChunkDescriptor>,
         u64,
         Vec<usize>,
     ),
@@ -257,7 +257,7 @@ impl Command {
         drop(output_file);
         {
             // Print archive info
-            let builder = bita::reader_backend::Builder::new_local(&self.output);
+            let builder = bitar::reader_backend::Builder::new_local(&self.output);
             info_cmd::print_archive_backend(builder).await?;
         }
         Ok(())

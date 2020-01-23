@@ -13,6 +13,4 @@ pub mod reader_backend;
 pub mod rolling_hash;
 pub mod rollsum;
 
-pub mod string_utils;
-
-pub use crate::hashsum::HashSum;
+pub use hashsum::*;

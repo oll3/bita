@@ -9,13 +9,13 @@ use tokio::fs::File;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 
 use crate::info_cmd;
-use bita::archive_reader::ArchiveReader;
-use bita::chunk_index::{ChunkIndex, ReorderOp};
-use bita::chunker::{Chunker, ChunkerConfig};
-use bita::error::Error;
-use bita::reader_backend;
-use bita::string_utils::*;
-use bita::HashSum;
+use crate::string_utils::*;
+use bitar::archive_reader::ArchiveReader;
+use bitar::chunk_index::{ChunkIndex, ReorderOp};
+use bitar::chunker::{Chunker, ChunkerConfig};
+use bitar::error::Error;
+use bitar::reader_backend;
+use bitar::HashSum;
 
 async fn seek_write(file: &mut File, offset: u64, buf: &[u8]) -> Result<(), std::io::Error> {
     file.seek(SeekFrom::Start(offset)).await?;

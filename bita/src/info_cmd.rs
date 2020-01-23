@@ -1,11 +1,11 @@
 use log::*;
 use std::path::Path;
 
-use bita::archive_reader::ArchiveReader;
-use bita::chunker::{ChunkerConfig, HashConfig};
-use bita::error::Error;
-use bita::reader_backend;
-use bita::string_utils::*;
+use crate::string_utils::*;
+use bitar::archive_reader::ArchiveReader;
+use bitar::chunker::{ChunkerConfig, HashConfig};
+use bitar::error::Error;
+use bitar::reader_backend;
 
 pub async fn print_archive_backend(builder: reader_backend::Builder) -> Result<(), Error> {
     let archive = ArchiveReader::try_init(builder).await?;

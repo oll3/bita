@@ -6,7 +6,7 @@ cargo build
 
 if [ "x${RUN_CLIPPY}" = "xtrue" ] ; then
     rustup component add clippy
-    cargo clippy --all
+    cargo clippy --workspace
 fi
 
 if [ "x${RUN_RUSTFMT}" = "xtrue" ] ; then
@@ -14,4 +14,4 @@ if [ "x${RUN_RUSTFMT}" = "xtrue" ] ; then
     cargo fmt --all -- --check
 fi
 
-cargo test --verbose
+cargo test --workspace --verbose

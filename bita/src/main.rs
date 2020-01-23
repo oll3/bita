@@ -7,6 +7,7 @@ mod clone_cmd;
 mod compress_cmd;
 mod diff_cmd;
 mod info_cmd;
+mod string_utils;
 
 use clap::{App, Arg, SubCommand};
 use log::*;
@@ -14,11 +15,11 @@ use std::path::Path;
 use std::process;
 use tokio;
 
-use bita::chunker::{ChunkerConfig, HashConfig, HashFilterBits};
-use bita::compression::Compression;
-use bita::error::Error;
-use bita::string_utils::hex_str_to_vec;
-use bita::HashSum;
+use crate::string_utils::*;
+use bitar::chunker::{ChunkerConfig, HashConfig, HashFilterBits};
+use bitar::compression::Compression;
+use bitar::error::Error;
+use bitar::HashSum;
 
 pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
