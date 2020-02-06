@@ -2,7 +2,6 @@ use blake2::{Blake2b, Digest};
 use futures_util::future;
 use futures_util::stream::StreamExt;
 use log::*;
-use protobuf::{RepeatedField, SingularPtrField};
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::PathBuf;
@@ -12,7 +11,7 @@ use tokio::prelude::*;
 use crate::info_cmd;
 use crate::string_utils::*;
 use bitar::archive;
-use bitar::chunk_dictionary;
+use bitar::chunk_dictionary as dict;
 use bitar::chunker::{Chunker, ChunkerConfig};
 use bitar::compression::Compression;
 use bitar::error::Error;
@@ -125,13 +124,11 @@ where
             };
 
             // Store a chunk descriptor which refres to the compressed data
-            archive_chunks.push(chunk_dictionary::ChunkDescriptor {
+            archive_chunks.push(dict::ChunkDescriptor {
                 checksum: hash.to_vec(),
                 source_size: chunk_len as u32,
                 archive_offset,
                 archive_size: use_data.len() as u32,
-                unknown_fields: Default::default(),
-                cached_size: Default::default(),
             });
             archive_offset += use_data.len() as u64;
 
@@ -203,44 +200,41 @@ impl Command {
             };
 
         let chunker_params = match self.chunker_config {
-            ChunkerConfig::BuzHash(hash_config) => chunk_dictionary::ChunkerParameters {
+            ChunkerConfig::BuzHash(hash_config) => dict::ChunkerParameters {
                 chunk_filter_bits: hash_config.filter_bits.0,
                 min_chunk_size: hash_config.min_chunk_size as u32,
                 max_chunk_size: hash_config.max_chunk_size as u32,
                 rolling_hash_window_size: hash_config.window_size as u32,
                 chunk_hash_length: self.hash_length as u32,
-                chunking_algorithm: chunk_dictionary::ChunkerParameters_ChunkingAlgorithm::BUZHASH,
-                ..Default::default()
+                chunking_algorithm: dict::chunker_parameters::ChunkingAlgorithm::Buzhash as i32,
             },
-            ChunkerConfig::RollSum(hash_config) => chunk_dictionary::ChunkerParameters {
+            ChunkerConfig::RollSum(hash_config) => dict::ChunkerParameters {
                 chunk_filter_bits: hash_config.filter_bits.0,
                 min_chunk_size: hash_config.min_chunk_size as u32,
                 max_chunk_size: hash_config.max_chunk_size as u32,
                 rolling_hash_window_size: hash_config.window_size as u32,
                 chunk_hash_length: self.hash_length as u32,
-                chunking_algorithm: chunk_dictionary::ChunkerParameters_ChunkingAlgorithm::ROLLSUM,
-                ..Default::default()
+                chunking_algorithm: dict::chunker_parameters::ChunkingAlgorithm::Rollsum as i32,
             },
-            ChunkerConfig::FixedSize(chunk_size) => chunk_dictionary::ChunkerParameters {
+            ChunkerConfig::FixedSize(chunk_size) => dict::ChunkerParameters {
+                min_chunk_size: 0,
+                chunk_filter_bits: 0,
+                rolling_hash_window_size: 0,
                 max_chunk_size: chunk_size as u32,
                 chunk_hash_length: self.hash_length as u32,
-                chunking_algorithm:
-                    chunk_dictionary::ChunkerParameters_ChunkingAlgorithm::FIXED_SIZE,
-                ..Default::default()
+                chunking_algorithm: dict::chunker_parameters::ChunkingAlgorithm::FixedSize as i32,
             },
         };
 
         // Build the final archive
-        let file_header = chunk_dictionary::ChunkDictionary {
+        let file_header = dict::ChunkDictionary {
             rebuild_order: chunk_order.iter().map(|&index| index as u32).collect(),
             application_version: PKG_VERSION.to_string(),
-            chunk_descriptors: RepeatedField::from_vec(archive_chunks),
+            chunk_descriptors: archive_chunks,
             source_checksum: source_hash,
-            chunk_compression: SingularPtrField::some(self.compression.into()),
+            chunk_compression: Some(self.compression.into()),
             source_total_size: source_size,
-            chunker_params: SingularPtrField::some(chunker_params),
-            unknown_fields: std::default::Default::default(),
-            cached_size: std::default::Default::default(),
+            chunker_params: Some(chunker_params),
         };
         let header_buf = archive::build_header(&file_header, None)?;
         output_file

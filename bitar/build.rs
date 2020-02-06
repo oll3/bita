@@ -1,13 +1,5 @@
-use protoc_rust::Customize;
+use prost_build;
 
 fn main() {
-    protoc_rust::run(protoc_rust::Args {
-        out_dir: "src",
-        input: &["proto/chunk_dictionary.proto"],
-        includes: &["proto"],
-        customize: Customize {
-            ..Default::default()
-        },
-    })
-    .expect("protoc");
+    prost_build::compile_protos(&["proto/chunk_dictionary.proto"], &["proto/"]).unwrap();
 }

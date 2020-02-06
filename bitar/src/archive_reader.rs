@@ -1,7 +1,8 @@
 use blake2::{Blake2b, Digest};
+use std::convert::TryFrom;
 
 use crate::archive;
-use crate::chunk_dictionary;
+use crate::chunk_dictionary as dict;
 use crate::chunk_index::ChunkIndex;
 use crate::chunker::ChunkerConfig;
 use crate::compression::Compression;
@@ -17,8 +18,8 @@ pub struct ChunkDescriptor {
     pub source_size: u32,
 }
 
-impl From<chunk_dictionary::ChunkDescriptor> for ChunkDescriptor {
-    fn from(dict: chunk_dictionary::ChunkDescriptor) -> Self {
+impl From<dict::ChunkDescriptor> for ChunkDescriptor {
+    fn from(dict: dict::ChunkDescriptor) -> Self {
         ChunkDescriptor {
             checksum: dict.checksum.into(),
             archive_size: dict.archive_size,
@@ -68,7 +69,7 @@ impl ArchiveReader {
         Ok(())
     }
 
-    fn map_chunks(dictionary: &chunk_dictionary::ChunkDictionary) -> Vec<ChunkDescriptor> {
+    fn map_chunks(dictionary: &dict::ChunkDictionary) -> Vec<ChunkDescriptor> {
         let mut chunk_descriptors: Vec<ChunkDescriptor> = Vec::new();
         for desc in dictionary.chunk_descriptors.iter() {
             let desc: ChunkDescriptor = desc.clone().into();
@@ -111,9 +112,9 @@ impl ArchiveReader {
         };
 
         // Deserialize the chunk dictionary
-        let dictionary: chunk_dictionary::ChunkDictionary = {
+        let dictionary: dict::ChunkDictionary = {
             let offs = archive::PRE_HEADER_SIZE;
-            protobuf::parse_from_bytes(&header[offs..(offs + dictionary_size)])
+            prost::Message::decode(&header[offs..(offs + dictionary_size)])
                 .map_err(|e| ("unable to unpack archive header", e))?
         };
 
@@ -126,19 +127,23 @@ impl ArchiveReader {
         let source_index = ChunkIndex::from_dictionary(&dictionary);
 
         let chunk_order = Self::map_chunks(&dictionary);
-        let chunker_params = dictionary.get_chunker_params();
+        let chunker_params = dictionary
+            .chunker_params
+            .ok_or("missing chunker parameters")?;
         Ok(Self {
             chunk_order,
             header_checksum,
             header_size: header.len(),
             source_total_size: dictionary.source_total_size,
-            source_checksum: dictionary.get_source_checksum().into(),
+            source_checksum: dictionary.source_checksum.into(),
             created_by_app_version: dictionary.application_version.clone(),
-            chunk_compression: dictionary.get_chunk_compression().into(),
+            chunk_compression: Compression::try_from(
+                dictionary.chunk_compression.ok_or("missing compression")?,
+            )?,
             total_chunks: dictionary.rebuild_order.iter().count(),
             chunk_data_offset,
             chunk_hash_length: chunker_params.chunk_hash_length as usize,
-            chunker_config: chunker_params.into(),
+            chunker_config: ChunkerConfig::try_from(chunker_params)?,
             source_index,
         })
     }

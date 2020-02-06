@@ -5,14 +5,11 @@ rust:
   - beta
   - nightly
 env:
-  - RUST_BACKTRACE=1 PATH=$HOME/protoc/bin:$PATH
-install:
-  - curl -L https://github.com/google/protobuf/releases/download/v3.9.1/protoc-3.9.1-linux-x86_64.zip -o /tmp/protoc.zip
-  - unzip /tmp/protoc.zip -d $HOME/protoc
+  - RUST_BACKTRACE=1
 matrix:
   include:
     - rust: 'stable'
       env:
-        - RUST_BACKTRACE=1 PATH=$HOME/protoc/bin:$PATH RUN_CLIPPY=true RUN_RUSTFMT=true
+        - RUST_BACKTRACE=1 RUN_CLIPPY=true RUN_RUSTFMT=true
 
 script: ./scripts/build_and_test.sh

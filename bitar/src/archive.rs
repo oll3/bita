@@ -1,9 +1,10 @@
-use protobuf::Message;
-
 use blake2::{Blake2b, Digest};
+use prost::Message;
 use std::mem;
 
-use crate::chunk_dictionary;
+use crate::chunk_dictionary::{
+    chunker_parameters::ChunkingAlgorithm, ChunkDictionary, ChunkerParameters,
+};
 use crate::chunker::{ChunkerConfig, HashConfig, HashFilterBits};
 use crate::error::Error;
 
@@ -15,28 +16,26 @@ pub const FILE_MAGIC: &[u8; 6] = b"BITA1\0";
 // Pre header is the file magic + the size of the dictionary length value (u64)
 pub const PRE_HEADER_SIZE: usize = 6 + mem::size_of::<u64>();
 
-impl From<&chunk_dictionary::ChunkerParameters> for ChunkerConfig {
-    fn from(params: &chunk_dictionary::ChunkerParameters) -> Self {
-        match params.chunking_algorithm {
-            chunk_dictionary::ChunkerParameters_ChunkingAlgorithm::BUZHASH => {
-                ChunkerConfig::BuzHash(HashConfig {
-                    filter_bits: HashFilterBits(params.chunk_filter_bits),
-                    min_chunk_size: params.min_chunk_size as usize,
-                    max_chunk_size: params.max_chunk_size as usize,
-                    window_size: params.rolling_hash_window_size as usize,
-                })
+impl std::convert::TryFrom<ChunkerParameters> for ChunkerConfig {
+    type Error = Error;
+    fn try_from(p: ChunkerParameters) -> Result<Self, Self::Error> {
+        match ChunkingAlgorithm::from_i32(p.chunking_algorithm) {
+            Some(ChunkingAlgorithm::Buzhash) => Ok(ChunkerConfig::BuzHash(HashConfig {
+                filter_bits: HashFilterBits(p.chunk_filter_bits),
+                min_chunk_size: p.min_chunk_size as usize,
+                max_chunk_size: p.max_chunk_size as usize,
+                window_size: p.rolling_hash_window_size as usize,
+            })),
+            Some(ChunkingAlgorithm::Rollsum) => Ok(ChunkerConfig::RollSum(HashConfig {
+                filter_bits: HashFilterBits(p.chunk_filter_bits),
+                min_chunk_size: p.min_chunk_size as usize,
+                max_chunk_size: p.max_chunk_size as usize,
+                window_size: p.rolling_hash_window_size as usize,
+            })),
+            Some(ChunkingAlgorithm::FixedSize) => {
+                Ok(ChunkerConfig::FixedSize(p.max_chunk_size as usize))
             }
-            chunk_dictionary::ChunkerParameters_ChunkingAlgorithm::ROLLSUM => {
-                ChunkerConfig::RollSum(HashConfig {
-                    filter_bits: HashFilterBits(params.chunk_filter_bits),
-                    min_chunk_size: params.min_chunk_size as usize,
-                    max_chunk_size: params.max_chunk_size as usize,
-                    window_size: params.rolling_hash_window_size as usize,
-                })
-            }
-            chunk_dictionary::ChunkerParameters_ChunkingAlgorithm::FIXED_SIZE => {
-                ChunkerConfig::FixedSize(params.max_chunk_size as usize)
-            }
+            _ => Err(Error::Other("invalid chunking algorithm".to_string())),
         }
     }
 }
@@ -48,7 +47,7 @@ pub fn u64_from_le_slice(v: &[u8]) -> u64 {
 }
 
 pub fn build_header(
-    dictionary: &chunk_dictionary::ChunkDictionary,
+    dictionary: &ChunkDictionary,
     chunk_data_offset: Option<u64>,
 ) -> Result<Vec<u8>, Error> {
     let mut header: Vec<u8> = vec![];
@@ -56,7 +55,7 @@ pub fn build_header(
     let mut dictionary_buf: Vec<u8> = Vec::new();
 
     dictionary
-        .write_to_vec(&mut dictionary_buf)
+        .encode(&mut dictionary_buf)
         .map_err(|e| ("failed to serialize header", e))?;
 
     // File magic indicating bita archive version 1

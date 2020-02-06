@@ -2,7 +2,8 @@ pub enum Error {
     NotAnArchive(String),
     ChecksumMismatch(String),
     IO(String, std::io::Error),
-    Protobuf(String, protobuf::ProtobufError),
+    DictionaryDecode(String, prost::DecodeError),
+    DictionaryEncode(String, prost::EncodeError),
     #[cfg(feature = "lzma-compression")]
     LZMA(String, lzma::LzmaError),
     Hyper(String, hyper::Error),
@@ -25,9 +26,15 @@ impl From<(&str, lzma::LzmaError)> for Error {
     }
 }
 
-impl From<(&str, protobuf::ProtobufError)> for Error {
-    fn from((desc, e): (&str, protobuf::ProtobufError)) -> Self {
-        Error::Protobuf(desc.to_owned(), e)
+impl From<(&str, prost::DecodeError)> for Error {
+    fn from((desc, e): (&str, prost::DecodeError)) -> Self {
+        Error::DictionaryDecode(desc.to_owned(), e)
+    }
+}
+
+impl From<(&str, prost::EncodeError)> for Error {
+    fn from((desc, e): (&str, prost::EncodeError)) -> Self {
+        Error::DictionaryEncode(desc.to_owned(), e)
     }
 }
 
@@ -85,7 +92,8 @@ impl std::fmt::Debug for Error {
             Error::NotAnArchive(desc) => write!(f, "{}", desc),
             Error::ChecksumMismatch(desc) => write!(f, "{}", desc),
             Error::IO(desc, e) => write!(f, "{}: {:?}", desc, e),
-            Error::Protobuf(desc, e) => write!(f, "{}: {:?}", desc, e),
+            Error::DictionaryEncode(desc, e) => write!(f, "{}: {:?}", desc, e),
+            Error::DictionaryDecode(desc, e) => write!(f, "{}: {:?}", desc, e),
             #[cfg(feature = "lzma-compression")]
             Error::LZMA(desc, e) => write!(f, "{}: {:?}", desc, e),
             Error::Hyper(desc, e) => write!(f, "{}: {:?}", desc, e),
@@ -104,7 +112,8 @@ impl std::fmt::Display for Error {
             Error::NotAnArchive(ref desc) => write!(f, "{}", desc),
             Error::ChecksumMismatch(ref desc) => write!(f, "{}", desc),
             Error::IO(ref desc, ref e) => write!(f, "{}: {}", desc, e),
-            Error::Protobuf(ref desc, ref e) => write!(f, "{}: {}", desc, e),
+            Error::DictionaryEncode(ref desc, ref e) => write!(f, "{}: {}", desc, e),
+            Error::DictionaryDecode(ref desc, ref e) => write!(f, "{}: {}", desc, e),
             #[cfg(feature = "lzma-compression")]
             Error::LZMA(ref desc, ref e) => write!(f, "{}: {}", desc, e),
             Error::Hyper(ref desc, ref e) => write!(f, "{}: {}", desc, e),

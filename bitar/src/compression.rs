@@ -2,8 +2,7 @@ use brotli;
 use brotli::enc::backward_references::BrotliEncoderParams;
 use std::io::Write;
 
-use crate::chunk_dictionary;
-use crate::chunk_dictionary::ChunkCompression_CompressionType;
+use crate::chunk_dictionary::{chunk_compression::CompressionType, ChunkCompression};
 use crate::error::Error;
 
 #[derive(Debug, Clone, Copy)]
@@ -29,44 +28,38 @@ impl std::fmt::Display for Compression {
     }
 }
 
-impl From<&chunk_dictionary::ChunkCompression> for Compression {
-    fn from(compression: &chunk_dictionary::ChunkCompression) -> Self {
-        match compression.compression {
+impl std::convert::TryFrom<ChunkCompression> for Compression {
+    type Error = Error;
+    fn try_from(c: ChunkCompression) -> Result<Self, Self::Error> {
+        match CompressionType::from_i32(c.compression) {
             #[cfg(feature = "lzma-compression")]
-            ChunkCompression_CompressionType::LZMA => {
-                Compression::LZMA(compression.compression_level)
-            }
+            Some(CompressionType::Lzma) => Ok(Self::LZMA(c.compression_level)),
             #[cfg(not(feature = "lzma-compression"))]
-            ChunkCompression_CompressionType::LZMA => panic!("LZMA compression not enabled"),
+            Some(CompressionType::Lzma) => panic!("LZMA compression not enabled"),
             #[cfg(feature = "zstd-compression")]
-            ChunkCompression_CompressionType::ZSTD => {
-                Compression::ZSTD(compression.compression_level)
-            }
+            Some(CompressionType::Zstd) => Ok(Self::ZSTD(c.compression_level)),
             #[cfg(not(feature = "zstd-compression"))]
-            ChunkCompression_CompressionType::ZSTD => panic!("ZSTD compression not enabled"),
-            ChunkCompression_CompressionType::BROTLI => {
-                Compression::Brotli(compression.compression_level)
-            }
-            ChunkCompression_CompressionType::NONE => Compression::None,
+            Some(CompressionType::Zstd) => panic!("ZSTD compression not enabled"),
+            Some(CompressionType::Brotli) => Ok(Self::Brotli(c.compression_level)),
+            Some(CompressionType::None) => Ok(Self::None),
+            None => Err(Error::Other("unknown compression type".to_string())),
         }
     }
 }
 
-impl From<Compression> for chunk_dictionary::ChunkCompression {
-    fn from(compression: Compression) -> Self {
-        let (chunk_compression, chunk_compression_level) = match compression {
+impl From<Compression> for ChunkCompression {
+    fn from(c: Compression) -> Self {
+        let (chunk_compression, chunk_compression_level) = match c {
             #[cfg(feature = "lzma-compression")]
-            Compression::LZMA(ref level) => (ChunkCompression_CompressionType::LZMA, *level),
+            Compression::LZMA(ref level) => (CompressionType::Lzma, *level),
             #[cfg(feature = "zstd-compression")]
-            Compression::ZSTD(ref level) => (ChunkCompression_CompressionType::ZSTD, *level),
-            Compression::Brotli(ref level) => (ChunkCompression_CompressionType::BROTLI, *level),
-            Compression::None => (ChunkCompression_CompressionType::NONE, 0),
+            Compression::ZSTD(ref level) => (CompressionType::Zstd, *level),
+            Compression::Brotli(ref level) => (CompressionType::Brotli, *level),
+            Compression::None => (CompressionType::None, 0),
         };
-        chunk_dictionary::ChunkCompression {
-            compression: chunk_compression,
+        Self {
+            compression: chunk_compression as i32,
             compression_level: chunk_compression_level,
-            unknown_fields: std::default::Default::default(),
-            cached_size: std::default::Default::default(),
         }
     }
 }
