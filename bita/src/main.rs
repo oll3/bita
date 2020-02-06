@@ -350,7 +350,7 @@ fn parse_opts() -> Result<Command, Error> {
     init_log(match matches.occurrences_of("verbose") {
         0 => log::LevelFilter::Info,
         1 => log::LevelFilter::Debug,
-        2 | _ => log::LevelFilter::Trace,
+        _ => log::LevelFilter::Trace,
     });
 
     if let Some(matches) = matches.subcommand_matches("compress") {
