@@ -81,7 +81,7 @@ impl ArchiveReader {
     pub async fn try_init(mut builder: reader_backend::Builder) -> Result<Self, Error> {
         // Read the pre-header (file magic and size)
         let mut header = builder
-            .read_at(0, archive::PRE_HEADER_SIZE)?
+            .read_at(0, archive::PRE_HEADER_SIZE)
             .await
             .map_err(|err| err.wrap("unable to read archive"))?;
 
@@ -94,7 +94,7 @@ impl ArchiveReader {
         // Read the dictionary, chunk data offset and header hash
         header.append(
             &mut builder
-                .read_at(archive::PRE_HEADER_SIZE as u64, dictionary_size + 8 + 64)?
+                .read_at(archive::PRE_HEADER_SIZE as u64, dictionary_size + 8 + 64)
                 .await
                 .map_err(|err| err.wrap("unable to read archive"))?,
         );

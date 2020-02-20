@@ -1,10 +1,8 @@
-use core::future::Future;
-use core::pin::Pin;
-use core::task::{Context, Poll};
+use async_stream::try_stream;
 use futures_core::stream::Stream;
-use hyper::Uri;
+use futures_util::{pin_mut, StreamExt, TryFutureExt};
+use reqwest::Url;
 use std::collections::VecDeque;
-use std::io::Seek;
 use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -17,7 +15,7 @@ use crate::http_range_request;
 #[derive(Clone, Debug)]
 pub enum Builder {
     Remote {
-        uri: Uri,
+        url: Url,
         retries: u32,
         retry_delay: Option<Duration>,
         receive_timeout: Option<Duration>,
@@ -27,13 +25,13 @@ pub enum Builder {
 
 impl Builder {
     pub fn new_remote(
-        uri: Uri,
+        url: Url,
         retries: u32,
         retry_delay: Option<Duration>,
         receive_timeout: Option<Duration>,
     ) -> Self {
         Self::Remote {
-            uri,
+            url,
             retries,
             retry_delay,
             receive_timeout,
@@ -44,235 +42,144 @@ impl Builder {
     }
     pub fn source(&self) -> String {
         match self {
-            Builder::Remote { uri, .. } => uri.to_string(),
+            Builder::Remote { url, .. } => url.to_string(),
             Builder::Local(p) => p.display().to_string(),
         }
     }
-    pub fn read_at(&mut self, offset: u64, size: usize) -> Result<Single, Error> {
-        match self {
+    pub async fn read_at(&mut self, offset: u64, size: usize) -> Result<Vec<u8>, Error> {
+        let request = match self {
             Self::Remote {
-                uri,
+                url,
                 retries,
                 retry_delay,
                 receive_timeout,
-            } => Ok(Single {
-                size,
-                backend: ReaderBackend::Remote {
-                    buffer: Vec::new(),
-                    request: http_range_request::Builder::new(uri.clone(), offset, size as u64)
-                        .receive_timeout(*receive_timeout)
-                        .retry(*retries, *retry_delay)
-                        .build(),
-                },
-            }),
-            Self::Local(path) => {
-                let mut file =
-                    std::fs::File::open(path).map_err(|err| ("failed to open file", err))?;
-                file.seek(SeekFrom::Start(offset))
-                    .map_err(|err| ("failed to seek file", err))?;
-                Ok(Single {
-                    size,
-                    backend: ReaderBackend::Local {
-                        buffer: Vec::new(),
-                        read_count: 0,
-                        file: File::from_std(file),
-                    },
-                })
-            }
-        }
+            } => ReaderBackend::Remote {
+                request: http_range_request::Builder::new(url.clone(), offset, size as u64)
+                    .receive_timeout(*receive_timeout)
+                    .retry(*retries, *retry_delay),
+            },
+            Self::Local(path) => ReaderBackend::Local {
+                start_offset: offset,
+                file_path: path.clone(),
+            },
+        };
+        request.single(size).await
     }
-    pub fn read_chunks(&self, start_offset: u64, chunk_sizes: &[usize]) -> Result<Chunks, Error> {
+    pub fn read_chunks(
+        &self,
+        start_offset: u64,
+        chunk_sizes: &[usize],
+    ) -> impl Stream<Item = Result<Vec<u8>, Error>> {
         match self {
             Self::Remote {
-                uri,
+                url,
                 retries,
                 retry_delay,
                 receive_timeout,
             } => {
                 let total_size: u64 = chunk_sizes.iter().map(|v| *v as u64).sum();
-                Ok(Chunks {
-                    chunk_sizes: chunk_sizes.to_vec().into(),
-                    backend: ReaderBackend::Remote {
-                        buffer: Vec::new(),
-                        request: http_range_request::Builder::new(
-                            uri.clone(),
-                            start_offset,
-                            total_size,
-                        )
-                        .receive_timeout(*receive_timeout)
-                        .retry(*retries, *retry_delay)
-                        .build(),
-                    },
-                })
+                ReaderBackend::Remote {
+                    request: http_range_request::Builder::new(
+                        url.clone(),
+                        start_offset,
+                        total_size,
+                    )
+                    .receive_timeout(*receive_timeout)
+                    .retry(*retries, *retry_delay),
+                }
+                .chunks(chunk_sizes.to_vec().into())
             }
-            Self::Local(path) => {
-                let mut file = std::fs::File::open(path).map_err(|e| ("failed to open file", e))?;
-                file.seek(SeekFrom::Start(start_offset))
-                    .map_err(|e| ("failed to seek file", e))?;
-                Ok(Chunks {
-                    chunk_sizes: chunk_sizes.to_vec().into(),
-                    backend: ReaderBackend::Local {
-                        read_count: 0,
-                        buffer: Vec::new(),
-                        file: File::from_std(file),
-                    },
-                })
+            Self::Local(path) => ReaderBackend::Local {
+                start_offset,
+                file_path: path.clone(),
             }
+            .chunks(chunk_sizes.to_vec().into()),
         }
     }
 }
 
 enum ReaderBackend {
     Remote {
-        buffer: Vec<u8>,
-        request: http_range_request::Request,
+        request: http_range_request::Builder,
     },
     Local {
-        read_count: usize,
-        buffer: Vec<u8>,
-        file: File,
+        start_offset: u64,
+        file_path: PathBuf,
     },
 }
 
-pub struct Single {
-    size: usize,
-    backend: ReaderBackend,
-}
-
-impl Future for Single {
-    type Output = Result<Vec<u8>, Error>;
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let inner = self.get_mut();
-        let backend = &mut inner.backend;
-        let size = inner.size;
-        loop {
-            match backend {
-                ReaderBackend::Remote { request, buffer } => {
-                    match Pin::new(request).poll_next(cx) {
-                        Poll::Ready(Some(Ok(chunk))) => {
-                            buffer.extend(&chunk[..]);
-                            if buffer.len() >= size {
-                                buffer.truncate(size);
-                                return Poll::Ready(Ok(buffer.clone()));
-                            }
-                        }
-                        Poll::Ready(Some(Err(err))) => return Poll::Ready(Err(err)),
-                        Poll::Ready(None) => {
-                            return Poll::Ready(Err("unexpected end of response".into()))
-                        }
-                        Poll::Pending => return Poll::Pending,
-                    }
+impl ReaderBackend {
+    pub async fn single(self, size: usize) -> Result<Vec<u8>, Error> {
+        match self {
+            Self::Remote { request } => {
+                let res = request.single().await?;
+                if res.len() >= size {
+                    // Truncate the response if bigger than requested size
+                    Ok(res[..size].to_vec())
+                } else if res.len() < size {
+                    Err("unexpected end of response".into())
+                } else {
+                    Ok(res[..].to_vec())
                 }
-                ReaderBackend::Local {
-                    buffer,
-                    file,
-                    read_count,
-                } => {
-                    buffer.resize(size, 0);
-                    match Pin::new(file).poll_read(cx, &mut buffer[*read_count..]) {
-                        Poll::Ready(Ok(n)) => {
-                            *read_count += n;
-                            if n == 0 {
-                                return Poll::Ready(Err("unexpected end of file".into()));
-                            } else if *read_count >= size {
-                                return Poll::Ready(Ok(buffer.clone()));
-                            }
-                        }
-                        Poll::Ready(Err(err)) => {
-                            return Poll::Ready(Err(("failed to read from file", err).into()));
-                        }
-                        Poll::Pending => {
-                            return Poll::Pending;
-                        }
-                    };
+            }
+            Self::Local {
+                file_path,
+                start_offset,
+            } => {
+                let mut file = File::open(file_path)
+                    .map_err(|err| ("failed to open file", err))
+                    .await?;
+                file.seek(SeekFrom::Start(start_offset))
+                    .await
+                    .map_err(|err| ("failed to seek file", err))?;
+                let mut res = vec![0; size];
+                match file.read_exact(&mut res).await {
+                    Ok(_) => Ok(res),
+                    Err(err) => Err(("failed to read from file", err).into()),
                 }
             }
         }
     }
-}
-
-pub struct Chunks {
-    chunk_sizes: VecDeque<usize>,
-    backend: ReaderBackend,
-}
-
-impl Stream for Chunks {
-    type Item = Result<Vec<u8>, Error>;
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        let inner = self.get_mut();
-        let backend = &mut inner.backend;
-
-        // Poll the backend until it says pending or we're done
-
-        loop {
-            if inner.chunk_sizes.is_empty() {
-                // We're done
-                return Poll::Ready(None);
-            }
-
-            let chunk_size = *inner.chunk_sizes.front().unwrap();
-            match backend {
-                ReaderBackend::Remote { request, buffer } => {
-                    // Read from remote
-                    if buffer.len() >= chunk_size {
-                        // Got a full chunk
-                        let chunk = buffer.drain(0..chunk_size).collect();
-                        inner.chunk_sizes.pop_front();
-                        return Poll::Ready(Some(Ok(chunk)));
-                    }
-                    match Pin::new(request).poll_next(cx) {
-                        Poll::Ready(Some(Ok(chunk))) => {
-                            buffer.extend(&chunk[..]);
-                        }
-                        Poll::Ready(Some(Err(err))) => return Poll::Ready(Some(Err(err))),
-                        Poll::Ready(None) => {
-                            if inner.chunk_sizes.is_empty() {
-                                return Poll::Ready(None);
-                            } else {
-                                return Poll::Ready(Some(Err(format!(
-                                    "unexpected end (missing {} chunks)",
-                                    inner.chunk_sizes.len()
-                                )
-                                .into())));
+    pub fn chunks(
+        self,
+        mut chunk_sizes: VecDeque<usize>,
+    ) -> impl Stream<Item = Result<Vec<u8>, Error>> {
+        try_stream! {
+            match self {
+                Self::Remote {request} => {
+                    let mut stream = request.stream();
+                    pin_mut!(stream);
+                    let mut chunk_buf: Vec<u8> = Vec::new();
+                    while let Some(chunk_size) = chunk_sizes.pop_front() {
+                        loop {
+                            if chunk_buf.len() >= chunk_size {
+                                yield chunk_buf.drain(..chunk_size).collect();
+                                break;
+                            }
+                            if let Some(result) = stream.next().await {
+                                let tmp_buf = result?;
+                                chunk_buf.extend_from_slice(&tmp_buf[..]);
                             }
                         }
-                        Poll::Pending => return Poll::Pending,
                     }
                 }
-                ReaderBackend::Local {
-                    file,
-                    buffer,
-                    read_count,
+                Self::Local {
+                    file_path,
+                    start_offset,
                 } => {
-                    if *read_count >= chunk_size {
-                        // Got a full chunk
-                        inner.chunk_sizes.pop_front();
-                        *read_count = 0;
-                        return Poll::Ready(Some(Ok(buffer.clone())));
-                    }
-
-                    buffer.resize(chunk_size, 0);
-
-                    match Pin::new(file).poll_read(cx, &mut buffer[*read_count..]) {
-                        Poll::Ready(Ok(n)) => {
-                            *read_count += n;
-                            if n == 0 {
-                                return Poll::Ready(Some(Err(format!(
-                                    "unexpected end of file (missing {} chunks)",
-                                    inner.chunk_sizes.len()
-                                )
-                                .into())));
-                            }
-                        }
-                        Poll::Ready(Err(err)) => {
-                            return Poll::Ready(Some(
-                                Err(("failed to read from file", err).into()),
-                            ));
-                        }
-                        Poll::Pending => return Poll::Pending,
+                    let mut file = File::open(file_path)
+                        .map_err(|err| ("failed to open file", err))
+                        .await?;
+                    file.seek(SeekFrom::Start(start_offset))
+                        .await
+                        .map_err(|err| ("failed to seek file", err))?;
+                    while let Some(chunk_size) = chunk_sizes.pop_front() {
+                        let mut chunk_buf = vec![0; chunk_size];
+                        file.read_exact(&mut chunk_buf).await.map_err(|err| ("failed to read from file", err))?;
+                        yield chunk_buf;
                     }
                 }
-            };
+            }
         }
     }
 }
@@ -289,9 +196,9 @@ mod tests {
         let mut file = NamedTempFile::new().unwrap();
         let expected: Vec<u8> = b"hello file".to_vec();
         file.write_all(&expected).unwrap();
-        let reader = Builder::new_local(file.path())
-            .read_at(0, expected.len())
-            .unwrap();
+        let builder = Builder::new_local(file.path());
+        pin_mut!(builder);
+        let reader = builder.read_at(0, expected.len());
         let read_back = reader.await.unwrap();
         assert_eq!(read_back, expected);
     }
@@ -300,9 +207,9 @@ mod tests {
         let mut file = NamedTempFile::new().unwrap();
         let expected: Vec<u8> = (0..10 * 1024 * 1024).map(|v| v as u8).collect();
         file.write_all(&expected).unwrap();
-        let reader = Builder::new_local(file.path())
-            .read_at(0, expected.len())
-            .unwrap();
+        let builder = Builder::new_local(file.path());
+        pin_mut!(builder);
+        let reader = builder.read_at(0, expected.len());
         let read_back = reader.await.unwrap();
         assert_eq!(read_back, expected);
     }
@@ -312,10 +219,9 @@ mod tests {
         let expected: Vec<u8> = (0..10 * 1024 * 1024).map(|v| v as u8).collect();
         let chunk_sizes: Vec<usize> = vec![10, 20, 30, 100, 200, 400, 8 * 1024 * 1024];
         file.write_all(&expected).unwrap();
-        let mut reader = Builder::new_local(file.path())
-            .read_chunks(0, &chunk_sizes)
-            .unwrap();
+        let reader = Builder::new_local(file.path()).read_chunks(0, &chunk_sizes);
         {
+            pin_mut!(reader);
             let mut chunk_offset = 0;
             let mut chunk_count = 0;
             while let Some(chunk) = reader.next().await {

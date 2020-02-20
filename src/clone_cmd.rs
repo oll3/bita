@@ -1,5 +1,6 @@
 use blake2::{Blake2b, Digest};
 use futures_util::future;
+use futures_util::pin_mut;
 use futures_util::stream::StreamExt;
 use log::*;
 use std::collections::HashMap;
@@ -179,8 +180,8 @@ async fn finish_using_archive(
         let compression = archive.chunk_compression();
         let chunk_sizes: Vec<usize> = group.iter().map(|c| c.archive_size as usize).collect();
 
-        let mut archive_chunk_stream = reader_builder
-            .read_chunks(start_offset, &chunk_sizes)?
+        let archive_chunk_stream = reader_builder
+            .read_chunks(start_offset, &chunk_sizes)
             .enumerate()
             .map(|(chunk_index, compressed_chunk)| {
                 let compressed_chunk = compressed_chunk.expect("failed to read archive");
@@ -202,6 +203,7 @@ async fn finish_using_archive(
             })
             .buffered(num_chunk_buffers);
 
+        pin_mut!(archive_chunk_stream);
         while let Some(result) = archive_chunk_stream.next().await {
             // For each chunk read from archive
             let (hash, chunk) =

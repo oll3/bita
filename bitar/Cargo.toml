@@ -18,9 +18,9 @@ brotli = "3.3"
 futures-core = {version = "0.3" }
 futures-util = {version = "0.3" }
 tokio = { version = "0.2", features = ["fs", "io-std", "sync", "io-util", "macros", "time", "rt-threaded"] }
-hyper = { version = "0.13", features = ["stream"] }
-hyper-rustls = "0.19"
-
+reqwest = { version = "0.10", features = ["stream"] }
+async-stream = "0.2"
+bytes = "0.5"
 rust-lzma = {version = "0.5", optional = true}
 zstd = {version = "0.5", optional = true }
 

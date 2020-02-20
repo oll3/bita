@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 pub mod archive;
 pub mod archive_reader;
 pub mod buzhash;

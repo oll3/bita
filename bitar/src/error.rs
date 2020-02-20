@@ -6,9 +6,7 @@ pub enum Error {
     DictionaryEncode(String, prost::EncodeError),
     #[cfg(feature = "lzma-compression")]
     LZMA(String, lzma::LzmaError),
-    Hyper(String, hyper::Error),
-    Http(String, hyper::http::Error),
-    InvalidUri(String, hyper::http::uri::InvalidUri),
+    Reqwest(String, reqwest::Error),
     JoinError(String, tokio::task::JoinError),
     Other(String),
     Wrapped(String, Box<Error>),
@@ -50,21 +48,9 @@ impl From<(String, std::io::Error)> for Error {
     }
 }
 
-impl From<(&str, hyper::Error)> for Error {
-    fn from((desc, e): (&str, hyper::Error)) -> Self {
-        Error::Hyper(desc.to_owned(), e)
-    }
-}
-
-impl From<(&str, hyper::http::Error)> for Error {
-    fn from((desc, e): (&str, hyper::http::Error)) -> Self {
-        Error::Http(desc.to_owned(), e)
-    }
-}
-
-impl From<(&str, hyper::http::uri::InvalidUri)> for Error {
-    fn from((desc, e): (&str, hyper::http::uri::InvalidUri)) -> Self {
-        Error::InvalidUri(desc.to_owned(), e)
+impl From<(&str, reqwest::Error)> for Error {
+    fn from((desc, e): (&str, reqwest::Error)) -> Self {
+        Error::Reqwest(desc.to_owned(), e)
     }
 }
 
@@ -96,9 +82,7 @@ impl std::fmt::Debug for Error {
             Error::DictionaryDecode(desc, e) => write!(f, "{}: {:?}", desc, e),
             #[cfg(feature = "lzma-compression")]
             Error::LZMA(desc, e) => write!(f, "{}: {:?}", desc, e),
-            Error::Hyper(desc, e) => write!(f, "{}: {:?}", desc, e),
-            Error::Http(desc, e) => write!(f, "{}: {:?}", desc, e),
-            Error::InvalidUri(desc, e) => write!(f, "{}: {:?}", desc, e),
+            Error::Reqwest(desc, e) => write!(f, "{}: {:?}", desc, e),
             Error::JoinError(desc, e) => write!(f, "{}: {:?}", desc, e),
             Error::Other(desc) => write!(f, "{}", desc),
             Error::Wrapped(desc, e) => write!(f, "{}: {:?}", desc, e),
@@ -116,9 +100,7 @@ impl std::fmt::Display for Error {
             Error::DictionaryDecode(ref desc, ref e) => write!(f, "{}: {}", desc, e),
             #[cfg(feature = "lzma-compression")]
             Error::LZMA(ref desc, ref e) => write!(f, "{}: {}", desc, e),
-            Error::Hyper(ref desc, ref e) => write!(f, "{}: {}", desc, e),
-            Error::Http(ref desc, ref e) => write!(f, "{}: {}", desc, e),
-            Error::InvalidUri(desc, e) => write!(f, "{}: {}", desc, e),
+            Error::Reqwest(ref desc, ref e) => write!(f, "{}: {}", desc, e),
             Error::JoinError(desc, e) => write!(f, "{}: {:?}", desc, e),
             Error::Other(ref desc) => write!(f, "{}", desc),
             Error::Wrapped(desc, e) => write!(f, "{}: {}", desc, e),
