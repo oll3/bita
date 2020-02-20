@@ -25,6 +25,7 @@ async fn chunk_input<T>(
     compression: Compression,
     temp_file_path: &std::path::Path,
     hash_length: usize,
+    num_chunk_buffers: usize,
 ) -> Result<
     (
         Vec<u8>,
@@ -68,7 +69,7 @@ where
                     )
                 })
             })
-            .buffered(8)
+            .buffered(num_chunk_buffers)
             .filter_map(|result| {
                 // Filter unique chunks to be compressed
                 let (hash, offset, chunk) = result.expect("error while hashing chunk");
@@ -98,7 +99,7 @@ where
                     (chunk_index, hash, offset, chunk, compressed_chunk)
                 })
             })
-            .buffered(8);
+            .buffered(num_chunk_buffers);
 
         while let Some(result) = chunk_stream.next().await {
             let (index, hash, offset, chunk, compressed_chunk) =
@@ -159,6 +160,7 @@ pub struct Command {
     pub chunker_config: ChunkerConfig,
     pub compression_level: u32,
     pub compression: Compression,
+    pub num_chunk_buffers: usize,
 }
 impl Command {
     pub async fn run(self) -> Result<(), Error> {
@@ -183,6 +185,7 @@ impl Command {
                     compression,
                     &self.temp_file,
                     self.hash_length,
+                    self.num_chunk_buffers,
                 )
                 .await?
             } else if !atty::is(atty::Stream::Stdin) {
@@ -193,6 +196,7 @@ impl Command {
                     compression,
                     &self.temp_file,
                     self.hash_length,
+                    self.num_chunk_buffers,
                 )
                 .await?
             } else {

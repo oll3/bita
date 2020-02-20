@@ -31,6 +31,7 @@ async fn chunk_file(
     path: &Path,
     chunker_config: &ChunkerConfig,
     compression: Compression,
+    num_chunk_buffers: usize,
 ) -> Result<ChunkerResult, Error> {
     let mut descriptors: HashMap<HashSum, ChunkDescriptor> = HashMap::new();
     let mut chunks = HashSet::new();
@@ -48,7 +49,7 @@ async fn chunk_file(
                 let (offset, chunk) = result.expect("error while chunking");
                 tokio::task::spawn(async move { (HashSum::b2_digest(&chunk, 64), offset, chunk) })
             })
-            .buffered(8)
+            .buffered(num_chunk_buffers)
             .map(|result| {
                 let (hash, offset, chunk) = result.expect("error while hashing chunk");
                 if unique_chunk.contains(&hash) {
@@ -71,7 +72,7 @@ async fn chunk_file(
                     }
                 })
             })
-            .buffered(8);
+            .buffered(num_chunk_buffers);
 
         while let Some(result) = chunk_stream.next().await {
             let (hash, offset, chunk_size, compressed_size) =
@@ -160,6 +161,7 @@ pub struct Command {
     pub chunker_config: ChunkerConfig,
     pub compression_level: u32,
     pub compression: Compression,
+    pub num_chunk_buffers: usize,
 }
 
 impl Command {
@@ -172,10 +174,22 @@ impl Command {
         println!();
 
         info!("Scanning {} ...", self.input_a.display());
-        let a = chunk_file(&self.input_a, chunker_config, compression).await?;
+        let a = chunk_file(
+            &self.input_a,
+            chunker_config,
+            compression,
+            self.num_chunk_buffers,
+        )
+        .await?;
 
         info!("Scanning {} ...", self.input_b.display());
-        let b = chunk_file(&self.input_b, chunker_config, compression).await?;
+        let b = chunk_file(
+            &self.input_b,
+            chunker_config,
+            compression,
+            self.num_chunk_buffers,
+        )
+        .await?;
 
         let mut descriptors_ab: HashMap<HashSum, ChunkDescriptor> = HashMap::new();
         for descriptor in a.descriptors.iter().chain(&b.descriptors) {

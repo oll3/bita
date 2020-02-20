@@ -322,29 +322,33 @@ fn parse_opts() -> Result<Command, Error> {
             ),
         &compression_desc,
     );
-    let matches = App::new(PKG_NAME)
-        .version(PKG_VERSION)
-        .arg(
-            Arg::with_name("verbose")
-                .short("v")
-                .multiple(true)
-                .global(true)
-                .help("Set verbosity level"),
-        )
-        .subcommand(compress_subcmd)
-        .subcommand(clone_subcmd)
-        .subcommand(
-            SubCommand::with_name("info")
-                .about("Print archive details.")
-                .arg(
-                    Arg::with_name("INPUT")
-                        .value_name("INPUT")
-                        .help("Input file (can be a local archive or a URL)")
-                        .required(true),
-                ),
-        )
-        .subcommand(diff_subcmd)
-        .get_matches();
+    let matches =
+        App::new(PKG_NAME)
+            .version(PKG_VERSION)
+            .arg(
+                Arg::with_name("verbose")
+                    .short("v")
+                    .multiple(true)
+                    .global(true)
+                    .help("Set verbosity level"),
+            )
+            .arg(Arg::with_name("buffered-chunks").long("buffered-chunks").value_name("COUNT").global(true).help(
+                "Limit number of chunks processed simultaneously [default: cores available x 2]",
+            ))
+            .subcommand(compress_subcmd)
+            .subcommand(clone_subcmd)
+            .subcommand(
+                SubCommand::with_name("info")
+                    .about("Print archive details.")
+                    .arg(
+                        Arg::with_name("INPUT")
+                            .value_name("INPUT")
+                            .help("Input file (can be a local archive or a URL)")
+                            .required(true),
+                    ),
+            )
+            .subcommand(diff_subcmd)
+            .get_matches();
 
     // Set log level
     init_log(match matches.occurrences_of("verbose") {
@@ -352,6 +356,16 @@ fn parse_opts() -> Result<Command, Error> {
         1 => log::LevelFilter::Debug,
         _ => log::LevelFilter::Trace,
     });
+
+    let num_chunk_buffers: usize = matches
+        .value_of("buffered-chunks")
+        .map(|v| v.parse().ok())
+        .flatten()
+        .unwrap_or_else(|| match num_cpus::get() {
+            // Single buffer if we have a single core, otherwise number of cores x 2
+            0 | 1 => 1,
+            n => n * 2,
+        });
 
     if let Some(matches) = matches.subcommand_matches("compress") {
         let output = Path::new(matches.value_of("OUTPUT").unwrap());
@@ -373,6 +387,7 @@ fn parse_opts() -> Result<Command, Error> {
             chunker_config,
             compression,
             compression_level,
+            num_chunk_buffers,
         }))
     } else if let Some(matches) = matches.subcommand_matches("clone") {
         let input = matches.value_of("INPUT").unwrap();
@@ -422,6 +437,7 @@ fn parse_opts() -> Result<Command, Error> {
             http_timeout,
             verify_output: matches.is_present("verify-output"),
             seed_output,
+            num_chunk_buffers,
         }))
     } else if let Some(matches) = matches.subcommand_matches("info") {
         let input = matches.value_of("INPUT").unwrap();
@@ -439,6 +455,7 @@ fn parse_opts() -> Result<Command, Error> {
             chunker_config,
             compression,
             compression_level,
+            num_chunk_buffers,
         }))
     } else {
         error!("Unknown command");

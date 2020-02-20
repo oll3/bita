@@ -36,6 +36,7 @@ async fn seed_input<T>(
     archive: &ArchiveReader,
     chunks_left: &mut ChunkIndex,
     output_file: &mut File,
+    num_chunk_buffers: usize,
 ) -> Result<u64, Error>
 where
     T: AsyncRead + Unpin,
@@ -55,7 +56,7 @@ where
                     .map_err(|err| Error::from(("error while chunking seed", err)))
             })
         })
-        .buffered(8)
+        .buffered(num_chunk_buffers)
         .filter_map(|result| {
             // Filter unique chunks to be compressed
             future::ready(match result {
@@ -164,6 +165,7 @@ async fn finish_using_archive(
     archive: &ArchiveReader,
     chunks_left: ChunkIndex,
     output_file: &mut File,
+    num_chunk_buffers: usize,
 ) -> Result<u64, Error> {
     let fetch_count = chunks_left.len();
     let source = reader_builder.source();
@@ -198,7 +200,7 @@ async fn finish_using_archive(
                     )
                 })
             })
-            .buffered(8);
+            .buffered(num_chunk_buffers);
 
         while let Some(result) = archive_chunk_stream.next().await {
             // For each chunk read from archive
@@ -409,6 +411,7 @@ async fn clone_archive(
             &archive,
             &mut chunks_left,
             &mut output_file,
+            cmd.num_chunk_buffers,
         )
         .await?;
     }
@@ -423,13 +426,21 @@ async fn clone_archive(
             &archive,
             &mut chunks_left,
             &mut output_file,
+            cmd.num_chunk_buffers,
         )
         .await?;
     }
 
     // Read the rest from archive
     let total_output_from_remote = if !chunks_left.is_empty() {
-        finish_using_archive(reader_builder, &archive, chunks_left, &mut output_file).await?
+        finish_using_archive(
+            reader_builder,
+            &archive,
+            chunks_left,
+            &mut output_file,
+            cmd.num_chunk_buffers,
+        )
+        .await?
     } else {
         0
     };
