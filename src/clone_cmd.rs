@@ -460,15 +460,14 @@ pub struct Command {
     pub http_retry_delay: Option<std::time::Duration>,
     pub http_timeout: Option<std::time::Duration>,
     pub verify_output: bool,
+    pub num_chunk_buffers: usize,
 }
 
 impl Command {
     pub async fn run(self) -> Result<(), Error> {
-        let reader_builder = if &self.input[0..7] == "http://" || &self.input[0..8] == "https://" {
+        let reader_builder = if let Ok(uri) = self.input.parse() {
             reader_backend::Builder::new_remote(
-                self.input.parse().map_err(|err| {
-                    Error::InvalidUri(format!("failed to parse uri '{}'", self.input), err)
-                })?,
+                uri,
                 self.http_retry_count,
                 self.http_retry_delay,
                 self.http_timeout,

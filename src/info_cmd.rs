@@ -80,8 +80,8 @@ pub struct Command {
 
 impl Command {
     pub async fn run(self) -> Result<(), Error> {
-        let builder = if &self.input[0..7] == "http://" || &self.input[0..8] == "https://" {
-            reader_backend::Builder::new_remote(self.input.parse().unwrap(), 0, None, None)
+        let builder = if let Ok(uri) = self.input.parse() {
+            reader_backend::Builder::new_remote(uri, 0, None, None)
         } else {
             reader_backend::Builder::new_local(&Path::new(&self.input))
         };
