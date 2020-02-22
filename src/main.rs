@@ -359,8 +359,7 @@ fn parse_opts() -> Result<Command, Error> {
 
     let num_chunk_buffers: usize = matches
         .value_of("buffered-chunks")
-        .map(|v| v.parse().ok())
-        .flatten()
+        .map(|v| v.parse().expect("invalid buffered-chunks value"))
         .unwrap_or_else(|| match num_cpus::get() {
             // Single buffer if we have a single core, otherwise number of cores x 2
             0 | 1 => 1,
