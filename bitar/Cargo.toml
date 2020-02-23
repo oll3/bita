@@ -31,3 +31,4 @@ tempfile = "3.1"
 default = []
 lzma-compression = ["rust-lzma"]
 zstd-compression = ["zstd"]
+rustls-tls = ["reqwest/rustls-tls"]
