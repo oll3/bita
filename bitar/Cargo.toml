@@ -15,14 +15,14 @@ blake2 = "0.8"
 prost = "0.6"
 log = "0.4"
 brotli = "3.3"
-futures-core = {version = "0.3" }
-futures-util = {version = "0.3" }
+futures-core = "0.3"
+futures-util = "0.3"
 tokio = { version = "0.2", features = ["fs", "io-std", "sync", "io-util", "macros", "time", "rt-threaded"] }
 reqwest = { version = "0.10", features = ["stream"] }
 async-stream = "0.2"
 bytes = "0.5"
-rust-lzma = {version = "0.5", optional = true}
-zstd = {version = "0.5", optional = true }
+rust-lzma = { version = "0.5", optional = true }
+zstd = { version = "0.5", optional = true }
 
 [dev-dependencies]
 tempfile = "3.1"
