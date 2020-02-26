@@ -1,8 +1,3 @@
-use chrono;
-
-use fern;
-use log;
-
 mod clone_cmd;
 mod compress_cmd;
 mod diff_cmd;
@@ -13,7 +8,6 @@ use clap::{App, Arg, SubCommand};
 use log::*;
 use std::path::Path;
 use std::process;
-use tokio;
 
 use crate::string_utils::*;
 use bitar::chunker::{ChunkerConfig, HashConfig, HashFilterBits};

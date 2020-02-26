@@ -1,8 +1,6 @@
 use async_stream::try_stream;
-use bytes;
 use futures_core::stream::Stream;
 use futures_util::{pin_mut, StreamExt};
-use reqwest;
 use reqwest::Url;
 use std::time::Duration;
 use tokio::time::delay_for;
@@ -128,14 +126,14 @@ impl Builder {
                 self.offset,
                 self.size,
                 self.url.clone(),
-                self.receive_timeout.clone(),
+                self.receive_timeout,
             )
             .await
             {
                 Ok(item) => return Ok(item),
                 Err(err) => {
                     if self.retry_count == 0 {
-                        Err(err)?
+                        return Err(err);
                     } else {
                         log::warn!("request for {} failed (retrying soon): {}", self.url, err);
                         self.retry_count -= 1;

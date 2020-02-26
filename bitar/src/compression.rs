@@ -1,4 +1,3 @@
-use brotli;
 use brotli::enc::backward_references::BrotliEncoderParams;
 use std::io::Write;
 
