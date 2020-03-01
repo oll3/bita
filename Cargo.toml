@@ -28,7 +28,8 @@ bitar = { version = "0.5.1", path = "bitar" }
 num_cpus = "1.12.0"
 
 [features]
-default = []
+default = ["default-tls"]
 lzma-compression = ["bitar/lzma-compression"]
 zstd-compression = ["bitar/zstd-compression"]
+default-tls = ["bitar/default-tls"]
 rustls-tls = ["bitar/rustls-tls"]

@@ -59,6 +59,16 @@ Install *bita* using cargo:
 olle@home:~$ cargo install bita
 ```
 
+## Build from source
+```console
+olle@home:~$ cargo build
+```
+Build in release mode with rustls TLS backend:
+```console
+olle@home:~$ cargo build --release --no-default-features --features rustls-tls
+```
+
+
 ## Example usage
 
 Create a compressed archive `release_v1.1.ext4.cba` from file `release_v1.1.ext4`:
