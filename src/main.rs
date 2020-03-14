@@ -13,6 +13,7 @@ use crate::string_utils::*;
 use bitar::chunker::{ChunkerConfig, HashConfig, HashFilterBits};
 use bitar::compression::Compression;
 use bitar::error::Error;
+use bitar::reader_backend;
 use bitar::HashSum;
 
 pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");
@@ -21,7 +22,7 @@ pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 #[derive(Debug, Clone)]
 enum Command {
     Compress(compress_cmd::Command),
-    Clone(clone_cmd::Command),
+    Clone(Box<clone_cmd::Command>),
     Info(info_cmd::Command),
     Diff(diff_cmd::Command),
 }
@@ -129,6 +130,35 @@ fn parse_size(size_str: &str) -> usize {
     }
 }
 
+fn parse_input_config(matches: &clap::ArgMatches<'_>) -> reader_backend::Builder {
+    let input = matches.value_of("INPUT").unwrap().to_string();
+    match input.parse::<reqwest::Url>() {
+        Ok(url) => {
+            // Use as URL
+            reader_backend::Builder::new_remote(
+                url,
+                matches
+                    .value_of("http-retry-count")
+                    .unwrap_or("0")
+                    .parse()
+                    .expect("failed to parse http-retry-count"),
+                matches.value_of("http-retry-delay").map(|v| {
+                    std::time::Duration::from_secs(
+                        v.parse().expect("failed to parse http-retry-delay"),
+                    )
+                }),
+                matches.value_of("http-timeout").map(|v| {
+                    std::time::Duration::from_secs(v.parse().expect("failed to parse http-timeout"))
+                }),
+            )
+        }
+        Err(_) => {
+            // Use as path
+            reader_backend::Builder::new_local(Path::new(&input))
+        }
+    }
+}
+
 fn init_log(level: log::LevelFilter) {
     let local_level = level;
     fern::Dispatch::new()
@@ -208,6 +238,40 @@ fn add_chunker_args<'a, 'b>(
         )
 }
 
+fn add_input_archive_args<'a, 'b>(sub_cmd: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
+    sub_cmd
+        .arg(
+            Arg::with_name("INPUT")
+                .value_name("INPUT")
+                .help("Input file (can be a local archive or a URL)")
+                .required(true),
+        )
+        .arg(
+            Arg::with_name("http-retry-count")
+                .long("http-retry-count")
+                .value_name("COUNT")
+                .help("Retry transfer on failure [default: 0]"),
+        )
+        .arg(
+            Arg::with_name("http-retry-delay")
+                .long("http-retry-delay")
+                .value_name("SECONDS")
+                .help("Delay retry for some time on transfer failure [default: 0]"),
+        )
+        .arg(
+            Arg::with_name("http-timeout")
+                .long("http-timeout")
+                .value_name("SECONDS")
+                .help("Fail transfer if unresponsive for some time [default: None]"),
+        )
+        .arg(
+            Arg::with_name("verify-header")
+                .long("verify-header")
+                .value_name("CHECKSUM")
+                .help("Verify that the archive header checksum is the one given"),
+        )
+}
+
 fn parse_opts() -> Result<Command, Error> {
     let compression_desc = format!(
         "Set the chunk data compression type {}",
@@ -238,14 +302,10 @@ fn parse_opts() -> Result<Command, Error> {
             ),
         &compression_desc,
     );
-    let clone_subcmd = SubCommand::with_name("clone")
-        .about("Clone a remote (or local archive). The archive is unpacked while being cloned.")
-        .arg(
-            Arg::with_name("INPUT")
-                .value_name("INPUT")
-                .help("Input file (can be a local archive or a URL)")
-                .required(true),
-        )
+    let clone_subcmd =
+        add_input_archive_args(SubCommand::with_name("clone").about(
+            "Clone a remote (or local archive). The archive is unpacked while being cloned.",
+        ))
         .arg(
             Arg::with_name("OUTPUT")
                 .value_name("OUTPUT")
@@ -269,30 +329,6 @@ fn parse_opts() -> Result<Command, Error> {
                 .short("f")
                 .long("force-create")
                 .help("Overwrite output files if they exist"),
-        )
-        .arg(
-            Arg::with_name("verify-header")
-                .long("verify-header")
-                .value_name("CHECKSUM")
-                .help("Verify that the archive header checksum is the one given"),
-        )
-        .arg(
-            Arg::with_name("http-retry-count")
-                .long("http-retry-count")
-                .value_name("COUNT")
-                .help("Retry transfer on failure [default: 0]"),
-        )
-        .arg(
-            Arg::with_name("http-retry-delay")
-                .long("http-retry-delay")
-                .value_name("SECONDS")
-                .help("Delay retry for some time on transfer failure [default: 0]"),
-        )
-        .arg(
-            Arg::with_name("http-timeout")
-                .long("http-timeout")
-                .value_name("SECONDS")
-                .help("Fail transfer if unresponsive for some time [default: None]"),
         )
         .arg(
             Arg::with_name("verify-output")
@@ -383,7 +419,6 @@ fn parse_opts() -> Result<Command, Error> {
             num_chunk_buffers,
         }))
     } else if let Some(matches) = matches.subcommand_matches("clone") {
-        let input = matches.value_of("INPUT").unwrap();
         let output = matches.value_of("OUTPUT").unwrap_or("");
         let mut seed_stdin = false;
         let seed_files = matches
@@ -400,38 +435,21 @@ fn parse_opts() -> Result<Command, Error> {
             .map(|s| Path::new(s).to_path_buf())
             .collect();
         let seed_output = matches.is_present("seed-output");
-        let verify_header = matches
+        let header_checksum = matches
             .value_of("verify-header")
             .map(|c| HashSum::from_vec(hex_str_to_vec(c).expect("failed to parse checksum")));
 
-        let http_retry_count = matches
-            .value_of("http-retry-count")
-            .unwrap_or("0")
-            .parse()
-            .expect("failed to parse http-retry-count");
-
-        let http_retry_delay = matches.value_of("http-retry-delay").map(|v| {
-            std::time::Duration::from_secs(v.parse().expect("failed to parse http-retry-delay"))
-        });
-
-        let http_timeout = matches.value_of("http-timeout").map(|v| {
-            std::time::Duration::from_secs(v.parse().expect("failed to parse http-timeout"))
-        });
-
-        Ok(Command::Clone(clone_cmd::Command {
-            input: input.to_string(),
+        Ok(Command::Clone(Box::new(clone_cmd::Command {
+            input: parse_input_config(&matches),
+            header_checksum,
             output: Path::new(output).to_path_buf(),
             force_create: matches.is_present("force-create"),
-            header_checksum: verify_header,
             seed_files,
             seed_stdin,
-            http_retry_count,
-            http_retry_delay,
-            http_timeout,
             verify_output: matches.is_present("verify-output"),
             seed_output,
             num_chunk_buffers,
-        }))
+        })))
     } else if let Some(matches) = matches.subcommand_matches("info") {
         let input = matches.value_of("INPUT").unwrap();
         Ok(Command::Info(info_cmd::Command {

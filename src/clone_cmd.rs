@@ -5,7 +5,7 @@ use futures_util::stream::StreamExt;
 use log::*;
 use std::collections::HashMap;
 use std::io::SeekFrom;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tokio::fs::File;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 
@@ -270,7 +270,7 @@ async fn verify_output(
             "Checksum mismatch. {}: {}, {}: {}.",
             cmd.output.display(),
             sum,
-            cmd.input,
+            cmd.input.source(),
             expected_checksum
         )
         .into())
@@ -327,11 +327,8 @@ async fn resize_output(output_file: &mut File, source_file_size: u64) -> Result<
     Ok(())
 }
 
-async fn clone_archive(
-    reader_builder: reader_backend::Builder,
-    cmd: &Command,
-) -> Result<(), Error> {
-    let archive = ArchiveReader::try_init(reader_builder.clone()).await?;
+async fn clone_archive(cmd: &Command) -> Result<(), Error> {
+    let archive = ArchiveReader::try_init(cmd.input.clone()).await?;
     let mut chunks_left = archive.source_index().clone();
     let mut total_read_from_seed = 0u64;
 
@@ -350,7 +347,7 @@ async fn clone_archive(
     }
     info!(
         "Cloning archive {} to {}...",
-        cmd.input,
+        cmd.input.source(),
         cmd.output.display()
     );
 
@@ -436,7 +433,7 @@ async fn clone_archive(
     // Read the rest from archive
     let total_output_from_remote = if !chunks_left.is_empty() {
         finish_using_archive(
-            reader_builder,
+            cmd.input.clone(),
             &archive,
             chunks_left,
             &mut output_file,
@@ -463,31 +460,18 @@ async fn clone_archive(
 #[derive(Debug, Clone)]
 pub struct Command {
     pub force_create: bool,
-    pub input: String,
+    pub input: reader_backend::Builder,
+    pub header_checksum: Option<HashSum>,
     pub output: PathBuf,
     pub seed_stdin: bool,
     pub seed_files: Vec<PathBuf>,
     pub seed_output: bool,
-    pub header_checksum: Option<HashSum>,
-    pub http_retry_count: u32,
-    pub http_retry_delay: Option<std::time::Duration>,
-    pub http_timeout: Option<std::time::Duration>,
     pub verify_output: bool,
     pub num_chunk_buffers: usize,
 }
 
 impl Command {
     pub async fn run(self) -> Result<(), Error> {
-        let reader_builder = if let Ok(uri) = self.input.parse() {
-            reader_backend::Builder::new_remote(
-                uri,
-                self.http_retry_count,
-                self.http_retry_delay,
-                self.http_timeout,
-            )
-        } else {
-            reader_backend::Builder::new_local(&Path::new(&self.input))
-        };
-        clone_archive(reader_builder, &self).await
+        clone_archive(&self).await
     }
 }
