@@ -20,10 +20,10 @@ clap = "2.33.0"
 blake2 = "0.8.1"
 atty = "0.2.14"
 log = "0.4.8"
-fern = "0.5.9"
-chrono = "0.4.10"
+fern = "0.6.0"
+chrono = "0.4.11"
 futures-util = "0.3.4"
-tokio = { version = "0.2.11", features = ["fs", "io-std", "sync", "io-util", "macros", "time", "rt-threaded"] }
+tokio = { version = "0.2.13", features = ["fs", "io-std", "sync", "io-util", "macros", "time", "rt-threaded"] }
 bitar = { version = "0.5.2", path = "bitar" }
 num_cpus = "1.12.0"
 
