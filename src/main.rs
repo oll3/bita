@@ -2,6 +2,7 @@ mod clone_cmd;
 mod compress_cmd;
 mod diff_cmd;
 mod info_cmd;
+mod output;
 mod string_utils;
 
 use clap::{App, Arg, SubCommand};

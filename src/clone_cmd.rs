@@ -1,15 +1,14 @@
-use blake2::{Blake2b, Digest};
 use futures_util::future;
 use futures_util::pin_mut;
 use futures_util::stream::StreamExt;
 use log::*;
 use std::collections::HashMap;
-use std::io::SeekFrom;
 use std::path::PathBuf;
 use tokio::fs::File;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncRead;
 
 use crate::info_cmd;
+use crate::output::Output;
 use crate::string_utils::*;
 use bitar::archive_reader::ArchiveReader;
 use bitar::chunk_index::{ChunkIndex, ReorderOp};
@@ -18,25 +17,13 @@ use bitar::error::Error;
 use bitar::reader_backend;
 use bitar::HashSum;
 
-async fn seek_write(file: &mut File, offset: u64, buf: &[u8]) -> Result<(), std::io::Error> {
-    file.seek(SeekFrom::Start(offset)).await?;
-    file.write_all(buf).await?;
-    Ok(())
-}
-
-async fn seek_read(file: &mut File, offset: u64, buf: &mut [u8]) -> Result<(), std::io::Error> {
-    file.seek(SeekFrom::Start(offset)).await?;
-    file.read_exact(buf).await?;
-    Ok(())
-}
-
 async fn seed_input<T>(
     mut input: T,
     seed_name: &str,
     chunker_config: &ChunkerConfig,
     archive: &ArchiveReader,
     chunks_left: &mut ChunkIndex,
-    output_file: &mut File,
+    output: &mut Output,
     num_chunk_buffers: usize,
 ) -> Result<u64, Error>
 where
@@ -87,7 +74,8 @@ where
             .ok_or_else(|| format!("missing chunk ({}) in source!?", hash))?
         {
             bytes_read_from_seed += chunk.len() as u64;
-            seek_write(output_file, offset, &chunk)
+            output
+                .seek_write(offset, &chunk)
                 .await
                 .map_err(|err| ("error writing output", err))?;
         }
@@ -104,7 +92,7 @@ where
 }
 
 async fn update_in_place(
-    output_file: &mut File,
+    output: &mut Output,
     output_index: &ChunkIndex,
     chunks_left: &mut ChunkIndex,
 ) -> Result<u64, Error> {
@@ -128,13 +116,15 @@ async fn update_in_place(
                 } else {
                     let mut buf: Vec<u8> = Vec::new();
                     buf.resize(source.size, 0);
-                    seek_read(output_file, source.offset, &mut buf[..])
+                    output
+                        .seek_read(source.offset, &mut buf[..])
                         .await
                         .map_err(|err| ("error reading output", err))?;
                     buf
                 };
                 for &offset in dest {
-                    seek_write(output_file, offset, &buf[..])
+                    output
+                        .seek_write(offset, &buf[..])
                         .await
                         .map_err(|err| ("error writing output", err))?;
                     total_read += source.size as u64;
@@ -145,7 +135,8 @@ async fn update_in_place(
                 if !temp_store.contains_key(hash) {
                     let mut buf: Vec<u8> = Vec::new();
                     buf.resize(source.size, 0);
-                    seek_read(output_file, source.offset, &mut buf[..])
+                    output
+                        .seek_read(source.offset, &mut buf[..])
                         .await
                         .map_err(|err| ("error reading output", err))?;
                     temp_store.insert(hash, buf);
@@ -165,7 +156,7 @@ async fn finish_using_archive(
     reader_builder: reader_backend::Builder,
     archive: &ArchiveReader,
     chunks_left: ChunkIndex,
-    output_file: &mut File,
+    output: &mut Output,
     num_chunk_buffers: usize,
 ) -> Result<u64, Error> {
     let fetch_count = chunks_left.len();
@@ -219,12 +210,8 @@ async fn finish_using_archive(
                 .ok_or_else(|| format!("missing chunk ({}) in source!?", hash))?
             {
                 total_written += chunk.len() as u64;
-                output_file
-                    .seek(SeekFrom::Start(offset))
-                    .await
-                    .map_err(|err| ("failed to seek output", err))?;
-                output_file
-                    .write_all(&chunk)
+                output
+                    .seek_write(offset, &chunk)
                     .await
                     .map_err(|err| ("failed to write output", err))?;
             }
@@ -237,94 +224,6 @@ async fn finish_using_archive(
         &source,
     );
     Ok(total_written)
-}
-
-async fn verify_output(
-    cmd: &Command,
-    expected_checksum: &HashSum,
-    output_file: &mut File,
-) -> Result<(), Error> {
-    info!("Verifying checksum of {}...", cmd.output.display());
-    output_file
-        .seek(SeekFrom::Start(0))
-        .await
-        .map_err(|err| ("failed to seek output", err))?;
-    let mut output_hasher = Blake2b::new();
-    let mut buffer: Vec<u8> = vec![0; 4 * 1024 * 1024];
-    loop {
-        let rc = output_file
-            .read(&mut buffer)
-            .await
-            .map_err(|err| ("failed to read output", err))?;
-        if rc == 0 {
-            break;
-        }
-        output_hasher.input(&buffer[0..rc]);
-    }
-    let sum = HashSum::from_slice(&output_hasher.result()[..]);
-    if sum == *expected_checksum {
-        info!("Checksum verified Ok");
-        Ok(())
-    } else {
-        Err(format!(
-            "Checksum mismatch. {}: {}, {}: {}.",
-            cmd.output.display(),
-            sum,
-            cmd.input.source(),
-            expected_checksum
-        )
-        .into())
-    }
-}
-
-#[cfg(unix)]
-async fn validate_output_file(
-    output_file: &mut File,
-    source_file_size: u64,
-) -> Result<bool, Error> {
-    use std::os::linux::fs::MetadataExt;
-    let meta = output_file
-        .metadata()
-        .await
-        .map_err(|e| ("unable to get file meta data", e))?;
-    if meta.st_mode() & 0x6000 == 0x6000 {
-        // Output is a block device
-        let size = output_file
-            .seek(SeekFrom::End(0))
-            .await
-            .map_err(|e| ("unable to seek output file", e))?;
-        if size != source_file_size {
-            return Err(format!(
-                "Size of output device ({}) differ from size of archive target file ({})",
-                size_to_str(size),
-                size_to_str(source_file_size)
-            )
-            .into());
-        }
-        output_file
-            .seek(SeekFrom::Start(0))
-            .await
-            .map_err(|e| ("unable to seek output file", e))?;
-        Ok(true)
-    } else {
-        Ok(false)
-    }
-}
-
-#[cfg(not(unix))]
-async fn validate_output_file(
-    _output_file: &mut File,
-    _source_file_size: u64,
-) -> Result<bool, Error> {
-    Ok(false)
-}
-
-async fn resize_output(output_file: &mut File, source_file_size: u64) -> Result<(), Error> {
-    output_file
-        .set_len(source_file_size)
-        .await
-        .map_err(|e| ("unable to resize output file", e))?;
-    Ok(())
 }
 
 async fn clone_archive(cmd: &Command) -> Result<(), Error> {
@@ -355,7 +254,7 @@ async fn clone_archive(cmd: &Command) -> Result<(), Error> {
     let chunker_config = archive.chunker_config().clone();
 
     // Create or open output file
-    let mut output_file = tokio::fs::OpenOptions::new()
+    let output_file = tokio::fs::OpenOptions::new()
         .write(true)
         .read(cmd.verify_output || cmd.seed_output)
         .create(cmd.force_create || cmd.seed_output)
@@ -369,21 +268,29 @@ async fn clone_archive(cmd: &Command) -> Result<(), Error> {
             )
         })?;
 
+    let mut output = Output::new_from(output_file).await?;
+
     // Check if the given output file is a regular file or block device.
     // If it is a block device we should check its size against the target size before
     // writing. If a regular file then resize that file to target size.
-    let output_is_blockdev =
-        validate_output_file(&mut output_file, archive.total_source_size()).await?;
-
-    let output_chunk_index = if cmd.seed_output {
-        // Build an index of the output file's chunks
-        Some(
-            ChunkIndex::try_build_from_file(
-                &chunker_config,
-                archive.chunk_hash_length(),
-                &mut output_file,
+    if output.is_block_dev() {
+        let size = output.size().await?;
+        if size != archive.total_source_size() {
+            return Err(format!(
+                "Size of output device ({}) differ from size of archive target file ({})",
+                size_to_str(size),
+                size_to_str(archive.total_source_size())
             )
-            .await?,
+            .into());
+        }
+    }
+
+    // Build an index of the output file's chunks
+    let output_chunk_index = if cmd.seed_output {
+        Some(
+            output
+                .chunk_index(&chunker_config, archive.chunk_hash_length())
+                .await?,
         )
     } else {
         None
@@ -393,12 +300,12 @@ async fn clone_archive(cmd: &Command) -> Result<(), Error> {
         let already_in_place = output_index.strip_chunks_already_in_place(&mut chunks_left);
         info!("{} chunks are already in place in output", already_in_place,);
         total_read_from_seed +=
-            update_in_place(&mut output_file, &output_index, &mut chunks_left).await?;
+            update_in_place(&mut output, &output_index, &mut chunks_left).await?;
     }
 
-    if !output_is_blockdev {
+    if !output.is_block_dev() {
         // Resize output file to same size as the archive source
-        resize_output(&mut output_file, archive.total_source_size()).await?;
+        output.resize(archive.total_source_size()).await?;
     }
 
     // Read chunks from seed files
@@ -409,7 +316,7 @@ async fn clone_archive(cmd: &Command) -> Result<(), Error> {
             &chunker_config,
             &archive,
             &mut chunks_left,
-            &mut output_file,
+            &mut output,
             cmd.num_chunk_buffers,
         )
         .await?;
@@ -424,7 +331,7 @@ async fn clone_archive(cmd: &Command) -> Result<(), Error> {
             &chunker_config,
             &archive,
             &mut chunks_left,
-            &mut output_file,
+            &mut output,
             cmd.num_chunk_buffers,
         )
         .await?;
@@ -436,7 +343,7 @@ async fn clone_archive(cmd: &Command) -> Result<(), Error> {
             cmd.input.clone(),
             &archive,
             chunks_left,
-            &mut output_file,
+            &mut output,
             cmd.num_chunk_buffers,
         )
         .await?
@@ -445,7 +352,21 @@ async fn clone_archive(cmd: &Command) -> Result<(), Error> {
     };
 
     if cmd.verify_output {
-        verify_output(&cmd, &archive.source_checksum(), &mut output_file).await?;
+        info!("Verifying checksum of {}...", cmd.output.display());
+        let sum = output.checksum().await?;
+        let expected_checksum = archive.source_checksum();
+        if sum == *expected_checksum {
+            info!("Checksum verified Ok");
+        } else {
+            return Err(format!(
+                "Checksum mismatch. {}: {}, {}: {}.",
+                cmd.output.display(),
+                sum,
+                cmd.input.source(),
+                expected_checksum
+            )
+            .into());
+        }
     }
 
     info!(
