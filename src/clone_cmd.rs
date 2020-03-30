@@ -12,8 +12,8 @@ use crate::string_utils::*;
 use bitar::archive_reader::ArchiveReader;
 use bitar::chunk_index::{ChunkIndex, ReorderOp};
 use bitar::error::Error;
-use bitar::reader_backend;
 use bitar::HashSum;
+use bitar::ReaderBackend;
 
 async fn update_in_place(
     output: &mut Output,
@@ -77,14 +77,14 @@ async fn update_in_place(
 }
 
 async fn finish_using_archive(
-    reader_builder: reader_backend::Builder,
+    reader_backend: ReaderBackend,
     archive: &ArchiveReader,
     chunks_left: ChunkIndex,
     output: &mut Output,
     num_chunk_buffers: usize,
 ) -> Result<u64, Error> {
     let fetch_count = chunks_left.len();
-    let source = reader_builder.source();
+    let source = reader_backend.source();
     info!("Fetching {} chunks from {}...", fetch_count, &source);
     let mut total_written = 0u64;
     let mut total_fetched = 0u64;
@@ -95,7 +95,7 @@ async fn finish_using_archive(
         let compression = archive.chunk_compression();
         let chunk_sizes: Vec<usize> = group.iter().map(|c| c.archive_size as usize).collect();
 
-        let archive_chunk_stream = reader_builder
+        let archive_chunk_stream = reader_backend
             .read_chunks(start_offset, &chunk_sizes)
             .enumerate()
             .map(|(chunk_index, compressed_chunk)| {
@@ -307,7 +307,7 @@ async fn clone_archive(cmd: &Command) -> Result<(), Error> {
 #[derive(Debug, Clone)]
 pub struct Command {
     pub force_create: bool,
-    pub input: reader_backend::Builder,
+    pub input: ReaderBackend,
     pub header_checksum: Option<HashSum>,
     pub output: PathBuf,
     pub seed_stdin: bool,

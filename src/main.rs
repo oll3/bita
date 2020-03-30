@@ -15,8 +15,8 @@ use crate::string_utils::*;
 use bitar::chunker::{ChunkerConfig, HashConfig, HashFilterBits};
 use bitar::compression::Compression;
 use bitar::error::Error;
-use bitar::reader_backend;
 use bitar::HashSum;
+use bitar::ReaderBackend;
 
 pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -132,12 +132,12 @@ fn parse_size(size_str: &str) -> usize {
     }
 }
 
-fn parse_input_config(matches: &clap::ArgMatches<'_>) -> reader_backend::Builder {
+fn parse_input_config(matches: &clap::ArgMatches<'_>) -> ReaderBackend {
     let input = matches.value_of("INPUT").unwrap().to_string();
     match input.parse::<reqwest::Url>() {
         Ok(url) => {
             // Use as URL
-            reader_backend::Builder::new_remote(
+            ReaderBackend::new_remote(
                 url,
                 matches
                     .value_of("http-retry-count")
@@ -156,7 +156,7 @@ fn parse_input_config(matches: &clap::ArgMatches<'_>) -> reader_backend::Builder
         }
         Err(_) => {
             // Use as path
-            reader_backend::Builder::new_local(Path::new(&input))
+            ReaderBackend::new_local(Path::new(&input))
         }
     }
 }

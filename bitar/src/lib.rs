@@ -9,11 +9,13 @@ pub mod chunker;
 pub mod compression;
 pub mod error;
 mod hashsum;
-pub mod http_range_request;
-pub mod reader_backend;
+mod http_range_request;
+mod reader_backend;
 pub mod rolling_hash;
 pub mod rollsum;
 pub use hashsum::*;
+
+pub use reader_backend::ReaderBackend;
 
 pub mod chunk_dictionary {
     include!(concat!(env!("OUT_DIR"), "/chunk_dictionary.rs"));

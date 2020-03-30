@@ -13,7 +13,7 @@ use crate::error::Error;
 use crate::http_range_request;
 
 #[derive(Clone, Debug)]
-pub enum Builder {
+pub enum ReaderBackend {
     Remote {
         url: Url,
         retries: u32,
@@ -23,7 +23,8 @@ pub enum Builder {
     Local(PathBuf),
 }
 
-impl Builder {
+impl ReaderBackend {
+    /// Returns a backend for reading from a remote archive
     pub fn new_remote(
         url: Url,
         retries: u32,
@@ -37,15 +38,21 @@ impl Builder {
             receive_timeout,
         }
     }
+
+    /// Returns a backend for reading from a local file
     pub fn new_local(path: &Path) -> Self {
         Self::Local(path.to_path_buf())
     }
+
+    /// Return a printable string of the source
     pub fn source(&self) -> String {
         match self {
-            Builder::Remote { url, .. } => url.to_string(),
-            Builder::Local(p) => p.display().to_string(),
+            Self::Remote { url, .. } => url.to_string(),
+            Self::Local(p) => p.display().to_string(),
         }
     }
+
+    /// Read a single chunk at offset
     pub async fn read_at(&mut self, offset: u64, size: usize) -> Result<Vec<u8>, Error> {
         let request = match self {
             Self::Remote {
@@ -53,18 +60,24 @@ impl Builder {
                 retries,
                 retry_delay,
                 receive_timeout,
-            } => ReaderBackend::Remote {
+            } => Reader::Remote {
                 request: http_range_request::Builder::new(url.clone(), offset, size as u64)
                     .receive_timeout(*receive_timeout)
                     .retry(*retries, *retry_delay),
             },
-            Self::Local(path) => ReaderBackend::Local {
+            Self::Local(path) => Reader::Local {
                 start_offset: offset,
                 file_path: path.clone(),
             },
         };
         request.single(size).await
     }
+
+    /// Read a stream of sequential chunks
+    ///
+    /// Using this we can avoid making multiple request when chunks are in sequence.
+    /// The first chunk returned will have the size of `chunk_size[0]` and the nth
+    /// chunk `chunk_size[n]`.
     pub fn read_chunks(
         &self,
         start_offset: u64,
@@ -78,7 +91,7 @@ impl Builder {
                 receive_timeout,
             } => {
                 let total_size: u64 = chunk_sizes.iter().map(|v| *v as u64).sum();
-                ReaderBackend::Remote {
+                Reader::Remote {
                     request: http_range_request::Builder::new(
                         url.clone(),
                         start_offset,
@@ -89,7 +102,7 @@ impl Builder {
                 }
                 .chunks(chunk_sizes.to_vec().into())
             }
-            Self::Local(path) => ReaderBackend::Local {
+            Self::Local(path) => Reader::Local {
                 start_offset,
                 file_path: path.clone(),
             }
@@ -98,7 +111,7 @@ impl Builder {
     }
 }
 
-enum ReaderBackend {
+enum Reader {
     Remote {
         request: http_range_request::Builder,
     },
@@ -108,8 +121,8 @@ enum ReaderBackend {
     },
 }
 
-impl ReaderBackend {
-    pub async fn single(self, size: usize) -> Result<Vec<u8>, Error> {
+impl Reader {
+    async fn single(self, size: usize) -> Result<Vec<u8>, Error> {
         match self {
             Self::Remote { request } => {
                 let res = request.single().await?;
@@ -140,7 +153,7 @@ impl ReaderBackend {
             }
         }
     }
-    pub fn chunks(
+    fn chunks(
         self,
         mut chunk_sizes: VecDeque<usize>,
     ) -> impl Stream<Item = Result<Vec<u8>, Error>> {
@@ -187,7 +200,6 @@ impl ReaderBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures_util::stream::StreamExt;
     use std::io::Write;
     use tempfile::NamedTempFile;
 
@@ -196,9 +208,9 @@ mod tests {
         let mut file = NamedTempFile::new().unwrap();
         let expected: Vec<u8> = b"hello file".to_vec();
         file.write_all(&expected).unwrap();
-        let builder = Builder::new_local(file.path());
-        pin_mut!(builder);
-        let reader = builder.read_at(0, expected.len());
+        let backend = ReaderBackend::new_local(file.path());
+        pin_mut!(backend);
+        let reader = backend.read_at(0, expected.len());
         let read_back = reader.await.unwrap();
         assert_eq!(read_back, expected);
     }
@@ -207,9 +219,9 @@ mod tests {
         let mut file = NamedTempFile::new().unwrap();
         let expected: Vec<u8> = (0..10 * 1024 * 1024).map(|v| v as u8).collect();
         file.write_all(&expected).unwrap();
-        let builder = Builder::new_local(file.path());
-        pin_mut!(builder);
-        let reader = builder.read_at(0, expected.len());
+        let backend = ReaderBackend::new_local(file.path());
+        pin_mut!(backend);
+        let reader = backend.read_at(0, expected.len());
         let read_back = reader.await.unwrap();
         assert_eq!(read_back, expected);
     }
@@ -219,12 +231,12 @@ mod tests {
         let expected: Vec<u8> = (0..10 * 1024 * 1024).map(|v| v as u8).collect();
         let chunk_sizes: Vec<usize> = vec![10, 20, 30, 100, 200, 400, 8 * 1024 * 1024];
         file.write_all(&expected).unwrap();
-        let reader = Builder::new_local(file.path()).read_chunks(0, &chunk_sizes);
+        let backend = ReaderBackend::new_local(file.path()).read_chunks(0, &chunk_sizes);
         {
-            pin_mut!(reader);
+            pin_mut!(backend);
             let mut chunk_offset = 0;
             let mut chunk_count = 0;
-            while let Some(chunk) = reader.next().await {
+            while let Some(chunk) = backend.next().await {
                 let chunk = chunk.unwrap();
                 let chunk_size = chunk_sizes[chunk_count];
                 assert_eq!(chunk, &expected[chunk_offset..chunk_offset + chunk_size]);

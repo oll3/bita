@@ -5,10 +5,10 @@ use crate::string_utils::*;
 use bitar::archive_reader::ArchiveReader;
 use bitar::chunker::{ChunkerConfig, HashConfig};
 use bitar::error::Error;
-use bitar::reader_backend;
+use bitar::ReaderBackend;
 
-pub async fn print_archive_backend(builder: reader_backend::Builder) -> Result<(), Error> {
-    let archive = ArchiveReader::try_init(builder).await?;
+pub async fn print_archive_backend(reader_backend: ReaderBackend) -> Result<(), Error> {
+    let archive = ArchiveReader::try_init(reader_backend).await?;
     print_archive(&archive);
     Ok(())
 }
@@ -81,9 +81,9 @@ pub struct Command {
 impl Command {
     pub async fn run(self) -> Result<(), Error> {
         let builder = if let Ok(uri) = self.input.parse() {
-            reader_backend::Builder::new_remote(uri, 0, None, None)
+            ReaderBackend::new_remote(uri, 0, None, None)
         } else {
-            reader_backend::Builder::new_local(&Path::new(&self.input))
+            ReaderBackend::new_local(&Path::new(&self.input))
         };
         print_archive_backend(builder).await?;
         Ok(())
