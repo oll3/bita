@@ -5,7 +5,7 @@ use reqwest::Url;
 use std::time::Duration;
 use tokio::time::delay_for;
 
-use crate::error::Error;
+use crate::Error;
 
 pub struct Builder {
     url: Url,
@@ -55,10 +55,10 @@ impl Builder {
             if let Some(timeout) = timeout {
                 request = request.timeout(timeout);
             }
-            let response = request.send().await.map_err(|err| ("request failed", err))?;
+            let response = request.send().await?;
             let mut stream = response.bytes_stream();
             while let Some(item) = stream.next().await {
-                let chunk = item.map_err(|err| ("receive failed", err))?;
+                let chunk = item?;
                 yield chunk;
             }
         }
@@ -110,14 +110,8 @@ impl Builder {
         if let Some(timeout) = timeout {
             request = request.timeout(timeout);
         }
-        let response = request
-            .send()
-            .await
-            .map_err(|err| ("request failed", err))?;
-        response
-            .bytes()
-            .await
-            .map_err(|err| ("receive failed", err).into())
+        let response = request.send().await?;
+        Ok(response.bytes().await?)
     }
     pub async fn single(mut self) -> Result<bytes::Bytes, Error> {
         loop {

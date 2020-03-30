@@ -8,7 +8,7 @@ use crate::info_cmd;
 use crate::string_utils::*;
 use bitar::chunker::{Chunker, ChunkerConfig};
 use bitar::compression::Compression;
-use bitar::error::Error;
+use bitar::Error;
 use bitar::HashSum;
 
 #[derive(Clone, Debug)]
@@ -39,9 +39,7 @@ async fn chunk_file(
     let mut total_compressed_size = 0u64;
     let mut total_chunks = 0;
     {
-        let mut file = File::open(path)
-            .await
-            .map_err(|e| ("failed to open output file", e))?;
+        let mut file = File::open(path).await.expect("failed to open output file");
         let mut unique_chunk = HashSet::new();
         let chunker = Chunker::new(chunker_config, &mut file);
         let mut chunk_stream = chunker

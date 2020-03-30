@@ -1,91 +1,73 @@
 pub enum Error {
-    NotAnArchive(String),
-    ChecksumMismatch(String),
-    IO(String, std::io::Error),
-    DictionaryDecode(String, prost::DecodeError),
-    DictionaryEncode(String, prost::EncodeError),
+    NotAnArchive,
+    ChecksumMismatch,
+    UnexpectedEnd,
+    CorruptArchive,
+    UnknownChunkingAlgorithm,
+    UnknownCompression,
+    IO(std::io::Error),
+    DictionaryDecode(prost::DecodeError),
+    DictionaryEncode(prost::EncodeError),
     #[cfg(feature = "lzma-compression")]
-    LZMA(String, lzma::LzmaError),
-    Reqwest(String, reqwest::Error),
-    JoinError(String, tokio::task::JoinError),
-    Other(String),
-    Wrapped(String, Box<Error>),
+    LZMA(lzma::LzmaError),
+    Http(reqwest::Error),
+    ThreadJoin(tokio::task::JoinError),
 }
 
-impl Error {
-    pub fn wrap(self, desc: &str) -> Self {
-        Error::Wrapped(desc.to_owned(), Box::new(self))
-    }
-}
+impl std::error::Error for Error {}
+
 #[cfg(feature = "lzma-compression")]
-impl From<(&str, lzma::LzmaError)> for Error {
-    fn from((desc, e): (&str, lzma::LzmaError)) -> Self {
-        Error::LZMA(desc.to_owned(), e)
+impl From<lzma::LzmaError> for Error {
+    fn from(e: lzma::LzmaError) -> Self {
+        Self::LZMA(e)
+    }
+}
+impl From<prost::DecodeError> for Error {
+    fn from(e: prost::DecodeError) -> Self {
+        Self::DictionaryDecode(e)
     }
 }
 
-impl From<(&str, prost::DecodeError)> for Error {
-    fn from((desc, e): (&str, prost::DecodeError)) -> Self {
-        Error::DictionaryDecode(desc.to_owned(), e)
+impl From<prost::EncodeError> for Error {
+    fn from(e: prost::EncodeError) -> Self {
+        Self::DictionaryEncode(e)
     }
 }
 
-impl From<(&str, prost::EncodeError)> for Error {
-    fn from((desc, e): (&str, prost::EncodeError)) -> Self {
-        Error::DictionaryEncode(desc.to_owned(), e)
+impl From<std::io::Error> for Error {
+    fn from(e: std::io::Error) -> Self {
+        Self::IO(e)
     }
 }
 
-impl From<(&str, std::io::Error)> for Error {
-    fn from((desc, e): (&str, std::io::Error)) -> Self {
-        Error::IO(desc.to_owned(), e)
+impl From<reqwest::Error> for Error {
+    fn from(e: reqwest::Error) -> Self {
+        Self::Http(e)
     }
 }
 
-impl From<(String, std::io::Error)> for Error {
-    fn from((desc, e): (String, std::io::Error)) -> Self {
-        Error::IO(desc, e)
-    }
-}
-
-impl From<(&str, reqwest::Error)> for Error {
-    fn from((desc, e): (&str, reqwest::Error)) -> Self {
-        Error::Reqwest(desc.to_owned(), e)
-    }
-}
-
-impl From<(&str, tokio::task::JoinError)> for Error {
-    fn from((desc, e): (&str, tokio::task::JoinError)) -> Self {
-        Error::JoinError(desc.to_owned(), e)
-    }
-}
-
-impl From<&str> for Error {
-    fn from(desc: &str) -> Self {
-        Error::Other(desc.to_owned())
-    }
-}
-
-impl From<String> for Error {
-    fn from(desc: String) -> Self {
-        Error::Other(desc)
+impl From<tokio::task::JoinError> for Error {
+    fn from(e: tokio::task::JoinError) -> Self {
+        Self::ThreadJoin(e)
     }
 }
 
 impl std::fmt::Debug for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::NotAnArchive(desc) => write!(f, "{}", desc),
-            Error::ChecksumMismatch(desc) => write!(f, "{}", desc),
-            Error::IO(desc, e) => write!(f, "{}: {:?}", desc, e),
-            Error::DictionaryEncode(desc, e) => write!(f, "{}: {:?}", desc, e),
-            Error::DictionaryDecode(desc, e) => write!(f, "{}: {:?}", desc, e),
+            Error::NotAnArchive => write!(f, "not an archive"),
+            Error::ChecksumMismatch => write!(f, "checksum mismatch"),
+            Error::UnexpectedEnd => write!(f, "unexpected end"),
+            Error::CorruptArchive => write!(f, "corrupt archive"),
+            Error::UnknownChunkingAlgorithm => write!(f, "unknown chunking algorithm"),
+            Error::UnknownCompression => write!(f, "unknown compression"),
+            Error::IO(e) => write!(f, "i/o error: {:?}", e),
+            Error::DictionaryEncode(e) => write!(f, "failed to encode dictionary: {:?}", e),
+            Error::DictionaryDecode(e) => write!(f, "failed to decode dictionary: {:?}", e),
             #[cfg(feature = "lzma-compression")]
-            Error::LZMA(desc, e) => write!(f, "{}: {:?}", desc, e),
-            Error::Reqwest(desc, e) => write!(f, "{}: {:?}", desc, e),
-            Error::JoinError(desc, e) => write!(f, "{}: {:?}", desc, e),
-            Error::Other(desc) => write!(f, "{}", desc),
-            Error::Wrapped(desc, e) => write!(f, "{}: {:?}", desc, e),
+            Error::LZMA(e) => write!(f, "lzma compression error: {:?}", e),
+            Error::Http(e) => write!(f, "http error: {:?}", e),
+            Error::ThreadJoin(e) => write!(f, "error joining thread: {:?}", e),
         }
     }
 }
@@ -93,19 +75,19 @@ impl std::fmt::Debug for Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::NotAnArchive(ref desc) => write!(f, "{}", desc),
-            Error::ChecksumMismatch(ref desc) => write!(f, "{}", desc),
-            Error::IO(ref desc, ref e) => write!(f, "{}: {}", desc, e),
-            Error::DictionaryEncode(ref desc, ref e) => write!(f, "{}: {}", desc, e),
-            Error::DictionaryDecode(ref desc, ref e) => write!(f, "{}: {}", desc, e),
+            Error::NotAnArchive => write!(f, "is not an archive"),
+            Error::ChecksumMismatch => write!(f, "checksum mismatch"),
+            Error::UnexpectedEnd => write!(f, "unexpected end"),
+            Error::CorruptArchive => write!(f, "corrupt archive"),
+            Error::UnknownChunkingAlgorithm => write!(f, "unknown chunking algorithm"),
+            Error::UnknownCompression => write!(f, "unknown compression"),
+            Error::IO(e) => write!(f, "i/o error: {}", e),
+            Error::DictionaryEncode(e) => write!(f, "failed to encode dictionary: {}", e),
+            Error::DictionaryDecode(e) => write!(f, "failed to decode dictionary: {}", e),
             #[cfg(feature = "lzma-compression")]
-            Error::LZMA(ref desc, ref e) => write!(f, "{}: {}", desc, e),
-            Error::Reqwest(ref desc, ref e) => write!(f, "{}: {}", desc, e),
-            Error::JoinError(desc, e) => write!(f, "{}: {:?}", desc, e),
-            Error::Other(ref desc) => write!(f, "{}", desc),
-            Error::Wrapped(desc, e) => write!(f, "{}: {}", desc, e),
+            Error::LZMA(e) => write!(f, "lzma compression error: {}", e),
+            Error::Http(e) => write!(f, "http error: {}", e),
+            Error::ThreadJoin(e) => write!(f, "error joining thread: {}", e),
         }
     }
 }
-
-impl std::error::Error for Error {}

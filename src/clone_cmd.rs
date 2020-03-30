@@ -11,7 +11,7 @@ use crate::seed_input::SeedInput;
 use crate::string_utils::*;
 use bitar::archive_reader::ArchiveReader;
 use bitar::chunk_index::{ChunkIndex, ReorderOp};
-use bitar::error::Error;
+use bitar::Error;
 use bitar::HashSum;
 use bitar::ReaderBackend;
 
@@ -43,14 +43,14 @@ async fn update_in_place(
                     output
                         .seek_read(source.offset, &mut buf[..])
                         .await
-                        .map_err(|err| ("error reading output", err))?;
+                        .expect("error reading output");
                     buf
                 };
                 for &offset in dest {
                     output
                         .seek_write(offset, &buf[..])
                         .await
-                        .map_err(|err| ("error writing output", err))?;
+                        .expect("error writing output");
                     total_read += source.size as u64;
                 }
                 chunks_left.remove(hash);
@@ -62,7 +62,7 @@ async fn update_in_place(
                     output
                         .seek_read(source.offset, &mut buf[..])
                         .await
-                        .map_err(|err| ("error reading output", err))?;
+                        .expect("error reading output");
                     temp_store.insert(hash, buf);
                 }
             }
@@ -121,8 +121,7 @@ async fn finish_using_archive(
         pin_mut!(archive_chunk_stream);
         while let Some(result) = archive_chunk_stream.next().await {
             // For each chunk read from archive
-            let (hash, chunk) =
-                result.map_err(|err| Error::Other(format!("spawn error {:?}", err)))?;
+            let (hash, chunk) = result.expect("spawn error");
             debug!(
                 "Chunk '{}', size {} used from archive",
                 hash,
@@ -131,13 +130,13 @@ async fn finish_using_archive(
             for offset in archive
                 .source_index()
                 .offsets(&hash)
-                .ok_or_else(|| format!("missing chunk ({}) in source!?", hash))?
+                .unwrap_or_else(|| panic!("missing chunk ({}) in source", hash))
             {
                 total_written += chunk.len() as u64;
                 output
                     .seek_write(offset, &chunk)
                     .await
-                    .map_err(|err| ("failed to write output", err))?;
+                    .expect("failed to write output");
             }
         }
     }
@@ -161,9 +160,7 @@ async fn clone_archive(cmd: &Command) -> Result<(), Error> {
     // Verify the header checksum if requested
     if let Some(ref expected_checksum) = cmd.header_checksum {
         if *expected_checksum != *archive.header_checksum() {
-            return Err(Error::ChecksumMismatch(
-                "Header checksum mismatch!".to_owned(),
-            ));
+            panic!("header checksum mismatch");
         } else {
             info!("Header checksum verified OK");
         }
@@ -185,12 +182,7 @@ async fn clone_archive(cmd: &Command) -> Result<(), Error> {
         .create_new(!cmd.force_create && !cmd.seed_output)
         .open(&cmd.output)
         .await
-        .map_err(|e| {
-            (
-                format!("failed to open output file ({})", cmd.output.display()),
-                e,
-            )
-        })?;
+        .expect("failed to open output file");
 
     let mut output = Output::new_from(output_file).await?;
 
@@ -200,12 +192,11 @@ async fn clone_archive(cmd: &Command) -> Result<(), Error> {
     if output.is_block_dev() {
         let size = output.size().await?;
         if size != archive.total_source_size() {
-            return Err(format!(
-                "Size of output device ({}) differ from size of archive target file ({})",
+            panic!(
+                "size of output device ({}) differ from size of archive target file ({})",
                 size_to_str(size),
                 size_to_str(archive.total_source_size())
-            )
-            .into());
+            );
         }
     }
 
@@ -246,7 +237,7 @@ async fn clone_archive(cmd: &Command) -> Result<(), Error> {
     for seed_path in &cmd.seed_files {
         let file = File::open(seed_path)
             .await
-            .map_err(|e| ("failed to open seed file", e))?;
+            .expect("failed to open seed file");
         info!("Scanning {} for chunks...", seed_path.display());
         let seed = SeedInput::new(file, &chunker_config, cmd.num_chunk_buffers);
         let stats = seed.seed(&archive, &mut chunks_left, &mut output).await?;
@@ -260,11 +251,6 @@ async fn clone_archive(cmd: &Command) -> Result<(), Error> {
 
     // Read the rest from archive
     let total_output_from_remote = if !chunks_left.is_empty() {
-        info!(
-            "Fetching {} chunks from {}...",
-            chunks_left.len(),
-            cmd.input.source()
-        );
         finish_using_archive(
             cmd.input.clone(),
             &archive,
@@ -284,14 +270,13 @@ async fn clone_archive(cmd: &Command) -> Result<(), Error> {
         if sum == *expected_checksum {
             info!("Checksum verified Ok");
         } else {
-            return Err(format!(
-                "Checksum mismatch. {}: {}, {}: {}.",
+            panic!(
+                "checksum mismatch ({}: {}, {}: {})",
                 cmd.output.display(),
                 sum,
                 cmd.input.source(),
                 expected_checksum
-            )
-            .into());
+            );
         }
     }
 

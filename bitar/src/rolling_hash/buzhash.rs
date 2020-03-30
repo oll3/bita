@@ -135,7 +135,7 @@ impl RollingHash for BuzHash {
 
 #[cfg(test)]
 mod tests {
-    use crate::buzhash::BuzHash;
+    use crate::rolling_hash::BuzHash;
     #[test]
     fn equal_sums_for_equal_range() {
         let window_size = 8;

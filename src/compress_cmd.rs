@@ -14,7 +14,7 @@ use bitar::archive;
 use bitar::chunk_dictionary as dict;
 use bitar::chunker::{Chunker, ChunkerConfig};
 use bitar::compression::Compression;
-use bitar::error::Error;
+use bitar::Error;
 use bitar::HashSum;
 use bitar::ReaderBackend;
 
@@ -53,7 +53,7 @@ where
         .truncate(true)
         .open(temp_file_path)
         .await
-        .map_err(|e| ("failed to open temp file", e))?;
+        .expect("failed to open temp file");
     {
         let chunker = Chunker::new(chunker_config, &mut input);
         let mut chunk_stream = chunker
@@ -138,7 +138,7 @@ where
             temp_file
                 .write_all(&use_data)
                 .await
-                .map_err(|e| ("Failed to write to temp file", e))?;
+                .expect("Failed to write to temp file");
         }
     }
     Ok((
@@ -174,14 +174,14 @@ impl Command {
             .truncate(self.force_create)
             .create_new(!self.force_create)
             .open(self.output.clone())
-            .map_err(|e| ("failed to open output file", e))?;
+            .expect("failed to open output file");
 
         let (source_hash, archive_chunks, source_size, chunk_order) =
             if let Some(input_path) = self.input {
                 chunk_input(
                     File::open(input_path)
                         .await
-                        .map_err(|err| ("failed to open input file", err))?,
+                        .expect("failed to open input file"),
                     &chunker_config,
                     compression,
                     &self.temp_file,
@@ -244,15 +244,14 @@ impl Command {
         let header_buf = archive::build_header(&file_header, None)?;
         output_file
             .write_all(&header_buf)
-            .map_err(|e| ("failed to write header", e))?;
+            .expect("failed to write header");
         {
-            let mut temp_file = std::fs::File::open(&self.temp_file)
-                .map_err(|e| ("failed to open temporary file", e))?;
+            let mut temp_file =
+                std::fs::File::open(&self.temp_file).expect("failed to open temporary file");
             std::io::copy(&mut temp_file, &mut output_file)
-                .map_err(|e| ("failed to write chunk data to output file", e))?;
+                .expect("failed to write chunk data to output file");
         }
-        std::fs::remove_file(&self.temp_file)
-            .map_err(|e| ("unable to remove temporary file", e))?;
+        std::fs::remove_file(&self.temp_file).expect("unable to remove temporary file");
         drop(output_file);
         {
             // Print archive info

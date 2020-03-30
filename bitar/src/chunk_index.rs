@@ -6,8 +6,8 @@ use tokio::fs::File;
 use crate::chunk_dictionary::ChunkDictionary;
 use crate::chunk_location_map::{ChunkLocation, ChunkLocationMap};
 use crate::chunker::{Chunker, ChunkerConfig};
-use crate::error::Error;
 use crate::hashsum::HashSum;
+use crate::Error;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ReorderOp<'a> {
@@ -54,15 +54,13 @@ impl ChunkIndex {
         let mut chunk_stream = chunker
             .map(|result| {
                 tokio::task::spawn(async move {
-                    result
-                        .map(|(offset, chunk)| {
-                            (
-                                HashSum::b2_digest(&chunk, hash_length as usize),
-                                offset,
-                                chunk.len(),
-                            )
-                        })
-                        .map_err(|err| ("error while chunking", err))
+                    result.map(|(offset, chunk)| {
+                        (
+                            HashSum::b2_digest(&chunk, hash_length as usize),
+                            offset,
+                            chunk.len(),
+                        )
+                    })
                 })
             })
             .buffered(8);

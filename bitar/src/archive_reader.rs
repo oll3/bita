@@ -6,8 +6,8 @@ use crate::chunk_dictionary as dict;
 use crate::chunk_index::ChunkIndex;
 use crate::chunker::ChunkerConfig;
 use crate::compression::Compression;
-use crate::error::Error;
 use crate::reader_backend::ReaderBackend;
+use crate::Error;
 use crate::HashSum;
 
 #[derive(Clone)]
@@ -55,16 +55,14 @@ pub struct ArchiveReader {
 impl ArchiveReader {
     fn verify_pre_header(pre_header: &[u8]) -> Result<(), Error> {
         if pre_header.len() < archive::FILE_MAGIC.len() {
-            return Err(Error::NotAnArchive(
-                "failed to read header of archive".to_owned(),
-            ));
+            return Err(Error::NotAnArchive);
         }
         // Allow both leagacy type file magic (prefixed with \0 but no null
         // termination) and new type 'BITA\0'.
         if &pre_header[0..archive::FILE_MAGIC.len()] != archive::FILE_MAGIC
             && &pre_header[0..archive::FILE_MAGIC.len()] != b"\0BITA1"
         {
-            return Err(Error::NotAnArchive("invalid bita archive magic".to_owned()));
+            return Err(Error::NotAnArchive);
         }
         Ok(())
     }
@@ -80,11 +78,7 @@ impl ArchiveReader {
 
     pub async fn try_init(mut backend: ReaderBackend) -> Result<Self, Error> {
         // Read the pre-header (file magic and size)
-        let mut header = backend
-            .read_at(0, archive::PRE_HEADER_SIZE)
-            .await
-            .map_err(|err| err.wrap("unable to read archive"))?;
-
+        let mut header = backend.read_at(0, archive::PRE_HEADER_SIZE).await?;
         Self::verify_pre_header(&header)?;
 
         let dictionary_size = archive::u64_from_le_slice(
@@ -95,8 +89,7 @@ impl ArchiveReader {
         header.append(
             &mut backend
                 .read_at(archive::PRE_HEADER_SIZE as u64, dictionary_size + 8 + 64)
-                .await
-                .map_err(|err| err.wrap("unable to read archive"))?,
+                .await?,
         );
 
         // Verify the header against the header checksum
@@ -106,7 +99,7 @@ impl ArchiveReader {
             hasher.input(&header[..offs]);
             let header_checksum = HashSum::from_slice(&header[offs..(offs + 64)]);
             if header_checksum != &hasher.result()[..] {
-                return Err(Error::NotAnArchive("corrupt archive header".to_owned()));
+                return Err(Error::CorruptArchive);
             }
             header_checksum
         };
@@ -114,8 +107,7 @@ impl ArchiveReader {
         // Deserialize the chunk dictionary
         let dictionary: dict::ChunkDictionary = {
             let offs = archive::PRE_HEADER_SIZE;
-            prost::Message::decode(&header[offs..(offs + dictionary_size)])
-                .map_err(|e| ("unable to unpack archive header", e))?
+            prost::Message::decode(&header[offs..(offs + dictionary_size)])?
         };
 
         // Get chunk data offset
@@ -127,9 +119,7 @@ impl ArchiveReader {
         let source_index = ChunkIndex::from_dictionary(&dictionary);
 
         let chunk_order = Self::map_chunks(&dictionary);
-        let chunker_params = dictionary
-            .chunker_params
-            .ok_or("missing chunker parameters")?;
+        let chunker_params = dictionary.chunker_params.ok_or(Error::CorruptArchive)?;
         Ok(Self {
             chunk_order,
             header_checksum,
@@ -138,7 +128,7 @@ impl ArchiveReader {
             source_checksum: dictionary.source_checksum.into(),
             created_by_app_version: dictionary.application_version.clone(),
             chunk_compression: Compression::try_from(
-                dictionary.chunk_compression.ok_or("missing compression")?,
+                dictionary.chunk_compression.ok_or(Error::CorruptArchive)?,
             )?,
             total_chunks: dictionary.rebuild_order.iter().count(),
             chunk_data_offset,

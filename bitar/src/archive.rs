@@ -35,7 +35,7 @@ impl std::convert::TryFrom<ChunkerParameters> for ChunkerConfig {
             Some(ChunkingAlgorithm::FixedSize) => {
                 Ok(ChunkerConfig::FixedSize(p.max_chunk_size as usize))
             }
-            _ => Err(Error::Other("invalid chunking algorithm".to_string())),
+            _ => Err(Error::UnknownChunkingAlgorithm),
         }
     }
 }
@@ -54,9 +54,7 @@ pub fn build_header(
     let mut hasher = Blake2b::new();
     let mut dictionary_buf: Vec<u8> = Vec::new();
 
-    dictionary
-        .encode(&mut dictionary_buf)
-        .map_err(|e| ("failed to serialize header", e))?;
+    dictionary.encode(&mut dictionary_buf)?;
 
     // File magic indicating bita archive version 1
     header.extend(FILE_MAGIC);

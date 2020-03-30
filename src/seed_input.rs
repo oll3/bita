@@ -8,7 +8,7 @@ use crate::string_utils::*;
 use bitar::archive_reader::ArchiveReader;
 use bitar::chunk_index::ChunkIndex;
 use bitar::chunker::{Chunker, ChunkerConfig};
-use bitar::error::Error;
+use bitar::Error;
 use bitar::HashSum;
 
 pub struct SeedInput<'a, I> {
@@ -48,11 +48,9 @@ impl<'a, I> SeedInput<'a, I> {
         let mut found_chunks = seed_chunker
             .map(|result| {
                 tokio::task::spawn(async move {
-                    result
-                        .map(|(_offset, chunk)| {
-                            (HashSum::b2_digest(&chunk, hash_length as usize), chunk)
-                        })
-                        .map_err(|err| Error::from(("error while chunking seed", err)))
+                    result.map(|(_offset, chunk)| {
+                        (HashSum::b2_digest(&chunk, hash_length as usize), chunk)
+                    })
                 })
             })
             .buffered(self.num_chunk_buffers)
@@ -67,7 +65,7 @@ impl<'a, I> SeedInput<'a, I> {
                         }
                     }
                     Ok(Err(err)) => Some(Err(err)),
-                    Err(err) => Some(Err(("error while chunking seed", err).into())),
+                    Err(err) => Some(Err(err.into())),
                 })
             });
 
@@ -77,13 +75,10 @@ impl<'a, I> SeedInput<'a, I> {
             for offset in archive
                 .source_index()
                 .offsets(&hash)
-                .ok_or_else(|| format!("missing chunk ({}) in source!?", hash))?
+                .unwrap_or_else(|| panic!("missing chunk ({}) in source!?", hash))
             {
                 self.stats.bytes_used += chunk.len() as u64;
-                output
-                    .seek_write(offset, &chunk)
-                    .await
-                    .map_err(|err| ("error writing output", err))?;
+                output.seek_write(offset, &chunk).await?;
             }
             self.stats.chunks_used += 1;
         }

@@ -2,7 +2,7 @@ use brotli::enc::backward_references::BrotliEncoderParams;
 use std::io::Write;
 
 use crate::chunk_dictionary::{chunk_compression::CompressionType, ChunkCompression};
-use crate::error::Error;
+use crate::Error;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Compression {
@@ -41,7 +41,7 @@ impl std::convert::TryFrom<ChunkCompression> for Compression {
             Some(CompressionType::Zstd) => panic!("ZSTD compression not enabled"),
             Some(CompressionType::Brotli) => Ok(Self::Brotli(c.compression_level)),
             Some(CompressionType::None) => Ok(Self::None),
-            None => Err(Error::Other("unknown compression type".to_string())),
+            None => Err(Error::UnknownCompression),
         }
     }
 }
@@ -73,12 +73,9 @@ impl Compression {
                 use std::io::prelude::*;
                 let mut result = vec![];
                 {
-                    let mut f = LzmaWriter::new_compressor(&mut result, *level)
-                        .map_err(|e| ("failed to create lzma compressor", e))?;
-                    f.write_all(data)
-                        .map_err(|e| ("failed compress with lzma", e))?;
-                    f.finish()
-                        .map_err(|e| ("failed to finish lzma compression", e))?;
+                    let mut f = LzmaWriter::new_compressor(&mut result, *level)?;
+                    f.write_all(data)?;
+                    f.finish()?;
                 }
                 Ok(result)
             }
@@ -86,8 +83,7 @@ impl Compression {
             Compression::ZSTD(ref level) => {
                 let mut result = vec![];
                 let data = data.to_vec();
-                zstd::stream::copy_encode(&data[..], &mut result, *level as i32)
-                    .map_err(|e| ("failed compress with zstd", e))?;
+                zstd::stream::copy_encode(&data[..], &mut result, *level as i32)?;
                 Ok(result)
             }
             Compression::Brotli(ref level) => {
@@ -100,9 +96,7 @@ impl Compression {
                 {
                     let mut writer =
                         brotli::CompressorWriter::with_params(&mut result, 1024 * 1024, &params);
-                    writer
-                        .write_all(&data)
-                        .map_err(|e| ("failed compress with brotli", e))?;
+                    writer.write_all(&data)?;
                 }
                 Ok(result)
             }
@@ -118,25 +112,19 @@ impl Compression {
                 use lzma::LzmaWriter;
                 use std::io::prelude::*;
                 output.clear();
-                let mut f = LzmaWriter::new_decompressor(output)
-                    .map_err(|e| ("failed to create lzma decompressor", e))?;
-                f.write_all(&input)
-                    .map_err(|e| ("failed to decompress using lzma", e))?;
-                f.finish()
-                    .map_err(|e| ("failed to finish lzma decompression", e))?;
+                let mut f = LzmaWriter::new_decompressor(output)?;
+                f.write_all(&input)?;
+                f.finish()?;
             }
             #[cfg(feature = "zstd-compression")]
             Compression::ZSTD(_) => {
                 output.clear();
-                zstd::stream::copy_decode(&input[..], output)
-                    .map_err(|e| ("failed to decompress using zstd", e))?;
+                zstd::stream::copy_decode(&input[..], output)?;
             }
             Compression::Brotli(_) => {
                 output.clear();
                 let mut decompressor = brotli::DecompressorWriter::new(output, 1024 * 1024);
-                decompressor
-                    .write_all(&input)
-                    .map_err(|e| ("failed to decompress using brotli", e))?;
+                decompressor.write_all(&input)?;
             }
             Compression::None => {
                 // Archived chunk is NOT compressed

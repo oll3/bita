@@ -1,6 +1,6 @@
 use async_stream::try_stream;
 use futures_core::stream::Stream;
-use futures_util::{pin_mut, StreamExt, TryFutureExt};
+use futures_util::{pin_mut, StreamExt};
 use reqwest::Url;
 use std::collections::VecDeque;
 use std::io::SeekFrom;
@@ -130,7 +130,7 @@ impl Reader {
                     // Truncate the response if bigger than requested size
                     Ok(res[..size].to_vec())
                 } else if res.len() < size {
-                    Err("unexpected end of response".into())
+                    Err(Error::UnexpectedEnd)
                 } else {
                     Ok(res[..].to_vec())
                 }
@@ -139,17 +139,11 @@ impl Reader {
                 file_path,
                 start_offset,
             } => {
-                let mut file = File::open(file_path)
-                    .map_err(|err| ("failed to open file", err))
-                    .await?;
-                file.seek(SeekFrom::Start(start_offset))
-                    .await
-                    .map_err(|err| ("failed to seek file", err))?;
+                let mut file = File::open(file_path).await?;
+                file.seek(SeekFrom::Start(start_offset)).await?;
                 let mut res = vec![0; size];
-                match file.read_exact(&mut res).await {
-                    Ok(_) => Ok(res),
-                    Err(err) => Err(("failed to read from file", err).into()),
-                }
+                file.read_exact(&mut res).await?;
+                Ok(res)
             }
         }
     }
@@ -169,9 +163,10 @@ impl Reader {
                                 yield chunk_buf.drain(..chunk_size).collect();
                                 break;
                             }
-                            if let Some(result) = stream.next().await {
-                                let tmp_buf = result?;
-                                chunk_buf.extend_from_slice(&tmp_buf[..]);
+                            match stream.next().await {
+                                Some(Ok(tmp_buf)) => chunk_buf.extend_from_slice(&tmp_buf[..]),
+                                Some(Err(err)) => Err(err)?,
+                                None => {}
                             }
                         }
                     }
@@ -180,15 +175,11 @@ impl Reader {
                     file_path,
                     start_offset,
                 } => {
-                    let mut file = File::open(file_path)
-                        .map_err(|err| ("failed to open file", err))
-                        .await?;
-                    file.seek(SeekFrom::Start(start_offset))
-                        .await
-                        .map_err(|err| ("failed to seek file", err))?;
+                    let mut file = File::open(file_path).await?;
+                    file.seek(SeekFrom::Start(start_offset)).await?;
                     while let Some(chunk_size) = chunk_sizes.pop_front() {
                         let mut chunk_buf = vec![0; chunk_size];
-                        file.read_exact(&mut chunk_buf).await.map_err(|err| ("failed to read from file", err))?;
+                        file.read_exact(&mut chunk_buf).await?;
                         yield chunk_buf;
                     }
                 }

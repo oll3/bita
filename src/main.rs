@@ -14,7 +14,7 @@ use std::process;
 use crate::string_utils::*;
 use bitar::chunker::{ChunkerConfig, HashConfig, HashFilterBits};
 use bitar::compression::Compression;
-use bitar::error::Error;
+use bitar::Error;
 use bitar::HashSum;
 use bitar::ReaderBackend;
 

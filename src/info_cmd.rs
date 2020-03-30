@@ -4,7 +4,7 @@ use std::path::Path;
 use crate::string_utils::*;
 use bitar::archive_reader::ArchiveReader;
 use bitar::chunker::{ChunkerConfig, HashConfig};
-use bitar::error::Error;
+use bitar::Error;
 use bitar::ReaderBackend;
 
 pub async fn print_archive_backend(reader_backend: ReaderBackend) -> Result<(), Error> {
