@@ -5,9 +5,7 @@ use core::task::{Context, Poll};
 use futures_core::stream::Stream;
 use tokio::io::AsyncRead;
 
-use crate::buzhash::BuzHash;
-use crate::rolling_hash::RollingHash;
-use crate::rollsum::RollSum;
+use crate::rolling_hash::{BuzHash, RollSum, RollingHash};
 
 const CHUNKER_BUF_SIZE: usize = 1024 * 1024;
 

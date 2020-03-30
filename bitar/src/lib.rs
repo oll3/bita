@@ -2,7 +2,6 @@
 
 pub mod archive;
 pub mod archive_reader;
-pub mod buzhash;
 pub mod chunk_index;
 pub mod chunk_location_map;
 pub mod chunker;
@@ -12,9 +11,8 @@ mod hashsum;
 mod http_range_request;
 mod reader_backend;
 pub mod rolling_hash;
-pub mod rollsum;
-pub use hashsum::*;
 
+pub use hashsum::HashSum;
 pub use reader_backend::ReaderBackend;
 
 pub mod chunk_dictionary {
