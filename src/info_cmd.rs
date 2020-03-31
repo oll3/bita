@@ -1,13 +1,12 @@
 use log::*;
-use std::path::Path;
 
 use crate::string_utils::*;
 use bitar::archive_reader::ArchiveReader;
 use bitar::chunker::{ChunkerConfig, HashConfig};
 use bitar::Error;
-use bitar::ReaderBackend;
+use bitar::{ReaderBackend, ReaderBackendLocal, ReaderBackendRemote};
 
-pub async fn print_archive_backend(reader_backend: ReaderBackend) -> Result<(), Error> {
+pub async fn print_archive_backend(reader_backend: &mut dyn ReaderBackend) -> Result<(), Error> {
     let archive = ArchiveReader::try_init(reader_backend).await?;
     print_archive(&archive);
     Ok(())
@@ -80,12 +79,14 @@ pub struct Command {
 
 impl Command {
     pub async fn run(self) -> Result<(), Error> {
-        let builder = if let Ok(uri) = self.input.parse() {
-            ReaderBackend::new_remote(uri, 0, None, None)
+        let mut reader_backend: Box<dyn ReaderBackend> = if let Ok(uri) = self.input.parse() {
+            Box::new(ReaderBackendRemote::new(uri, 0, None, None))
         } else {
-            ReaderBackend::new_local(&Path::new(&self.input))
+            Box::new(ReaderBackendLocal::new(
+                tokio::fs::File::open(&self.input).await?,
+            ))
         };
-        print_archive_backend(builder).await?;
+        print_archive_backend(&mut *reader_backend).await?;
         Ok(())
     }
 }

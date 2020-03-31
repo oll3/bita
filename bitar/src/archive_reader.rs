@@ -76,7 +76,7 @@ impl ArchiveReader {
         chunk_descriptors
     }
 
-    pub async fn try_init(mut backend: ReaderBackend) -> Result<Self, Error> {
+    pub async fn try_init(backend: &mut dyn ReaderBackend) -> Result<Self, Error> {
         // Read the pre-header (file magic and size)
         let mut header = backend.read_at(0, archive::PRE_HEADER_SIZE).await?;
         Self::verify_pre_header(&header)?;

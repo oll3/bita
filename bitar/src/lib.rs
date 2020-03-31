@@ -14,7 +14,7 @@ pub mod rolling_hash;
 
 pub use error::Error;
 pub use hashsum::HashSum;
-pub use reader_backend::ReaderBackend;
+pub use reader_backend::{ReaderBackend, ReaderBackendLocal, ReaderBackendRemote};
 
 pub mod chunk_dictionary {
     include!(concat!(env!("OUT_DIR"), "/chunk_dictionary.rs"));

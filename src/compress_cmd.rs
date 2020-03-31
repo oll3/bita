@@ -16,7 +16,7 @@ use bitar::chunker::{Chunker, ChunkerConfig};
 use bitar::compression::Compression;
 use bitar::Error;
 use bitar::HashSum;
-use bitar::ReaderBackend;
+use bitar::ReaderBackendLocal;
 
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -255,8 +255,8 @@ impl Command {
         drop(output_file);
         {
             // Print archive info
-            let reader_backend = ReaderBackend::new_local(&self.output);
-            info_cmd::print_archive_backend(reader_backend).await?;
+            let mut reader_backend = ReaderBackendLocal::new(File::open(self.output).await?);
+            info_cmd::print_archive_backend(&mut reader_backend).await?;
         }
         Ok(())
     }

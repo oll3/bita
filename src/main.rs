@@ -16,7 +16,6 @@ use bitar::chunker::{ChunkerConfig, HashConfig, HashFilterBits};
 use bitar::compression::Compression;
 use bitar::Error;
 use bitar::HashSum;
-use bitar::ReaderBackend;
 
 pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -132,31 +131,31 @@ fn parse_size(size_str: &str) -> usize {
     }
 }
 
-fn parse_input_config(matches: &clap::ArgMatches<'_>) -> ReaderBackend {
+fn parse_input_config(matches: &clap::ArgMatches<'_>) -> clone_cmd::InputArchive {
     let input = matches.value_of("INPUT").unwrap().to_string();
     match input.parse::<reqwest::Url>() {
         Ok(url) => {
             // Use as URL
-            ReaderBackend::new_remote(
+            clone_cmd::InputArchive::Remote {
                 url,
-                matches
+                retries: matches
                     .value_of("http-retry-count")
                     .unwrap_or("0")
                     .parse()
                     .expect("failed to parse http-retry-count"),
-                matches.value_of("http-retry-delay").map(|v| {
+                retry_delay: matches.value_of("http-retry-delay").map(|v| {
                     std::time::Duration::from_secs(
                         v.parse().expect("failed to parse http-retry-delay"),
                     )
                 }),
-                matches.value_of("http-timeout").map(|v| {
+                receive_timeout: matches.value_of("http-timeout").map(|v| {
                     std::time::Duration::from_secs(v.parse().expect("failed to parse http-timeout"))
                 }),
-            )
+            }
         }
         Err(_) => {
             // Use as path
-            ReaderBackend::new_local(Path::new(&input))
+            clone_cmd::InputArchive::Local(input.into())
         }
     }
 }
@@ -440,9 +439,9 @@ fn parse_opts() -> Result<Command, Error> {
         let header_checksum = matches
             .value_of("verify-header")
             .map(|c| HashSum::from_vec(hex_str_to_vec(c).expect("failed to parse checksum")));
-
+        let input_archive = parse_input_config(&matches);
         Ok(Command::Clone(Box::new(clone_cmd::Command {
-            input: parse_input_config(&matches),
+            input_archive,
             header_checksum,
             output: Path::new(output).to_path_buf(),
             force_create: matches.is_present("force-create"),

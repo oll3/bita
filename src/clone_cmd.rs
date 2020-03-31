@@ -13,7 +13,7 @@ use bitar::archive_reader::ArchiveReader;
 use bitar::chunk_index::{ChunkIndex, ReorderOp};
 use bitar::Error;
 use bitar::HashSum;
-use bitar::ReaderBackend;
+use bitar::{ReaderBackend, ReaderBackendLocal, ReaderBackendRemote};
 
 async fn update_in_place(
     output: &mut Output,
@@ -77,15 +77,12 @@ async fn update_in_place(
 }
 
 async fn finish_using_archive(
-    reader_backend: ReaderBackend,
+    reader_backend: &mut dyn ReaderBackend,
     archive: &ArchiveReader,
     chunks_left: ChunkIndex,
     output: &mut Output,
     num_chunk_buffers: usize,
 ) -> Result<u64, Error> {
-    let fetch_count = chunks_left.len();
-    let source = reader_backend.source();
-    info!("Fetching {} chunks from {}...", fetch_count, &source);
     let mut total_written = 0u64;
     let mut total_fetched = 0u64;
     let grouped_chunks = archive.grouped_chunks(&chunks_left);
@@ -93,10 +90,11 @@ async fn finish_using_archive(
         // For each group of chunks
         let start_offset = archive.chunk_data_offset() + group[0].archive_offset;
         let compression = archive.chunk_compression();
-        let chunk_sizes: Vec<usize> = group.iter().map(|c| c.archive_size as usize).collect();
-
         let archive_chunk_stream = reader_backend
-            .read_chunks(start_offset, &chunk_sizes)
+            .read_chunks(
+                start_offset,
+                group.iter().map(|c| c.archive_size as usize).collect(),
+            )
             .enumerate()
             .map(|(chunk_index, compressed_chunk)| {
                 let compressed_chunk = compressed_chunk.expect("failed to read archive");
@@ -140,17 +138,11 @@ async fn finish_using_archive(
             }
         }
     }
-    info!(
-        "Fetched {} chunks ({} transferred) from {}",
-        fetch_count,
-        size_to_str(total_fetched),
-        &source,
-    );
     Ok(total_written)
 }
 
-async fn clone_archive(cmd: &Command) -> Result<(), Error> {
-    let archive = ArchiveReader::try_init(cmd.input.clone()).await?;
+async fn clone_archive(cmd: Command, reader_backend: &mut dyn ReaderBackend) -> Result<(), Error> {
+    let archive = ArchiveReader::try_init(reader_backend).await?;
     let mut chunks_left = archive.source_index().clone();
     let mut total_read_from_seed = 0u64;
 
@@ -167,7 +159,7 @@ async fn clone_archive(cmd: &Command) -> Result<(), Error> {
     }
     info!(
         "Cloning archive {} to {}...",
-        cmd.input.source(),
+        cmd.input_archive.source(),
         cmd.output.display()
     );
 
@@ -251,8 +243,13 @@ async fn clone_archive(cmd: &Command) -> Result<(), Error> {
 
     // Read the rest from archive
     let total_output_from_remote = if !chunks_left.is_empty() {
+        info!(
+            "Fetching {} chunks from {}...",
+            chunks_left.len(),
+            cmd.input_archive.source()
+        );
         finish_using_archive(
-            cmd.input.clone(),
+            reader_backend,
             &archive,
             chunks_left,
             &mut output,
@@ -274,7 +271,7 @@ async fn clone_archive(cmd: &Command) -> Result<(), Error> {
                 "checksum mismatch ({}: {}, {}: {})",
                 cmd.output.display(),
                 sum,
-                cmd.input.source(),
+                cmd.input_archive.source(),
                 expected_checksum
             );
         }
@@ -290,9 +287,28 @@ async fn clone_archive(cmd: &Command) -> Result<(), Error> {
 }
 
 #[derive(Debug, Clone)]
+pub enum InputArchive {
+    Local(std::path::PathBuf),
+    Remote {
+        url: reqwest::Url,
+        retries: u32,
+        retry_delay: Option<std::time::Duration>,
+        receive_timeout: Option<std::time::Duration>,
+    },
+}
+impl InputArchive {
+    fn source(&self) -> String {
+        match self {
+            Self::Local(p) => format!("{}", p.display()),
+            Self::Remote { url, .. } => url.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Command {
     pub force_create: bool,
-    pub input: ReaderBackend,
+    pub input_archive: InputArchive,
     pub header_checksum: Option<HashSum>,
     pub output: PathBuf,
     pub seed_stdin: bool,
@@ -304,6 +320,24 @@ pub struct Command {
 
 impl Command {
     pub async fn run(self) -> Result<(), Error> {
-        clone_archive(&self).await
+        let mut reader_backend: Box<dyn ReaderBackend> = match &self.input_archive {
+            InputArchive::Local(path) => Box::new(ReaderBackendLocal::new(
+                File::open(path)
+                    .await
+                    .expect("failed to open local archive"),
+            )),
+            InputArchive::Remote {
+                url,
+                retries,
+                retry_delay,
+                receive_timeout,
+            } => Box::new(ReaderBackendRemote::new(
+                url.clone(),
+                *retries,
+                *retry_delay,
+                *receive_timeout,
+            )),
+        };
+        clone_archive(self, &mut *reader_backend).await
     }
 }
