@@ -1,19 +1,42 @@
+use async_trait::async_trait;
 use blake2::{Blake2b, Digest};
 use std::io::SeekFrom;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use bitar::chunk_index::ChunkIndex;
-use bitar::chunker::ChunkerConfig;
-use bitar::Error;
-use bitar::HashSum;
+use crate::chunk_index::ChunkIndex;
+use crate::chunker::ChunkerConfig;
+use crate::Error;
+use crate::HashSum;
 
-pub struct Output {
+#[async_trait]
+pub trait Output {
+    /// Write a single chunk to output at the given offsets
+    async fn write_chunk(
+        &mut self,
+        hash: &HashSum,
+        offsets: &[u64],
+        buf: &[u8],
+    ) -> Result<(), Error>;
+    /// Read a to buffer from file at offset
+    async fn seek_read(&mut self, offset: u64, buf: &mut [u8]) -> Result<(), Error>;
+    /// Build a chunk index of output
+    async fn chunk_index(
+        &mut self,
+        chunker_config: &ChunkerConfig,
+        hash_length: usize,
+    ) -> Result<ChunkIndex, Error>;
+    /// Generate total checksum of the output
+    async fn checksum(&mut self) -> Result<HashSum, Error>;
+}
+
+/// Output file
+pub struct OutputFile {
     file: File,
     block_dev: bool,
 }
 
-impl Output {
+impl OutputFile {
     pub async fn new_from(mut file: File) -> Result<Self, Error> {
         file.seek(SeekFrom::Start(0)).await?;
         let block_dev = is_block_dev(&mut file).await?;
@@ -31,13 +54,13 @@ impl Output {
         Ok(size)
     }
 
-    pub async fn seek_write(&mut self, offset: u64, buf: &[u8]) -> Result<(), std::io::Error> {
+    async fn seek_write(&mut self, offset: u64, buf: &[u8]) -> Result<(), std::io::Error> {
         self.file.seek(SeekFrom::Start(offset)).await?;
         self.file.write_all(buf).await?;
         Ok(())
     }
 
-    pub async fn seek_read(&mut self, offset: u64, buf: &mut [u8]) -> Result<(), std::io::Error> {
+    async fn seek_read(&mut self, offset: u64, buf: &mut [u8]) -> Result<(), std::io::Error> {
         self.file.seek(SeekFrom::Start(offset)).await?;
         self.file.read_exact(buf).await?;
         Ok(())
@@ -48,7 +71,7 @@ impl Output {
         Ok(())
     }
 
-    pub async fn chunk_index(
+    async fn chunk_index(
         &mut self,
         chunker_config: &ChunkerConfig,
         hash_length: usize,
@@ -60,7 +83,7 @@ impl Output {
         Ok(index)
     }
 
-    pub async fn checksum(&mut self) -> Result<HashSum, Error> {
+    async fn checksum(&mut self) -> Result<HashSum, Error> {
         self.file.seek(SeekFrom::Start(0)).await?;
         let mut output_hasher = Blake2b::new();
         let mut buffer: Vec<u8> = vec![0; 4 * 1024 * 1024];
@@ -72,6 +95,34 @@ impl Output {
             output_hasher.input(&buffer[0..rc]);
         }
         Ok(HashSum::from_slice(&output_hasher.result()[..]))
+    }
+}
+
+#[async_trait]
+impl Output for OutputFile {
+    async fn write_chunk(
+        &mut self,
+        _hash: &HashSum,
+        offsets: &[u64],
+        buf: &[u8],
+    ) -> Result<(), Error> {
+        for &offset in offsets {
+            self.seek_write(offset, buf).await?;
+        }
+        Ok(())
+    }
+    async fn seek_read(&mut self, offset: u64, buf: &mut [u8]) -> Result<(), Error> {
+        Ok(self.seek_read(offset, buf).await?)
+    }
+    async fn chunk_index(
+        &mut self,
+        chunker_config: &ChunkerConfig,
+        hash_length: usize,
+    ) -> Result<ChunkIndex, Error> {
+        Ok(self.chunk_index(chunker_config, hash_length).await?)
+    }
+    async fn checksum(&mut self) -> Result<HashSum, Error> {
+        self.checksum().await
     }
 }
 

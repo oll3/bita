@@ -3,46 +3,38 @@ use futures_util::stream::StreamExt;
 use log::*;
 use tokio::io::AsyncRead;
 
-use crate::output::Output;
-use crate::string_utils::*;
-use bitar::archive_reader::ArchiveReader;
-use bitar::chunk_index::ChunkIndex;
-use bitar::chunker::{Chunker, ChunkerConfig};
-use bitar::Error;
-use bitar::HashSum;
+use crate::Archive;
+use crate::ChunkIndex;
+use crate::Error;
+use crate::HashSum;
+use crate::Output;
+use crate::{Chunker, ChunkerConfig};
 
-pub struct SeedInput<'a, I> {
+pub struct Seed<'a, I> {
     input: I,
     chunker_config: &'a ChunkerConfig,
     num_chunk_buffers: usize,
-    stats: SeedStats,
 }
 
-#[derive(Default)]
-pub struct SeedStats {
-    pub chunks_used: usize,
-    pub bytes_used: u64,
-}
-
-impl<'a, I> SeedInput<'a, I> {
+impl<'a, I> Seed<'a, I> {
     pub fn new(input: I, chunker_config: &'a ChunkerConfig, num_chunk_buffers: usize) -> Self {
         Self {
             input,
             chunker_config,
             num_chunk_buffers,
-            stats: SeedStats::default(),
         }
     }
 
     pub async fn seed(
         mut self,
-        archive: &ArchiveReader,
+        archive: &Archive,
         chunks_left: &mut ChunkIndex,
-        output: &mut Output,
-    ) -> Result<SeedStats, Error>
+        output: &mut dyn Output,
+    ) -> Result<u64, Error>
     where
         I: AsyncRead + Unpin,
     {
+        let mut bytes_used = 0;
         let hash_length = archive.chunk_hash_length();
         let seed_chunker = Chunker::new(self.chunker_config, &mut self.input);
         let mut found_chunks = seed_chunker
@@ -71,18 +63,15 @@ impl<'a, I> SeedInput<'a, I> {
 
         while let Some(result) = found_chunks.next().await {
             let (hash, chunk) = result?;
-            debug!("Chunk '{}', size {} used", hash, size_to_str(chunk.len()));
-            for offset in archive
+            debug!("Chunk '{}', size {} used", hash, chunk.len());
+            let offsets: Vec<u64> = archive
                 .source_index()
                 .offsets(&hash)
                 .unwrap_or_else(|| panic!("missing chunk ({}) in source!?", hash))
-            {
-                self.stats.bytes_used += chunk.len() as u64;
-                output.seek_write(offset, &chunk).await?;
-            }
-            self.stats.chunks_used += 1;
+                .collect();
+            output.write_chunk(&hash, &offsets[..], &chunk).await?;
+            bytes_used += chunk.len() as u64 * offsets.len() as u64;
         }
-
-        Ok(self.stats)
+        Ok(bytes_used)
     }
 }

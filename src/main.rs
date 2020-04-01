@@ -2,8 +2,6 @@ mod clone_cmd;
 mod compress_cmd;
 mod diff_cmd;
 mod info_cmd;
-mod output;
-mod seed_input;
 mod string_utils;
 
 use clap::{App, Arg, SubCommand};
@@ -12,10 +10,10 @@ use std::path::Path;
 use std::process;
 
 use crate::string_utils::*;
-use bitar::chunker::{ChunkerConfig, HashConfig, HashFilterBits};
-use bitar::compression::Compression;
+use bitar::Compression;
 use bitar::Error;
 use bitar::HashSum;
+use bitar::{ChunkerConfig, ChunkerFilterBits, ChunkerFilterConfig};
 
 pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -31,12 +29,12 @@ enum Command {
 fn parse_hash_chunker_config(
     matches: &clap::ArgMatches<'_>,
     default_window_size: &str,
-) -> HashConfig {
+) -> ChunkerFilterConfig {
     let avg_chunk_size = parse_size(matches.value_of("avg-chunk-size").unwrap_or("64KiB"));
     let min_chunk_size = parse_size(matches.value_of("min-chunk-size").unwrap_or("16KiB"));
     let max_chunk_size = parse_size(matches.value_of("max-chunk-size").unwrap_or("16MiB"));
 
-    let filter_bits = HashFilterBits::from_size(avg_chunk_size as u32);
+    let filter_bits = ChunkerFilterBits::from_size(avg_chunk_size as u32);
     if min_chunk_size > avg_chunk_size {
         panic!("min-chunk-size > avg-chunk-size");
     }
@@ -49,7 +47,7 @@ fn parse_hash_chunker_config(
             .unwrap_or(default_window_size),
     );
 
-    HashConfig {
+    ChunkerFilterConfig {
         filter_bits,
         min_chunk_size,
         max_chunk_size,

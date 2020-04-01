@@ -79,6 +79,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "bita"
 version = "0.5.2"
 dependencies = [
+ "async-trait 0.1.27 (registry+https://github.com/rust-lang/crates.io-index)",
  "atty 0.2.14 (registry+https://github.com/rust-lang/crates.io-index)",
  "bitar 0.5.2",
  "blake2 0.8.1 (registry+https://github.com/rust-lang/crates.io-index)",

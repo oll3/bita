@@ -7,7 +7,7 @@ use tokio::time::delay_for;
 
 use crate::Error;
 
-pub struct Builder {
+pub(crate) struct Builder {
     url: Url,
     size: u64,
     offset: u64,

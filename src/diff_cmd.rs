@@ -6,10 +6,7 @@ use tokio::fs::File;
 
 use crate::info_cmd;
 use crate::string_utils::*;
-use bitar::chunker::{Chunker, ChunkerConfig};
-use bitar::compression::Compression;
-use bitar::Error;
-use bitar::HashSum;
+use bitar::{Chunker, ChunkerConfig, Compression, Error, HashSum};
 
 #[derive(Clone, Debug)]
 struct ChunkDescriptor {

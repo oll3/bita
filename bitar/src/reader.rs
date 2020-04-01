@@ -14,7 +14,7 @@ use crate::error::Error;
 use crate::http_range_request;
 
 #[async_trait]
-pub trait ReaderBackend {
+pub trait Reader {
     async fn read_at(&mut self, offset: u64, size: usize) -> Result<Vec<u8>, Error>;
     fn read_chunks<'a>(
         &'a mut self,
@@ -23,11 +23,11 @@ pub trait ReaderBackend {
     ) -> Pin<Box<dyn Stream<Item = Result<Vec<u8>, Error>> + Send + 'a>>;
 }
 
-pub struct ReaderBackendLocal {
+pub struct ReaderLocal {
     file: File,
 }
 
-impl ReaderBackendLocal {
+impl ReaderLocal {
     pub fn new(file: File) -> Self {
         Self { file }
     }
@@ -49,7 +49,7 @@ impl ReaderBackendLocal {
 }
 
 #[async_trait]
-impl ReaderBackend for ReaderBackendLocal {
+impl Reader for ReaderLocal {
     async fn read_at(&mut self, offset: u64, size: usize) -> Result<Vec<u8>, Error> {
         self.file.seek(SeekFrom::Start(offset)).await?;
         let mut res = vec![0; size];
@@ -65,14 +65,14 @@ impl ReaderBackend for ReaderBackendLocal {
     }
 }
 
-pub struct ReaderBackendRemote {
+pub struct ReaderRemote {
     url: Url,
     retries: u32,
     retry_delay: Option<Duration>,
     receive_timeout: Option<Duration>,
 }
 
-impl ReaderBackendRemote {
+impl ReaderRemote {
     pub fn new(
         url: Url,
         retries: u32,
@@ -123,7 +123,7 @@ impl ReaderBackendRemote {
 }
 
 #[async_trait]
-impl ReaderBackend for ReaderBackendRemote {
+impl Reader for ReaderRemote {
     async fn read_at(&mut self, offset: u64, size: usize) -> Result<Vec<u8>, Error> {
         let request = http_range_request::Builder::new(self.url.clone(), offset, size as u64)
             .receive_timeout(self.receive_timeout)
@@ -158,10 +158,9 @@ mod tests {
         let mut file = NamedTempFile::new().unwrap();
         let expected: Vec<u8> = b"hello file".to_vec();
         file.write_all(&expected).unwrap();
-        let backend = ReaderBackendLocal::new(File::open(&file.path()).await.unwrap());
-        pin_mut!(backend);
-        let reader = backend.read_at(0, expected.len());
-        let read_back = reader.await.unwrap();
+        let reader = ReaderLocal::new(File::open(&file.path()).await.unwrap());
+        pin_mut!(reader);
+        let read_back = reader.read_at(0, expected.len()).await.unwrap();
         assert_eq!(read_back, expected);
     }
     #[tokio::test]
@@ -169,10 +168,9 @@ mod tests {
         let mut file = NamedTempFile::new().unwrap();
         let expected: Vec<u8> = (0..10 * 1024 * 1024).map(|v| v as u8).collect();
         file.write_all(&expected).unwrap();
-        let backend = ReaderBackendLocal::new(File::open(&file.path()).await.unwrap());
-        pin_mut!(backend);
-        let reader = backend.read_at(0, expected.len());
-        let read_back = reader.await.unwrap();
+        let reader = ReaderLocal::new(File::open(&file.path()).await.unwrap());
+        pin_mut!(reader);
+        let read_back = reader.read_at(0, expected.len()).await.unwrap();
         assert_eq!(read_back, expected);
     }
     #[tokio::test]
@@ -181,8 +179,8 @@ mod tests {
         let expected: Vec<u8> = (0..10 * 1024 * 1024).map(|v| v as u8).collect();
         let chunk_sizes: VecDeque<usize> = vec![10, 20, 30, 100, 200, 400, 8 * 1024 * 1024].into();
         file.write_all(&expected).unwrap();
-        let mut backend = ReaderBackendLocal::new(File::open(&file.path()).await.unwrap());
-        let stream = backend.read_chunks(0, chunk_sizes.clone());
+        let mut reader = ReaderLocal::new(File::open(&file.path()).await.unwrap());
+        let stream = reader.read_chunks(0, chunk_sizes.clone());
         {
             pin_mut!(stream);
             let mut chunk_offset = 0;
@@ -197,5 +195,5 @@ mod tests {
             assert_eq!(chunk_count, chunk_sizes.len());
         }
     }
-    // TODO: Add tests for remote backend
+    // TODO: Add tests for remote reader
 }

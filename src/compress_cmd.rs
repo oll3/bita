@@ -10,13 +10,9 @@ use tokio::prelude::*;
 
 use crate::info_cmd;
 use crate::string_utils::*;
-use bitar::archive;
+use bitar::build_header;
 use bitar::chunk_dictionary as dict;
-use bitar::chunker::{Chunker, ChunkerConfig};
-use bitar::compression::Compression;
-use bitar::Error;
-use bitar::HashSum;
-use bitar::ReaderBackendLocal;
+use bitar::{Chunker, ChunkerConfig, Compression, Error, HashSum, ReaderLocal};
 
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -241,7 +237,7 @@ impl Command {
             source_total_size: source_size,
             chunker_params: Some(chunker_params),
         };
-        let header_buf = archive::build_header(&file_header, None)?;
+        let header_buf = build_header(&file_header, None)?;
         output_file
             .write_all(&header_buf)
             .expect("failed to write header");
@@ -255,8 +251,8 @@ impl Command {
         drop(output_file);
         {
             // Print archive info
-            let mut reader_backend = ReaderBackendLocal::new(File::open(self.output).await?);
-            info_cmd::print_archive_backend(&mut reader_backend).await?;
+            let mut reader = ReaderLocal::new(File::open(self.output).await?);
+            info_cmd::print_archive_reader(&mut reader).await?;
         }
         Ok(())
     }

@@ -1,18 +1,17 @@
 use log::*;
 
 use crate::string_utils::*;
-use bitar::archive_reader::ArchiveReader;
-use bitar::chunker::{ChunkerConfig, HashConfig};
-use bitar::Error;
-use bitar::{ReaderBackend, ReaderBackendLocal, ReaderBackendRemote};
+use bitar::{
+    Archive, ChunkerConfig, ChunkerFilterConfig, Error, Reader, ReaderLocal, ReaderRemote,
+};
 
-pub async fn print_archive_backend(reader_backend: &mut dyn ReaderBackend) -> Result<(), Error> {
-    let archive = ArchiveReader::try_init(reader_backend).await?;
+pub async fn print_archive_reader(reader: &mut dyn Reader) -> Result<(), Error> {
+    let archive = Archive::try_init(reader).await?;
     print_archive(&archive);
     Ok(())
 }
 
-fn print_rolling_hash_config(hc: &HashConfig) {
+fn print_rolling_hash_config(hc: &ChunkerFilterConfig) {
     info!(
         "  Rolling hash window size: {}",
         size_to_str(hc.window_size)
@@ -37,7 +36,7 @@ pub fn print_chunker_config(config: &ChunkerConfig) {
     }
 }
 
-pub fn print_archive(archive: &ArchiveReader) {
+pub fn print_archive(archive: &Archive) {
     info!("Archive: ");
     info!("  Version: {}", archive.built_with_version());
     info!(
@@ -79,14 +78,12 @@ pub struct Command {
 
 impl Command {
     pub async fn run(self) -> Result<(), Error> {
-        let mut reader_backend: Box<dyn ReaderBackend> = if let Ok(uri) = self.input.parse() {
-            Box::new(ReaderBackendRemote::new(uri, 0, None, None))
+        let mut reader: Box<dyn Reader> = if let Ok(uri) = self.input.parse() {
+            Box::new(ReaderRemote::new(uri, 0, None, None))
         } else {
-            Box::new(ReaderBackendLocal::new(
-                tokio::fs::File::open(&self.input).await?,
-            ))
+            Box::new(ReaderLocal::new(tokio::fs::File::open(&self.input).await?))
         };
-        print_archive_backend(&mut *reader_backend).await?;
+        print_archive_reader(&mut *reader).await?;
         Ok(())
     }
 }
