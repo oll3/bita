@@ -42,7 +42,22 @@ impl<'a> PartialOrd for MoveChunk<'a> {
 }
 
 #[derive(Clone, Debug)]
-pub struct ChunkIndex(HashMap<HashSum, (usize, BinaryHeap<u64>)>);
+pub struct ChunkSizeAndOffset {
+    pub size: usize,
+    pub offsets: BinaryHeap<u64>,
+}
+
+impl From<(usize, &[u64])> for ChunkSizeAndOffset {
+    fn from((size, offsets): (usize, &[u64])) -> Self {
+        Self {
+            size,
+            offsets: offsets.iter().copied().collect(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ChunkIndex(HashMap<HashSum, ChunkSizeAndOffset>);
 
 impl ChunkIndex {
     pub async fn try_build_from_file(
@@ -65,33 +80,45 @@ impl ChunkIndex {
             })
             .buffered(8);
 
-        let mut chunk_lookup: HashMap<HashSum, (usize, BinaryHeap<u64>)> = HashMap::new();
+        let mut chunk_lookup: HashMap<HashSum, ChunkSizeAndOffset> = HashMap::new();
         while let Some(result) = chunk_stream.next().await {
             let (chunk_hash, chunk_offset, chunk_size) = result.unwrap()?;
             if let Some(cd) = chunk_lookup.get_mut(&chunk_hash) {
-                cd.1.push(chunk_offset);
+                cd.offsets.push(chunk_offset);
             } else {
-                let mut bh = BinaryHeap::new();
-                bh.push(chunk_offset);
-                chunk_lookup.insert(chunk_hash.clone(), (chunk_size, bh));
+                let mut offsets = BinaryHeap::new();
+                offsets.push(chunk_offset);
+                chunk_lookup.insert(
+                    chunk_hash.clone(),
+                    ChunkSizeAndOffset {
+                        size: chunk_size,
+                        offsets,
+                    },
+                );
             }
         }
         Ok(Self(chunk_lookup))
     }
 
     pub fn from_dictionary(dict: &ChunkDictionary) -> Self {
-        let mut chunk_lookup: HashMap<HashSum, (usize, BinaryHeap<u64>)> = HashMap::new();
+        let mut chunk_lookup: HashMap<HashSum, ChunkSizeAndOffset> = HashMap::new();
         let mut chunk_offset = 0;
         dict.rebuild_order.iter().for_each(|&chunk_index| {
             let chunk_index = chunk_index as usize;
             let chunk_hash = HashSum::from_slice(&dict.chunk_descriptors[chunk_index].checksum[..]);
             let chunk_size = dict.chunk_descriptors[chunk_index].source_size as usize;
             if let Some(cd) = chunk_lookup.get_mut(&chunk_hash) {
-                cd.1.push(chunk_offset);
+                cd.offsets.push(chunk_offset);
             } else {
-                let mut bh = BinaryHeap::new();
-                bh.push(chunk_offset);
-                chunk_lookup.insert(chunk_hash.clone(), (chunk_size, bh));
+                let mut offsets = BinaryHeap::new();
+                offsets.push(chunk_offset);
+                chunk_lookup.insert(
+                    chunk_hash.clone(),
+                    ChunkSizeAndOffset {
+                        size: chunk_size,
+                        offsets,
+                    },
+                );
             }
             chunk_offset += chunk_size as u64;
         });
@@ -106,12 +133,12 @@ impl ChunkIndex {
         self.0.contains_key(hash)
     }
 
-    pub fn get(&self, hash: &HashSum) -> Option<&(usize, BinaryHeap<u64>)> {
+    pub fn get(&self, hash: &HashSum) -> Option<&ChunkSizeAndOffset> {
         self.0.get(hash)
     }
     pub fn get_first_offset(&self, hash: &HashSum) -> Option<(usize, u64)> {
         self.get(&hash)
-            .map(|(size, offsets)| (*size, *offsets.peek().unwrap()))
+            .map(|ChunkSizeAndOffset { size, offsets }| (*size, *offsets.peek().unwrap()))
     }
 
     pub fn len(&self) -> usize {
@@ -124,18 +151,18 @@ impl ChunkIndex {
 
     // Get source offsets of a chunk
     pub fn offsets<'a>(&'a self, hash: &HashSum) -> Option<impl Iterator<Item = u64> + 'a> {
-        self.0.get(hash).map(|d| d.1.iter().copied())
+        self.0.get(hash).map(|d| d.offsets.iter().copied())
     }
 
     pub fn strip_chunks_already_in_place(&self, chunk_set: &mut ChunkIndex) -> usize {
         let mut num_alread_in_place = 0;
-        let new_set: HashMap<HashSum, (usize, BinaryHeap<u64>)> = chunk_set
+        let new_set: HashMap<HashSum, ChunkSizeAndOffset> = chunk_set
             .0
             .iter()
             .filter_map(|(hash, cd)| {
-                if let Some((_hash, current_cd)) = self.get(hash) {
+                if let Some(ChunkSizeAndOffset { offsets, .. }) = self.get(hash) {
                     // Test if the chunk offsets are equal in the given set and in our set
-                    if cd.1.iter().zip(current_cd.iter()).all(|(a, b)| a == b) {
+                    if cd.offsets.iter().zip(offsets.iter()).all(|(a, b)| a == b) {
                         num_alread_in_place += 1;
                         return None;
                     }
@@ -172,7 +199,11 @@ impl ChunkIndex {
                 let mut child_stack = Vec::new();
                 let mut destinations = Vec::new();
 
-                if let Some((size, target_offsets)) = new_order.get(&chunk.hash) {
+                if let Some(ChunkSizeAndOffset {
+                    size,
+                    offsets: target_offsets,
+                }) = new_order.get(&chunk.hash)
+                {
                     target_offsets.iter().for_each(|&target_offset| {
                         let dest_location = ChunkLocation::new(target_offset, *size);
                         source_layout
@@ -256,7 +287,7 @@ impl ChunkIndex {
                 );
 
                 chunks_in_tree.into_iter().for_each(|hash| {
-                    let (size, offsets) = &self.get(&hash).unwrap();
+                    let ChunkSizeAndOffset { size, offsets } = &self.get(&hash).unwrap();
                     offsets.iter().for_each(|offset| {
                         source_layout.remove(&ChunkLocation::new(*offset, *size));
                     });
@@ -275,18 +306,18 @@ mod tests {
     #[test]
     fn reorder_with_overlap_and_loop() {
         let current_index = {
-            let mut chunks: HashMap<HashSum, (usize, BinaryHeap<u64>)> = HashMap::new();
-            chunks.insert(HashSum::from_slice(&[1]), (10, vec![0].into()));
-            chunks.insert(HashSum::from_slice(&[2]), (20, vec![10].into()));
-            chunks.insert(HashSum::from_slice(&[3]), (20, vec![30, 50].into()));
+            let mut chunks: HashMap<HashSum, ChunkSizeAndOffset> = HashMap::new();
+            chunks.insert(HashSum::from_slice(&[1]), (10, &[0][..]).into());
+            chunks.insert(HashSum::from_slice(&[2]), (20, &[10][..]).into());
+            chunks.insert(HashSum::from_slice(&[3]), (20, &[30, 50][..]).into());
             ChunkIndex(chunks)
         };
         let target_index = {
-            let mut chunks: HashMap<HashSum, (usize, BinaryHeap<u64>)> = HashMap::new();
-            chunks.insert(HashSum::from_slice(&[1]), (10, vec![60].into()));
-            chunks.insert(HashSum::from_slice(&[2]), (20, vec![50].into()));
-            chunks.insert(HashSum::from_slice(&[3]), (20, vec![10, 30].into()));
-            chunks.insert(HashSum::from_slice(&[4]), (5, vec![0, 5].into()));
+            let mut chunks: HashMap<HashSum, ChunkSizeAndOffset> = HashMap::new();
+            chunks.insert(HashSum::from_slice(&[1]), (10, &[60][..]).into());
+            chunks.insert(HashSum::from_slice(&[2]), (20, &[50][..]).into());
+            chunks.insert(HashSum::from_slice(&[3]), (20, &[10, 30][..]).into());
+            chunks.insert(HashSum::from_slice(&[4]), (5, &[0, 5][..]).into());
             ChunkIndex(chunks)
         };
         let ops = current_index.reorder_ops(&target_index);
@@ -331,22 +362,23 @@ mod tests {
     #[test]
     fn chunks_in_place() {
         let current_index = {
-            let mut chunks: HashMap<HashSum, (usize, BinaryHeap<u64>)> = HashMap::new();
-            chunks.insert(HashSum::from_slice(&[1]), (10, vec![0].into()));
-            chunks.insert(HashSum::from_slice(&[2]), (20, vec![20].into()));
-            chunks.insert(HashSum::from_slice(&[3]), (20, vec![30, 50].into()));
+            let mut chunks: HashMap<HashSum, ChunkSizeAndOffset> = HashMap::new();
+            chunks.insert(HashSum::from_slice(&[1]), (10, &[0][..]).into());
+            chunks.insert(HashSum::from_slice(&[2]), (20, &[20][..]).into());
+            chunks.insert(HashSum::from_slice(&[3]), (20, &[30, 50][..]).into());
             ChunkIndex(chunks)
         };
         let mut target_index = {
-            let mut chunks: HashMap<HashSum, (usize, BinaryHeap<u64>)> = HashMap::new();
-            chunks.insert(HashSum::from_slice(&[1]), (10, vec![10].into()));
-            chunks.insert(HashSum::from_slice(&[2]), (20, vec![20].into()));
-            chunks.insert(HashSum::from_slice(&[3]), (20, vec![30, 50].into()));
+            let mut chunks: HashMap<HashSum, ChunkSizeAndOffset> = HashMap::new();
+            chunks.insert(HashSum::from_slice(&[1]), (10, &[10][..]).into());
+            chunks.insert(HashSum::from_slice(&[2]), (20, &[20][..]).into());
+            chunks.insert(HashSum::from_slice(&[3]), (20, &[30, 50][..]).into());
             ChunkIndex(chunks)
         };
         current_index.strip_chunks_already_in_place(&mut target_index);
         assert_eq!(target_index.len(), 1);
-        let (size, offsets) = target_index.get(&HashSum::from_slice(&[1])).unwrap();
+        let ChunkSizeAndOffset { size, offsets } =
+            target_index.get(&HashSum::from_slice(&[1])).unwrap();
         assert_eq!(*size, 10);
         assert_eq!(offsets.clone().into_sorted_vec(), vec![10]);
     }
