@@ -3,11 +3,11 @@ use futures_util::stream::StreamExt;
 use log::*;
 use std::collections::HashMap;
 
-use crate::{Archive, ChunkIndex, Error, HashSum, Output, Reader, ReorderOp};
+use crate::{Archive, ChunkIndex, CloneOutput, Error, HashSum, Reader, ReorderOp};
 
 /// Clone by moving data in output in-place
 pub async fn clone_in_place(
-    output: &mut dyn Output,
+    output: &mut dyn CloneOutput,
     output_index: &ChunkIndex,
     chunks_left: &mut ChunkIndex,
 ) -> Result<u64, Error> {
@@ -49,7 +49,7 @@ pub async fn clone_using_archive(
     reader: &mut dyn Reader,
     archive: &Archive,
     chunks_left: ChunkIndex,
-    output: &mut dyn Output,
+    output: &mut dyn CloneOutput,
     num_chunk_buffers: usize,
 ) -> Result<u64, Error> {
     let mut total_written = 0u64;

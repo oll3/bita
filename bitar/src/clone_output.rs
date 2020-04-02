@@ -10,7 +10,7 @@ use crate::Error;
 use crate::HashSum;
 
 #[async_trait]
-pub trait Output {
+pub trait CloneOutput {
     /// Write a single chunk to output at the given offsets
     async fn write_chunk(
         &mut self,
@@ -31,12 +31,12 @@ pub trait Output {
 }
 
 /// Output file
-pub struct OutputFile {
+pub struct CloneOutputFile {
     file: File,
     block_dev: bool,
 }
 
-impl OutputFile {
+impl CloneOutputFile {
     pub async fn new_from(mut file: File) -> Result<Self, Error> {
         file.seek(SeekFrom::Start(0)).await?;
         let block_dev = is_block_dev(&mut file).await?;
@@ -99,7 +99,7 @@ impl OutputFile {
 }
 
 #[async_trait]
-impl Output for OutputFile {
+impl CloneOutput for CloneOutputFile {
     async fn write_chunk(
         &mut self,
         _hash: &HashSum,

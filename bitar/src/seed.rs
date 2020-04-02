@@ -5,9 +5,9 @@ use tokio::io::AsyncRead;
 
 use crate::Archive;
 use crate::ChunkIndex;
+use crate::CloneOutput;
 use crate::Error;
 use crate::HashSum;
-use crate::Output;
 use crate::{Chunker, ChunkerConfig};
 
 pub struct Seed<'a, I> {
@@ -29,7 +29,7 @@ impl<'a, I> Seed<'a, I> {
         mut self,
         archive: &Archive,
         chunks_left: &mut ChunkIndex,
-        output: &mut dyn Output,
+        output: &mut dyn CloneOutput,
     ) -> Result<u64, Error>
     where
         I: AsyncRead + Unpin,

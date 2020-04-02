@@ -5,8 +5,8 @@ use tokio::fs::File;
 use crate::info_cmd;
 use crate::string_utils::*;
 use bitar::{
-    clone_in_place, clone_using_archive, Archive, Error, HashSum, Output, OutputFile, Reader,
-    ReaderLocal, ReaderRemote, Seed,
+    clone_in_place, clone_using_archive, Archive, CloneOutput, CloneOutputFile, Error, HashSum,
+    Reader, ReaderLocal, ReaderRemote, Seed,
 };
 
 async fn clone_archive(cmd: Command, reader: &mut dyn Reader) -> Result<(), Error> {
@@ -44,7 +44,7 @@ async fn clone_archive(cmd: Command, reader: &mut dyn Reader) -> Result<(), Erro
         .await
         .expect("failed to open output file");
 
-    let mut output = OutputFile::new_from(output_file).await?;
+    let mut output = CloneOutputFile::new_from(output_file).await?;
 
     // Check if the given output file is a regular file or block device.
     // If it is a block device we should check its size against the target size before
