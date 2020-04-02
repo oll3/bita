@@ -52,7 +52,6 @@ pub async fn clone_using_archive(
     output: &mut dyn CloneOutput,
     num_chunk_buffers: usize,
 ) -> Result<u64, Error> {
-    let mut total_written = 0u64;
     let mut total_fetched = 0u64;
     let grouped_chunks = archive.grouped_chunks(&chunks_left);
     for group in grouped_chunks {
@@ -65,22 +64,18 @@ pub async fn clone_using_archive(
                 group.iter().map(|c| c.archive_size as usize).collect(),
             )
             .enumerate()
-            .map(|(chunk_index, compressed_chunk)| {
-                let compressed_chunk = compressed_chunk.expect("failed to read archive");
-                let chunk_checksum = group[chunk_index].checksum.clone();
-                let chunk_source_size = group[chunk_index].source_size as usize;
-                total_fetched += compressed_chunk.len() as u64;
+            .map(|(index, read_result)| {
+                let checksum = group[index].checksum.clone();
+                let source_size = group[index].source_size as usize;
+                if let Ok(chunk) = &read_result {
+                    total_fetched += chunk.len() as u64;
+                }
                 tokio::task::spawn(async move {
-                    (
-                        chunk_checksum.clone(),
-                        Archive::decompress_and_verify(
-                            compression,
-                            &chunk_checksum,
-                            chunk_source_size,
-                            compressed_chunk,
-                        )
-                        .expect("failed to decompress chunk"),
-                    )
+                    let chunk = read_result?;
+                    Ok::<_, Error>((
+                        checksum.clone(),
+                        Archive::decompress_and_verify(compression, &checksum, source_size, chunk)?,
+                    ))
                 })
             })
             .buffered(num_chunk_buffers);
@@ -88,20 +83,16 @@ pub async fn clone_using_archive(
         pin_mut!(archive_chunk_stream);
         while let Some(result) = archive_chunk_stream.next().await {
             // For each chunk read from archive
-            let (hash, chunk) = result.expect("spawn error");
+            let result = result?;
+            let (hash, chunk) = result?;
             let offsets: Vec<u64> = archive
                 .source_index()
                 .offsets(&hash)
                 .unwrap_or_else(|| panic!("missing chunk ({}) in source", hash))
                 .collect();
-            debug!("Chunk '{}', size {} used from archive", hash, chunk.len(),);
-
-            output
-                .write_chunk(&hash, &offsets[..], &chunk)
-                .await
-                .expect("failed to write output");
-            total_written += chunk.len() as u64 * offsets.len() as u64;
+            debug!("Chunk '{}', size {} used from archive", hash, chunk.len());
+            output.write_chunk(&hash, &offsets[..], &chunk).await?;
         }
     }
-    Ok(total_written)
+    Ok(total_fetched)
 }
