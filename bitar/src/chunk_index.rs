@@ -154,16 +154,21 @@ impl ChunkIndex {
         self.0.get(hash).map(|d| d.offsets.iter().copied())
     }
 
-    pub fn strip_chunks_already_in_place(&self, chunk_set: &mut ChunkIndex) -> usize {
+    /// Filter the given chunk index for chunks which are already in place in self
+    ///
+    /// Returns the number of chunks filtered and total size of them.
+    pub fn strip_chunks_already_in_place(&self, chunk_set: &mut ChunkIndex) -> (usize, u64) {
         let mut num_alread_in_place = 0;
+        let mut total_size = 0;
         let new_set: HashMap<HashSum, ChunkSizeAndOffset> = chunk_set
             .0
             .iter()
             .filter_map(|(hash, cd)| {
-                if let Some(ChunkSizeAndOffset { offsets, .. }) = self.get(hash) {
+                if let Some(ChunkSizeAndOffset { offsets, size }) = self.get(hash) {
                     // Test if the chunk offsets are equal in the given set and in our set
                     if cd.offsets.iter().zip(offsets.iter()).all(|(a, b)| a == b) {
                         num_alread_in_place += 1;
+                        total_size += *size as u64;
                         return None;
                     }
                 }
@@ -171,7 +176,7 @@ impl ChunkIndex {
             })
             .collect();
         chunk_set.0 = new_set;
-        num_alread_in_place
+        (num_alread_in_place, total_size)
     }
 
     // Each chunk to reorder will potentially overwrite other chunks.
