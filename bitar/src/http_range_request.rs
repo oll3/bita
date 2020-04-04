@@ -46,7 +46,7 @@ impl Builder {
         timeout: Option<Duration>,
     ) -> impl Stream<Item = Result<bytes::Bytes, Error>> {
         try_stream! {
-            log::info!("Requesting {}, starting at offset {} with size {}...", url, offset, size);
+            log::debug!("Requesting {}, starting at offset {} with size {}...", url, offset, size);
             let end_offset = offset + size - 1;
             let mut request = client.get(url).header(
                 reqwest::header::RANGE,
