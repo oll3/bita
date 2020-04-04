@@ -4,7 +4,7 @@ use futures_util::{future, pin_mut};
 use log::*;
 use num_cpus;
 use std::collections::HashMap;
-use tokio::io::AsyncRead;
+use tokio::io::{AsyncRead, AsyncSeek, AsyncSeekExt, AsyncWrite, AsyncWriteExt};
 
 use crate::{Archive, ChunkIndex, Chunker, ChunkerConfig, Error, HashSum, Reader, ReorderOp};
 
@@ -17,6 +17,20 @@ pub trait CloneOutput {
         offsets: &[u64],
         buf: &[u8],
     ) -> Result<(), Error>;
+}
+
+#[async_trait]
+impl<T> CloneOutput for T
+where
+    T: AsyncWrite + AsyncSeek + Unpin + Send,
+{
+    async fn write_chunk(&mut self, _: &HashSum, offsets: &[u64], buf: &[u8]) -> Result<(), Error> {
+        for &offset in offsets {
+            self.seek(std::io::SeekFrom::Start(offset)).await?;
+            self.write_all(buf).await?;
+        }
+        Ok(())
+    }
 }
 
 #[async_trait]
