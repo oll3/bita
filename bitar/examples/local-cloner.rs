@@ -1,5 +1,5 @@
 use bitar;
-use bitar::{clone_from_archive, clone_from_readable, Archive, CloneOptions, ReaderLocal};
+use bitar::{clone_from_archive, clone_from_readable, Archive, CloneOptions};
 use tokio;
 use tokio::fs::{File, OpenOptions};
 
@@ -10,8 +10,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let example_seed = "examples/resources/example.seed";
 
     // Open archive which source we want to clone
-    let mut archive_reader = ReaderLocal::new(File::open(input_path).await?);
-    let archive = Archive::try_init(&mut archive_reader).await?;
+    let mut archive_file = File::open(input_path).await?;
+    let archive = Archive::try_init(&mut archive_file).await?;
 
     // Create output to contain the clone oof the archive source
     let mut output = OpenOptions::new()
@@ -36,7 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Fetch the rest of the chunks from the archive
     let read_archive_bytes = clone_from_archive(
         &CloneOptions::default(),
-        &mut archive_reader,
+        &mut archive_file,
         &archive,
         &mut chunks_to_clone,
         &mut output,

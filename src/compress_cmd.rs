@@ -12,7 +12,7 @@ use crate::info_cmd;
 use crate::string_utils::*;
 use bitar::build_header;
 use bitar::chunk_dictionary as dict;
-use bitar::{Chunker, ChunkerConfig, Compression, Error, HashSum, ReaderLocal};
+use bitar::{Chunker, ChunkerConfig, Compression, Error, HashSum};
 
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -251,7 +251,7 @@ impl Command {
         drop(output_file);
         {
             // Print archive info
-            let mut reader = ReaderLocal::new(File::open(self.output).await?);
+            let mut reader = File::open(self.output).await?;
             info_cmd::print_archive_reader(&mut reader).await?;
         }
         Ok(())

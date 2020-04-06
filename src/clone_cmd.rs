@@ -10,8 +10,7 @@ use crate::info_cmd;
 use crate::string_utils::*;
 use bitar::{
     clone_from_archive, clone_from_readable, clone_in_place, Archive, ChunkIndex, ChunkerConfig,
-    CloneInPlaceTarget, CloneOptions, CloneOutput, Error, HashSum, Reader, ReaderLocal,
-    ReaderRemote,
+    CloneInPlaceTarget, CloneOptions, CloneOutput, Error, HashSum, Reader, ReaderRemote,
 };
 
 struct OutputFile {
@@ -305,11 +304,11 @@ pub struct Command {
 impl Command {
     pub async fn run(self) -> Result<(), Error> {
         let mut reader: Box<dyn Reader> = match &self.input_archive {
-            InputArchive::Local(path) => Box::new(ReaderLocal::new(
+            InputArchive::Local(path) => Box::new(
                 File::open(path)
                     .await
                     .expect("failed to open local archive"),
-            )),
+            ),
             InputArchive::Remote {
                 url,
                 retries,

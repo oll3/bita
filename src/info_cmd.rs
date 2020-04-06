@@ -1,9 +1,8 @@
 use log::*;
+use tokio::fs::File;
 
 use crate::string_utils::*;
-use bitar::{
-    Archive, ChunkerConfig, ChunkerFilterConfig, Error, Reader, ReaderLocal, ReaderRemote,
-};
+use bitar::{Archive, ChunkerConfig, ChunkerFilterConfig, Error, Reader, ReaderRemote};
 
 pub async fn print_archive_reader(reader: &mut dyn Reader) -> Result<(), Error> {
     let archive = Archive::try_init(reader).await?;
@@ -81,7 +80,7 @@ impl Command {
         let mut reader: Box<dyn Reader> = if let Ok(uri) = self.input.parse() {
             Box::new(ReaderRemote::new(uri, 0, None, None))
         } else {
-            Box::new(ReaderLocal::new(tokio::fs::File::open(&self.input).await?))
+            Box::new(File::open(&self.input).await?)
         };
         print_archive_reader(&mut *reader).await?;
         Ok(())

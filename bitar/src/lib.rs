@@ -25,7 +25,7 @@ pub use compression::Compression;
 pub use error::Error;
 pub use hashsum::HashSum;
 pub use header::{build_header, FILE_MAGIC, PRE_HEADER_SIZE};
-pub use reader::{Reader, ReaderLocal, ReaderRemote};
+pub use reader::{Reader, ReaderRemote};
 pub use rolling_hash::{BuzHash, RollSum, RollingHash};
 
 pub mod chunk_dictionary {
