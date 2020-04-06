@@ -60,8 +60,7 @@ impl OutputFile {
         hash_length: usize,
     ) -> Result<ChunkIndex, Error> {
         self.file.seek(SeekFrom::Start(0)).await?;
-        let index =
-            ChunkIndex::try_build_from_file(chunker_config, hash_length, &mut self.file).await?;
+        let index = ChunkIndex::from_readable(chunker_config, hash_length, &mut self.file).await?;
         self.file.seek(SeekFrom::Start(0)).await?;
         Ok(index)
     }

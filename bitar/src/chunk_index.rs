@@ -1,7 +1,7 @@
 use futures_util::stream::StreamExt;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, HashSet};
-use tokio::fs::File;
+use tokio::io::AsyncRead;
 
 use crate::chunk_dictionary::ChunkDictionary;
 use crate::chunk_location_map::{ChunkLocation, ChunkLocationMap};
@@ -60,11 +60,14 @@ impl From<(usize, &[u64])> for ChunkSizeAndOffset {
 pub struct ChunkIndex(HashMap<HashSum, ChunkSizeAndOffset>);
 
 impl ChunkIndex {
-    pub async fn try_build_from_file(
+    pub async fn from_readable<T>(
         chunker_config: &ChunkerConfig,
         hash_length: usize,
-        file: &mut File,
-    ) -> Result<Self, Error> {
+        file: &mut T,
+    ) -> Result<Self, Error>
+    where
+        T: AsyncRead + Unpin,
+    {
         let chunker = Chunker::new(chunker_config, file);
         let mut chunk_stream = chunker
             .map(|result| {
