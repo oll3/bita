@@ -4,7 +4,8 @@ use futures_util::{future, pin_mut};
 use log::*;
 use num_cpus;
 use std::collections::HashMap;
-use tokio::io::{AsyncRead, AsyncSeek, AsyncSeekExt, AsyncWrite, AsyncWriteExt};
+use std::io::SeekFrom;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, AsyncWrite, AsyncWriteExt};
 
 use crate::{Archive, ChunkIndex, Chunker, ChunkerConfig, Error, HashSum, Reader, ReorderOp};
 
@@ -26,7 +27,7 @@ where
 {
     async fn write_chunk(&mut self, _: &HashSum, offsets: &[u64], buf: &[u8]) -> Result<(), Error> {
         for &offset in offsets {
-            self.seek(std::io::SeekFrom::Start(offset)).await?;
+            self.seek(SeekFrom::Start(offset)).await?;
             self.write_all(buf).await?;
         }
         Ok(())
@@ -48,6 +49,32 @@ pub trait CloneInPlaceTarget: CloneOutput {
         chunker_config: &ChunkerConfig,
         hash_length: usize,
     ) -> Result<ChunkIndex, Error>;
+}
+
+#[async_trait]
+impl<T> CloneInPlaceTarget for T
+where
+    T: CloneOutput + AsyncRead + AsyncSeek + Unpin + Send,
+{
+    async fn read_chunk(
+        &mut self,
+        _hash: &HashSum,
+        offset: u64,
+        buf: &mut [u8],
+    ) -> Result<(), Error> {
+        self.seek(SeekFrom::Start(offset)).await?;
+        self.read_exact(buf).await?;
+        Ok(())
+    }
+    async fn chunk_index(
+        &mut self,
+        chunker_config: &ChunkerConfig,
+        hash_length: usize,
+    ) -> Result<ChunkIndex, Error> {
+        self.seek(SeekFrom::Start(0)).await?;
+        let index = ChunkIndex::from_readable(chunker_config, hash_length, self).await?;
+        Ok(index)
+    }
 }
 
 /// Clone options
