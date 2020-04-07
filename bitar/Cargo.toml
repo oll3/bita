@@ -1,11 +1,15 @@
 [package]
 name = "bitar"
-version = "0.5.2"
+version = "0.6.0"
 authors = ["Olle Sandberg <olle@b3rg.se>"]
 license = "MIT"
 edition = '2018'
 description = "bita archive utilities"
 repository = "https://github.com/oll3/bita"
+readme = "README.md"
+keywords = ["sofware-update", "file-synchronization", "delta-update",  "differential"]
+categories = ["compression", "filesystem"]
+
 
 [build-dependencies]
 prost-build = "0.6"
