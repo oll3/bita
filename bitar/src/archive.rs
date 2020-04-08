@@ -34,6 +34,9 @@ pub struct Archive {
     // Array representing the order of chunks in archive
     chunk_order: Vec<ChunkDescriptor>,
 
+    // Howto rebuild the source. Vector with indexes pointing into chunk_order.
+    rebuild_order: Vec<u32>,
+
     // Chunk index describing the source file construct
     source_index: ChunkIndex,
 
@@ -66,15 +69,6 @@ impl Archive {
             return Err(Error::NotAnArchive);
         }
         Ok(())
-    }
-
-    fn map_chunks(dictionary: &dict::ChunkDictionary) -> Vec<ChunkDescriptor> {
-        let mut chunk_descriptors: Vec<ChunkDescriptor> = Vec::new();
-        for desc in dictionary.chunk_descriptors.iter() {
-            let desc: ChunkDescriptor = desc.clone().into();
-            chunk_descriptors.push(desc);
-        }
-        chunk_descriptors
     }
 
     pub async fn try_init(reader: &mut dyn Reader) -> Result<Self, Error> {
@@ -117,8 +111,11 @@ impl Archive {
         };
 
         let source_index = ChunkIndex::from_dictionary(&dictionary);
-
-        let chunk_order = Self::map_chunks(&dictionary);
+        let chunk_order = dictionary
+            .chunk_descriptors
+            .into_iter()
+            .map(ChunkDescriptor::from)
+            .collect();
         let chunker_params = dictionary.chunker_params.ok_or(Error::CorruptArchive)?;
         Ok(Self {
             chunk_order,
@@ -131,6 +128,7 @@ impl Archive {
                 dictionary.chunk_compression.ok_or(Error::CorruptArchive)?,
             )?,
             total_chunks: dictionary.rebuild_order.iter().count(),
+            rebuild_order: dictionary.rebuild_order,
             chunk_data_offset,
             chunk_hash_length: chunker_params.chunk_hash_length as usize,
             chunker_config: ChunkerConfig::try_from(chunker_params)?,
@@ -182,6 +180,9 @@ impl Archive {
     }
     pub fn source_index(&self) -> &ChunkIndex {
         &self.source_index
+    }
+    pub fn rebuild_order(&self) -> &[u32] {
+        &self.rebuild_order
     }
 
     // Group chunks which are placed in sequence inside archive
