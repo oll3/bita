@@ -25,6 +25,9 @@ impl HashSum {
     pub fn to_vec(&self) -> Vec<u8> {
         self.0.to_vec()
     }
+    pub fn slice(&self) -> &[u8] {
+        &self.0[..]
+    }
     pub fn len(&self) -> usize {
         self.0.len()
     }
