@@ -5,7 +5,7 @@ use crate::chunk_dictionary::ChunkDictionary;
 use crate::error::Error;
 
 /// Bita archive file magic
-pub const FILE_MAGIC: &[u8; 6] = b"BITA1\0";
+pub const ARCHIVE_MAGIC: &[u8; 6] = b"BITA1\0";
 
 /// Pre header is the file magic + the size of the dictionary length value (u64)
 pub const PRE_HEADER_SIZE: usize = 6 + std::mem::size_of::<u64>();
@@ -30,7 +30,7 @@ pub fn build_header(
     dictionary.encode(&mut dictionary_buf)?;
 
     // File magic indicating bita archive version 1
-    header.extend(FILE_MAGIC);
+    header.extend(ARCHIVE_MAGIC);
 
     // Chunk dictionary size
     header.extend(&(dictionary_buf.len() as u64).to_le_bytes());

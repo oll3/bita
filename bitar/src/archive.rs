@@ -58,13 +58,13 @@ pub struct Archive {
 
 impl Archive {
     fn verify_pre_header(pre_header: &[u8]) -> Result<(), Error> {
-        if pre_header.len() < header::FILE_MAGIC.len() {
+        if pre_header.len() < header::ARCHIVE_MAGIC.len() {
             return Err(Error::NotAnArchive);
         }
         // Allow both leagacy type file magic (prefixed with \0 but no null
         // termination) and new type 'BITA\0'.
-        if &pre_header[0..header::FILE_MAGIC.len()] != header::FILE_MAGIC
-            && &pre_header[0..header::FILE_MAGIC.len()] != b"\0BITA1"
+        if &pre_header[0..header::ARCHIVE_MAGIC.len()] != header::ARCHIVE_MAGIC
+            && &pre_header[0..header::ARCHIVE_MAGIC.len()] != b"\0BITA1"
         {
             return Err(Error::NotAnArchive);
         }
@@ -77,7 +77,8 @@ impl Archive {
         Self::verify_pre_header(&header)?;
 
         let dictionary_size =
-            u64_from_le_slice(&header[header::FILE_MAGIC.len()..header::PRE_HEADER_SIZE]) as usize;
+            u64_from_le_slice(&header[header::ARCHIVE_MAGIC.len()..header::PRE_HEADER_SIZE])
+                as usize;
 
         // Read the dictionary, chunk data offset and header hash
         header.append(

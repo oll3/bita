@@ -24,7 +24,7 @@ pub use clone::{
 pub use compression::Compression;
 pub use error::Error;
 pub use hashsum::HashSum;
-pub use header::{build_header, FILE_MAGIC, PRE_HEADER_SIZE};
+pub use header::{build_header, ARCHIVE_MAGIC, PRE_HEADER_SIZE};
 pub use reader::{Reader, ReaderRemote};
 pub use rolling_hash::{BuzHash, RollSum, RollingHash};
 
