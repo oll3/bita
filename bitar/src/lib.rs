@@ -14,7 +14,7 @@ mod reader;
 mod rolling_hash;
 
 pub use archive::Archive;
-pub use chunk_index::{ChunkIndex, ReorderOp};
+pub use chunk_index::{ChunkIndex, ChunkSizeAndOffset, ReorderOp};
 pub use chunk_location_map::{ChunkLocation, ChunkLocationMap};
 pub use chunker::{Chunker, ChunkerConfig, ChunkerFilterBits, ChunkerFilterConfig};
 pub use clone::{

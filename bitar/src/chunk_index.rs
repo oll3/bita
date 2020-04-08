@@ -152,9 +152,19 @@ impl ChunkIndex {
         self.0.is_empty()
     }
 
-    // Get source offsets of a chunk
+    /// Iterate source offsets of a chunk
     pub fn offsets<'a>(&'a self, hash: &HashSum) -> Option<impl Iterator<Item = u64> + 'a> {
         self.0.get(hash).map(|d| d.offsets.iter().copied())
+    }
+
+    /// Iterate index
+    pub fn iter(&self) -> impl Iterator<Item = (&HashSum, &ChunkSizeAndOffset)> {
+        self.0.iter()
+    }
+
+    /// Iterate chunk hashes in index
+    pub fn keys(&self) -> impl Iterator<Item = &HashSum> {
+        self.0.keys()
     }
 
     /// Filter the given chunk index for chunks which are already in place in self
@@ -304,6 +314,18 @@ impl ChunkIndex {
             }
         });
         ops
+    }
+}
+
+impl From<HashMap<HashSum, ChunkSizeAndOffset>> for ChunkIndex {
+    fn from(v: HashMap<HashSum, ChunkSizeAndOffset>) -> Self {
+        Self(v)
+    }
+}
+
+impl std::iter::FromIterator<(HashSum, ChunkSizeAndOffset)> for ChunkIndex {
+    fn from_iter<I: IntoIterator<Item = (HashSum, ChunkSizeAndOffset)>>(iter: I) -> Self {
+        Self(iter.into_iter().collect())
     }
 }
 
