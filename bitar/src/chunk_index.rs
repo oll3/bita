@@ -3,11 +3,12 @@ use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 use tokio::io::AsyncRead;
 
-use crate::chunk_dictionary::ChunkDictionary;
-use crate::chunk_location_map::{ChunkLocation, ChunkLocationMap};
-use crate::chunker::{Chunker, ChunkerConfig};
-use crate::hashsum::HashSum;
-use crate::Error;
+use crate::{
+    chunk_dictionary::ChunkDictionary,
+    chunk_location_map::{ChunkLocation, ChunkLocationMap},
+    chunker::{Chunker, ChunkerConfig},
+    Error, HashSum,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ReorderOp<'a> {
@@ -63,12 +64,12 @@ impl ChunkIndex {
     pub async fn from_readable<T>(
         chunker_config: &ChunkerConfig,
         hash_length: usize,
-        file: &mut T,
+        readable: &mut T,
     ) -> Result<Self, Error>
     where
         T: AsyncRead + Unpin,
     {
-        let chunker = Chunker::new(chunker_config, file);
+        let chunker = Chunker::new(chunker_config, readable);
         let mut chunk_stream = chunker
             .map(|result| {
                 tokio::task::spawn(async move {

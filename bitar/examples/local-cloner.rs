@@ -18,7 +18,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .create(true)
         .write(true)
         .open(output_name)
-        .await?;
+        .await
+        .expect("open output");
 
     // Get a list of all chunks needed to create the clone of the archive source
     let mut chunks_to_clone = archive.source_index().clone();
@@ -31,7 +32,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &mut chunks_to_clone,
         &mut output,
     )
-    .await?;
+    .await
+    .expect("clone from seed");
 
     // Fetch the rest of the chunks from the archive
     let read_archive_bytes = clone_from_archive(
@@ -41,7 +43,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &mut chunks_to_clone,
         &mut output,
     )
-    .await?;
+    .await
+    .expect("read from archive");
 
     println!(
         "Cloned {} to {} using {} bytes from {} and {} bytes from archive",

@@ -9,8 +9,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use crate::info_cmd;
 use crate::string_utils::*;
 use bitar::{
-    clone_from_archive, clone_from_readable, clone_in_place, Archive, ChunkIndex, ChunkerConfig,
-    CloneInPlaceTarget, CloneOptions, CloneOutput, Error, HashSum, Reader, ReaderRemote,
+    clone_from_archive, clone_from_readable, clone_in_place, Archive, CloneOptions, CloneOutput,
+    Error, HashSum, Reader, ReaderRemote,
 };
 
 struct OutputFile {
@@ -19,49 +19,24 @@ struct OutputFile {
 }
 
 impl OutputFile {
-    pub async fn new_from(mut file: File) -> Result<Self, Error> {
-        file.seek(SeekFrom::Start(0)).await?;
+    async fn new_from(mut file: File) -> Result<Self, Error> {
         let block_dev = is_block_dev(&mut file).await?;
         Ok(Self { file, block_dev })
     }
 
-    pub fn is_block_dev(&self) -> bool {
+    fn is_block_dev(&self) -> bool {
         self.block_dev
     }
 
-    pub async fn size(&mut self) -> Result<u64, Error> {
+    async fn size(&mut self) -> Result<u64, Error> {
         self.file.seek(SeekFrom::Start(0)).await?;
         let size = self.file.seek(SeekFrom::End(0)).await?;
-        self.file.seek(SeekFrom::Start(0)).await?;
         Ok(size)
     }
 
-    async fn seek_write(&mut self, offset: u64, buf: &[u8]) -> Result<(), std::io::Error> {
-        self.file.seek(SeekFrom::Start(offset)).await?;
-        self.file.write_all(buf).await?;
-        Ok(())
-    }
-
-    async fn seek_read(&mut self, offset: u64, buf: &mut [u8]) -> Result<(), std::io::Error> {
-        self.file.seek(SeekFrom::Start(offset)).await?;
-        self.file.read_exact(buf).await?;
-        Ok(())
-    }
-
-    pub async fn resize(&mut self, source_file_size: u64) -> Result<(), Error> {
+    async fn resize(&mut self, source_file_size: u64) -> Result<(), Error> {
         self.file.set_len(source_file_size).await?;
         Ok(())
-    }
-
-    async fn chunk_index(
-        &mut self,
-        chunker_config: &ChunkerConfig,
-        hash_length: usize,
-    ) -> Result<ChunkIndex, Error> {
-        self.file.seek(SeekFrom::Start(0)).await?;
-        let index = ChunkIndex::from_readable(chunker_config, hash_length, &mut self.file).await?;
-        self.file.seek(SeekFrom::Start(0)).await?;
-        Ok(index)
     }
 
     async fn checksum(&mut self) -> Result<HashSum, Error> {
@@ -88,27 +63,10 @@ impl CloneOutput for OutputFile {
         buf: &[u8],
     ) -> Result<(), Error> {
         for &offset in offsets {
-            self.seek_write(offset, buf).await?;
+            self.file.seek(SeekFrom::Start(offset)).await?;
+            self.file.write_all(buf).await?;
         }
         Ok(())
-    }
-}
-#[async_trait]
-impl CloneInPlaceTarget for OutputFile {
-    async fn read_chunk(
-        &mut self,
-        _hash: &HashSum,
-        offset: u64,
-        buf: &mut [u8],
-    ) -> Result<(), Error> {
-        Ok(self.seek_read(offset, buf).await?)
-    }
-    async fn chunk_index(
-        &mut self,
-        chunker_config: &ChunkerConfig,
-        hash_length: usize,
-    ) -> Result<ChunkIndex, Error> {
-        Ok(self.chunk_index(chunker_config, hash_length).await?)
     }
 }
 
@@ -182,7 +140,7 @@ async fn clone_archive(cmd: Command, reader: &mut dyn Reader) -> Result<(), Erro
     if cmd.seed_output {
         info!("Updating chunks of {} in-place...", cmd.output.display());
         let used_from_self =
-            clone_in_place(&clone_opts, &archive, &mut chunks_left, &mut output).await?;
+            clone_in_place(&clone_opts, &mut chunks_left, &archive, &mut output.file).await?;
         info!(
             "Used {} from {}",
             size_to_str(used_from_self),

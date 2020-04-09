@@ -18,29 +18,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .write(true)
         .read(true)
         .open(output_name)
-        .await?;
+        .await
+        .expect("open output");
 
     // Get a list of all chunks needed to create the clone of the archive source
     let mut chunks_to_clone = archive.source_index().clone();
 
     // Scan the output file and reuse any data available
-    let reused_bytes = clone_in_place(
-        &CloneOptions::default(),
-        &archive,
-        &mut chunks_to_clone,
-        &mut output,
-    )
-    .await?;
+    let clone_opts = CloneOptions::default();
+    let reused_bytes = clone_in_place(&clone_opts, &mut chunks_to_clone, &archive, &mut output)
+        .await
+        .expect("clone in place");
 
     // Fetch the rest of the chunks from the archive
     let read_archive_bytes = clone_from_archive(
-        &CloneOptions::default(),
+        &clone_opts,
         &mut archive_file,
         &archive,
         &mut chunks_to_clone,
         &mut output,
     )
-    .await?;
+    .await
+    .expect("fetch from archive");
 
     println!(
         "Cloned {} to {} using {} bytes from {} and {} bytes from archive",

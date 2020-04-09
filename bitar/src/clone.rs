@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::io::SeekFrom;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, AsyncWrite, AsyncWriteExt};
 
-use crate::{Archive, ChunkIndex, Chunker, ChunkerConfig, Error, HashSum, Reader, ReorderOp};
+use crate::{Archive, ChunkIndex, Chunker, Error, HashSum, Reader, ReorderOp};
 
 #[async_trait]
 pub trait CloneOutput {
@@ -34,49 +34,6 @@ where
     }
 }
 
-#[async_trait]
-pub trait CloneInPlaceTarget: CloneOutput {
-    /// Read a chunk identified by hash and/or offset
-    async fn read_chunk(
-        &mut self,
-        hash: &HashSum,
-        offset: u64,
-        buf: &mut [u8],
-    ) -> Result<(), Error>;
-    /// Generatea chunk index describing the target structure
-    async fn chunk_index(
-        &mut self,
-        chunker_config: &ChunkerConfig,
-        hash_length: usize,
-    ) -> Result<ChunkIndex, Error>;
-}
-
-#[async_trait]
-impl<T> CloneInPlaceTarget for T
-where
-    T: CloneOutput + AsyncRead + AsyncSeek + Unpin + Send,
-{
-    async fn read_chunk(
-        &mut self,
-        _hash: &HashSum,
-        offset: u64,
-        buf: &mut [u8],
-    ) -> Result<(), Error> {
-        self.seek(SeekFrom::Start(offset)).await?;
-        self.read_exact(buf).await?;
-        Ok(())
-    }
-    async fn chunk_index(
-        &mut self,
-        chunker_config: &ChunkerConfig,
-        hash_length: usize,
-    ) -> Result<ChunkIndex, Error> {
-        self.seek(SeekFrom::Start(0)).await?;
-        let index = ChunkIndex::from_readable(chunker_config, hash_length, self).await?;
-        Ok(index)
-    }
-}
-
 /// Clone options
 #[derive(Default, Clone)]
 pub struct CloneOptions {
@@ -91,7 +48,7 @@ impl CloneOptions {
         self.max_buffered_chunks = num;
         self
     }
-    fn get_max_buffers(&self) -> usize {
+    pub(crate) fn get_max_buffered_chunks(&self) -> usize {
         if self.max_buffered_chunks == 0 {
             // Single buffer if we have a single core, otherwise number of cores x 2
             match num_cpus::get() {
@@ -105,16 +62,24 @@ impl CloneOptions {
 }
 
 /// Clone by moving data in output in-place
-pub async fn clone_in_place(
+pub async fn clone_in_place<T>(
     _opts: &CloneOptions,
-    archive: &Archive,
     chunks: &mut ChunkIndex,
-    target: &mut dyn CloneInPlaceTarget,
-) -> Result<u64, Error> {
+    archive: &Archive,
+    target: &mut T,
+) -> Result<u64, Error>
+where
+    T: AsyncRead + AsyncWrite + AsyncSeek + Unpin + Send,
+{
     let mut total_moved: u64 = 0;
-    let target_index = target
-        .chunk_index(archive.chunker_config(), archive.chunk_hash_length())
-        .await?;
+    target.seek(SeekFrom::Start(0)).await?;
+    let target_index = ChunkIndex::from_readable(
+        &archive.chunker_config(),
+        archive.chunk_hash_length(),
+        target,
+    )
+    .await?;
+
     let (already_in_place, in_place_total_size) =
         target_index.strip_chunks_already_in_place(chunks);
     debug!(
@@ -133,7 +98,8 @@ pub async fn clone_in_place(
                 } else {
                     let mut buf: Vec<u8> = Vec::new();
                     buf.resize(source.size, 0);
-                    target.read_chunk(hash, source.offset, &mut buf[..]).await?;
+                    target.seek(SeekFrom::Start(source.offset)).await?;
+                    target.read_exact(&mut buf[..]).await?;
                     buf
                 };
                 target.write_chunk(hash, &dest[..], &buf[..]).await?;
@@ -144,7 +110,8 @@ pub async fn clone_in_place(
                 if !temp_store.contains_key(hash) {
                     let mut buf: Vec<u8> = Vec::new();
                     buf.resize(source.size, 0);
-                    target.read_chunk(hash, source.offset, &mut buf[..]).await?;
+                    target.seek(SeekFrom::Start(source.offset)).await?;
+                    target.read_exact(&mut buf[..]).await?;
                     temp_store.insert(hash, buf);
                 }
             }
@@ -175,7 +142,7 @@ where
                 })
             })
         })
-        .buffered(opts.get_max_buffers())
+        .buffered(opts.get_max_buffered_chunks())
         .filter_map(|result| {
             // Filter unique chunks to be compressed
             future::ready(match result {
@@ -239,7 +206,7 @@ pub async fn clone_from_archive(
                     ))
                 })
             })
-            .buffered(opts.get_max_buffers());
+            .buffered(opts.get_max_buffered_chunks());
 
         pin_mut!(archive_chunk_stream);
         while let Some(result) = archive_chunk_stream.next().await {

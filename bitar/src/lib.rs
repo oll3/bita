@@ -18,8 +18,7 @@ pub use chunk_index::{ChunkIndex, ChunkSizeAndOffset, ReorderOp};
 pub use chunk_location_map::{ChunkLocation, ChunkLocationMap};
 pub use chunker::{Chunker, ChunkerConfig, ChunkerFilterBits, ChunkerFilterConfig};
 pub use clone::{
-    clone_from_archive, clone_from_readable, clone_in_place, CloneInPlaceTarget, CloneOptions,
-    CloneOutput,
+    clone_from_archive, clone_from_readable, clone_in_place, CloneOptions, CloneOutput,
 };
 pub use compression::Compression;
 pub use error::Error;
