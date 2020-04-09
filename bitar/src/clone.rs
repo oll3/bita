@@ -63,7 +63,7 @@ impl CloneOptions {
 
 /// Clone by moving data in output in-place
 pub async fn clone_in_place<T>(
-    _opts: &CloneOptions,
+    opts: &CloneOptions,
     chunks: &mut ChunkIndex,
     archive: &Archive,
     target: &mut T,
@@ -76,6 +76,7 @@ where
     let target_index = ChunkIndex::from_readable(
         &archive.chunker_config(),
         archive.chunk_hash_length(),
+        opts.get_max_buffered_chunks(),
         target,
     )
     .await?;

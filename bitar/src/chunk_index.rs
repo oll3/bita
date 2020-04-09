@@ -64,6 +64,7 @@ impl ChunkIndex {
     pub async fn from_readable<T>(
         chunker_config: &ChunkerConfig,
         hash_length: usize,
+        max_buffered_chunks: usize,
         readable: &mut T,
     ) -> Result<Self, Error>
     where
@@ -82,7 +83,7 @@ impl ChunkIndex {
                     })
                 })
             })
-            .buffered(8);
+            .buffered(max_buffered_chunks);
 
         let mut chunk_lookup: HashMap<HashSum, ChunkSizeAndOffset> = HashMap::new();
         while let Some(result) = chunk_stream.next().await {
