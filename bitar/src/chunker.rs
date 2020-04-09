@@ -55,17 +55,23 @@ where
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct ChunkerFilterBits(pub u32);
+pub struct ChunkerFilterBits(u32);
 
 impl ChunkerFilterBits {
     pub fn from_size(size: u32) -> Self {
         Self(30 - size.leading_zeros())
+    }
+    pub fn from_bits(bits: u32) -> Self {
+        Self(bits)
     }
     pub fn mask(self) -> u32 {
         (!0 as u32) >> (32 - self.0)
     }
     pub fn chunk_target_average(self) -> u32 {
         1 << (self.0 + 1)
+    }
+    pub fn bits(self) -> u32 {
+        self.0
     }
 }
 

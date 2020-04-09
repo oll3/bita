@@ -254,7 +254,7 @@ impl std::convert::TryFrom<ChunkerParameters> for ChunkerConfig {
         match ChunkingAlgorithm::from_i32(p.chunking_algorithm) {
             Some(ChunkingAlgorithm::Buzhash) => {
                 Ok(ChunkerConfig::BuzHash(crate::ChunkerFilterConfig {
-                    filter_bits: crate::ChunkerFilterBits(p.chunk_filter_bits),
+                    filter_bits: crate::ChunkerFilterBits::from_bits(p.chunk_filter_bits),
                     min_chunk_size: p.min_chunk_size as usize,
                     max_chunk_size: p.max_chunk_size as usize,
                     window_size: p.rolling_hash_window_size as usize,
@@ -262,7 +262,7 @@ impl std::convert::TryFrom<ChunkerParameters> for ChunkerConfig {
             }
             Some(ChunkingAlgorithm::Rollsum) => {
                 Ok(ChunkerConfig::RollSum(crate::ChunkerFilterConfig {
-                    filter_bits: crate::ChunkerFilterBits(p.chunk_filter_bits),
+                    filter_bits: crate::ChunkerFilterBits::from_bits(p.chunk_filter_bits),
                     min_chunk_size: p.min_chunk_size as usize,
                     max_chunk_size: p.max_chunk_size as usize,
                     window_size: p.rolling_hash_window_size as usize,

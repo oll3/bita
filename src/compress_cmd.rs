@@ -202,7 +202,7 @@ impl Command {
 
         let chunker_params = match self.chunker_config {
             ChunkerConfig::BuzHash(hash_config) => dict::ChunkerParameters {
-                chunk_filter_bits: hash_config.filter_bits.0,
+                chunk_filter_bits: hash_config.filter_bits.bits(),
                 min_chunk_size: hash_config.min_chunk_size as u32,
                 max_chunk_size: hash_config.max_chunk_size as u32,
                 rolling_hash_window_size: hash_config.window_size as u32,
@@ -210,7 +210,7 @@ impl Command {
                 chunking_algorithm: dict::chunker_parameters::ChunkingAlgorithm::Buzhash as i32,
             },
             ChunkerConfig::RollSum(hash_config) => dict::ChunkerParameters {
-                chunk_filter_bits: hash_config.filter_bits.0,
+                chunk_filter_bits: hash_config.filter_bits.bits(),
                 min_chunk_size: hash_config.min_chunk_size as u32,
                 max_chunk_size: hash_config.max_chunk_size as u32,
                 rolling_hash_window_size: hash_config.window_size as u32,
