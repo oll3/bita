@@ -25,7 +25,7 @@ chrono = "0.4.11"
 futures-util = "0.3.4"
 tokio = { version = "0.2.17", features = ["fs", "io-std", "sync", "io-util", "macros", "time", "rt-threaded"] }
 bitar = { version = "0.6.1", path = "bitar" }
-reqwest = "0.10.4"
+url = "2.1.1"
 num_cpus = "1.12.0"
 async-trait = "0.1.30"
 

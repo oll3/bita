@@ -5,6 +5,7 @@ use std::io::SeekFrom;
 use std::path::PathBuf;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use url::Url;
 
 use crate::info_cmd;
 use crate::string_utils::*;
@@ -231,7 +232,7 @@ async fn clone_archive(cmd: Command, reader: &mut dyn Reader) -> Result<(), Erro
 pub enum InputArchive {
     Local(std::path::PathBuf),
     Remote {
-        url: reqwest::Url,
+        url: Url,
         retries: u32,
         retry_delay: Option<std::time::Duration>,
         receive_timeout: Option<std::time::Duration>,

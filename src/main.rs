@@ -8,6 +8,7 @@ use clap::{App, Arg, SubCommand};
 use log::*;
 use std::path::Path;
 use std::process;
+use url::Url;
 
 use crate::string_utils::*;
 use bitar::Compression;
@@ -131,7 +132,7 @@ fn parse_size(size_str: &str) -> usize {
 
 fn parse_input_config(matches: &clap::ArgMatches<'_>) -> clone_cmd::InputArchive {
     let input = matches.value_of("INPUT").unwrap().to_string();
-    match input.parse::<reqwest::Url>() {
+    match input.parse::<Url>() {
         Ok(url) => {
             // Use as URL
             clone_cmd::InputArchive::Remote {
