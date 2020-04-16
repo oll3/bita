@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.com/oll3/bita.svg?branch=master)](https://travis-ci.org/oll3/bita)
+[![Build Status](https://travis-ci.com/oll3/bita.svg?branch=master)](https://travis-ci.com/oll3/bita)
 [![](http://meritbadge.herokuapp.com/bita)](https://crates.io/crates/bita)
 
 
