@@ -87,7 +87,6 @@ async fn is_block_dev(file: &mut File) -> Result<bool, Error> {
 async fn is_block_dev(_file: &mut File) -> Result<bool, Error> {
     Ok(false)
 }
-
 async fn clone_archive(cmd: Command, reader: &mut dyn Reader) -> Result<(), Error> {
     let archive = Archive::try_init(reader).await?;
     let mut chunks_left = archive.source_index().clone();
@@ -157,7 +156,10 @@ async fn clone_archive(cmd: Command, reader: &mut dyn Reader) -> Result<(), Erro
 
     // Read chunks from seed files
     if cmd.seed_stdin && !atty::is(atty::Stream::Stdin) {
-        info!("Scanning stdin for chunks...");
+        info!(
+            "Scanning stdin for chunks ({} left to find)...",
+            chunks_left.len()
+        );
         let bytes_to_output = clone_from_readable(
             &clone_opts,
             &mut tokio::io::stdin(),
@@ -169,7 +171,11 @@ async fn clone_archive(cmd: Command, reader: &mut dyn Reader) -> Result<(), Erro
         info!("Used {} bytes from stdin", size_to_str(bytes_to_output));
     }
     for seed_path in &cmd.seed_files {
-        info!("Scanning {} for chunks...", seed_path.display());
+        info!(
+            "Scanning {} for chunks ({} left to find)...",
+            seed_path.display(),
+            chunks_left.len()
+        );
         let mut file = File::open(seed_path)
             .await
             .expect("failed to open seed file");
