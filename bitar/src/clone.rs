@@ -1,6 +1,6 @@
 use async_trait::async_trait;
+use futures_util::pin_mut;
 use futures_util::stream::StreamExt;
-use futures_util::{future, pin_mut};
 use log::*;
 use num_cpus;
 use std::collections::HashMap;
@@ -144,23 +144,24 @@ where
             })
         })
         .buffered(opts.get_max_buffered_chunks())
-        .filter_map(|result| {
-            // Filter unique chunks to be compressed
-            future::ready(match result {
-                Ok(Ok((hash, chunk))) => {
-                    if chunks.remove(&hash) {
-                        Some(Ok((hash, chunk)))
-                    } else {
-                        None
-                    }
-                }
-                Ok(Err(err)) => Some(Err(err)),
-                Err(err) => Some(Err(err.into())),
-            })
+        .map(|result| match result {
+            Ok(Ok((hash, chunk))) => Ok((hash, chunk)),
+            Ok(Err(err)) => Err(err),
+            Err(err) => Err(err.into()),
         });
-
+    if chunks.is_empty() {
+        // Nothing to do
+        return Ok(0);
+    }
     while let Some(result) = found_chunks.next().await {
+        if chunks.is_empty() {
+            // Nothing more to do
+            break;
+        }
         let (hash, chunk) = result?;
+        if !chunks.remove(&hash) {
+            continue;
+        }
         debug!("Chunk '{}', size {} used", hash, chunk.len());
         let offsets: Vec<u64> = archive
             .source_index()
