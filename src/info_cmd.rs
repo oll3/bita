@@ -77,8 +77,9 @@ pub struct Command {
 
 impl Command {
     pub async fn run(self) -> Result<(), Error> {
-        let mut reader: Box<dyn Reader> = if let Ok(uri) = self.input.parse() {
-            Box::new(ReaderRemote::new(uri, 0, None, None))
+        let mut reader: Box<dyn Reader> = if let Ok(uri) = self.input.parse::<reqwest::Url>() {
+            let request = reqwest::Client::new().get(uri);
+            Box::new(ReaderRemote::new(request, 0, None))
         } else {
             Box::new(File::open(&self.input).await?)
         };

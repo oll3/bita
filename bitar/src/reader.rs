@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use core::pin::Pin;
 use futures_core::stream::Stream;
 use futures_util::{pin_mut, StreamExt};
-use reqwest::Url;
+use reqwest::RequestBuilder;
 use std::collections::VecDeque;
 use std::io::SeekFrom;
 use std::time::Duration;
@@ -51,24 +51,17 @@ where
 }
 
 pub struct ReaderRemote {
-    url: Url,
+    request: RequestBuilder,
     retries: u32,
     retry_delay: Option<Duration>,
-    receive_timeout: Option<Duration>,
 }
 
 impl ReaderRemote {
-    pub fn new(
-        url: Url,
-        retries: u32,
-        retry_delay: Option<Duration>,
-        receive_timeout: Option<Duration>,
-    ) -> Self {
+    pub fn new(request: RequestBuilder, retries: u32, retry_delay: Option<Duration>) -> Self {
         Self {
-            url,
+            request,
             retries,
             retry_delay,
-            receive_timeout,
         }
     }
 
@@ -80,11 +73,10 @@ impl ReaderRemote {
         try_stream! {
             let total_size: u64 = chunk_sizes.iter().map(|v| *v as u64).sum();
             let request = http_range_request::Builder::new(
-                    self.url.clone(),
+                    self.request.try_clone().ok_or(Error::RequestNotClonable)?,
                     start_offset,
                     total_size,
                 )
-                .receive_timeout(self.receive_timeout)
                 .retry(self.retries, self.retry_delay);
 
             let mut stream = request.stream();
@@ -110,9 +102,12 @@ impl ReaderRemote {
 #[async_trait]
 impl Reader for ReaderRemote {
     async fn read_at(&mut self, offset: u64, size: usize) -> Result<Vec<u8>, Error> {
-        let request = http_range_request::Builder::new(self.url.clone(), offset, size as u64)
-            .receive_timeout(self.receive_timeout)
-            .retry(self.retries, self.retry_delay);
+        let request = http_range_request::Builder::new(
+            self.request.try_clone().ok_or(Error::RequestNotClonable)?,
+            offset,
+            size as u64,
+        )
+        .retry(self.retries, self.retry_delay);
         let res = request.single().await?;
         if res.len() >= size {
             // Truncate the response if bigger than requested size

@@ -279,12 +279,13 @@ impl Command {
                 retries,
                 retry_delay,
                 receive_timeout,
-            } => Box::new(ReaderRemote::new(
-                url.clone(),
-                *retries,
-                *retry_delay,
-                *receive_timeout,
-            )),
+            } => {
+                let mut request = reqwest::Client::new().get(url.clone());
+                if let Some(timeout) = receive_timeout {
+                    request = request.timeout(*timeout);
+                }
+                Box::new(ReaderRemote::new(request, *retries, *retry_delay))
+            }
         };
         clone_archive(self, &mut *reader).await
     }
