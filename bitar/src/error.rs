@@ -55,19 +55,19 @@ impl From<tokio::task::JoinError> for Error {
 impl std::fmt::Debug for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::NotAnArchive => write!(f, "not an archive"),
-            Error::ChecksumMismatch => write!(f, "checksum mismatch"),
-            Error::UnexpectedEnd => write!(f, "unexpected end"),
-            Error::CorruptArchive => write!(f, "corrupt archive"),
-            Error::UnknownChunkingAlgorithm => write!(f, "unknown chunking algorithm"),
-            Error::UnknownCompression => write!(f, "unknown compression"),
-            Error::IO(e) => write!(f, "i/o error: {:?}", e),
-            Error::DictionaryEncode(e) => write!(f, "failed to encode dictionary: {:?}", e),
-            Error::DictionaryDecode(e) => write!(f, "failed to decode dictionary: {:?}", e),
+            Error::NotAnArchive => write!(f, "NotAnArchive"),
+            Error::ChecksumMismatch => write!(f, "ChecksumMismatch"),
+            Error::UnexpectedEnd => write!(f, "UnexpectedEnd"),
+            Error::CorruptArchive => write!(f, "CorruptArchive"),
+            Error::UnknownChunkingAlgorithm => write!(f, "UnknownChunkingAlgorithm"),
+            Error::UnknownCompression => write!(f, "UnknownCompression"),
+            Error::IO(e) => write!(f, "IO({:?})", e),
+            Error::DictionaryEncode(e) => write!(f, "DictionaryEncode({:?})", e),
+            Error::DictionaryDecode(e) => write!(f, "DictionaryDecode({:?})", e),
             #[cfg(feature = "lzma-compression")]
-            Error::LZMA(e) => write!(f, "lzma compression error: {:?}", e),
-            Error::Http(e) => write!(f, "http error: {:?}", e),
-            Error::ThreadJoin(e) => write!(f, "error joining thread: {:?}", e),
+            Error::LZMA(e) => write!(f, "LZMA({:?})", e),
+            Error::Http(e) => write!(f, "Http({:?})", e),
+            Error::ThreadJoin(e) => write!(f, "ThreadJoin({:?})", e),
         }
     }
 }
