@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use blake2::{Blake2b, Digest};
 use log::*;
+use reqwest::header::HeaderMap;
 use std::io::SeekFrom;
 use std::path::PathBuf;
 use tokio::fs::File;
@@ -242,6 +243,7 @@ pub enum InputArchive {
         retries: u32,
         retry_delay: Option<std::time::Duration>,
         receive_timeout: Option<std::time::Duration>,
+        headers: HeaderMap,
     },
 }
 impl InputArchive {
@@ -279,8 +281,11 @@ impl Command {
                 retries,
                 retry_delay,
                 receive_timeout,
+                headers,
             } => {
-                let mut request = reqwest::Client::new().get(url.clone());
+                let mut request = reqwest::Client::new()
+                    .get(url.clone())
+                    .headers(headers.clone());
                 if let Some(timeout) = receive_timeout {
                     request = request.timeout(*timeout);
                 }

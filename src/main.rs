@@ -150,6 +150,22 @@ fn parse_input_config(matches: &clap::ArgMatches<'_>) -> clone_cmd::InputArchive
                 receive_timeout: matches.value_of("http-timeout").map(|v| {
                     std::time::Duration::from_secs(v.parse().expect("failed to parse http-timeout"))
                 }),
+                headers: match matches.values_of("http-header") {
+                    Some(values) => values
+                        .map(|header| {
+                            let mut split = header.splitn(2, ' ');
+                            let name = split.next().unwrap().trim_end_matches(':').trim();
+                            let value = split.next().expect("missing header value").trim();
+                            (
+                                reqwest::header::HeaderName::from_bytes(&name.as_bytes())
+                                    .expect("invalid header name"),
+                                reqwest::header::HeaderValue::from_str(value)
+                                    .expect("invalid header value"),
+                            )
+                        })
+                        .collect(),
+                    None => reqwest::header::HeaderMap::new(),
+                },
             }
         }
         Err(_) => {
@@ -263,6 +279,13 @@ fn add_input_archive_args<'a, 'b>(sub_cmd: clap::App<'a, 'b>) -> clap::App<'a, '
                 .long("http-timeout")
                 .value_name("SECONDS")
                 .help("Fail transfer if unresponsive for some time [default: None]"),
+        )
+        .arg(
+            Arg::with_name("http-header")
+                .long("http-header")
+                .value_name("HEADER")
+                .multiple(true)
+                .help("Provide custom http header"),
         )
         .arg(
             Arg::with_name("verify-header")
