@@ -135,7 +135,7 @@ fn parse_input_config(matches: &clap::ArgMatches<'_>) -> clone_cmd::InputArchive
     match input.parse::<Url>() {
         Ok(url) => {
             // Use as URL
-            clone_cmd::InputArchive::Remote {
+            clone_cmd::InputArchive::Remote(Box::new(clone_cmd::RemoteInput {
                 url,
                 retries: matches
                     .value_of("http-retry-count")
@@ -166,7 +166,7 @@ fn parse_input_config(matches: &clap::ArgMatches<'_>) -> clone_cmd::InputArchive
                         .collect(),
                     None => reqwest::header::HeaderMap::new(),
                 },
-            }
+            }))
         }
         Err(_) => {
             // Use as path

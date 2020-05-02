@@ -184,7 +184,7 @@ mod tests {
                 })
                 .collect()
         };
-        assert_eq!(sums[0], 1406929643);
+        assert_eq!(sums[0], 1_406_929_643);
     }
     #[test]
     fn last_valid_correct_sum() {
@@ -206,6 +206,6 @@ mod tests {
                 })
                 .collect()
         };
-        assert_eq!(sums[9], 1406929643);
+        assert_eq!(sums[9], 1_406_929_643);
     }
 }

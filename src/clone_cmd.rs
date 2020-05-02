@@ -4,6 +4,7 @@ use log::*;
 use reqwest::header::HeaderMap;
 use std::io::SeekFrom;
 use std::path::PathBuf;
+use std::time::Duration;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use url::Url;
@@ -236,21 +237,24 @@ async fn clone_archive(cmd: Command, reader: &mut dyn Reader) -> Result<(), Erro
 }
 
 #[derive(Debug, Clone)]
+pub struct RemoteInput {
+    pub url: Url,
+    pub retries: u32,
+    pub retry_delay: Option<Duration>,
+    pub receive_timeout: Option<Duration>,
+    pub headers: HeaderMap,
+}
+
+#[derive(Debug, Clone)]
 pub enum InputArchive {
     Local(std::path::PathBuf),
-    Remote {
-        url: Url,
-        retries: u32,
-        retry_delay: Option<std::time::Duration>,
-        receive_timeout: Option<std::time::Duration>,
-        headers: HeaderMap,
-    },
+    Remote(Box<RemoteInput>),
 }
 impl InputArchive {
     fn source(&self) -> String {
         match self {
             Self::Local(p) => format!("{}", p.display()),
-            Self::Remote { url, .. } => url.to_string(),
+            Self::Remote(input) => input.url.to_string(),
         }
     }
 }
@@ -276,20 +280,14 @@ impl Command {
                     .await
                     .expect("failed to open local archive"),
             ),
-            InputArchive::Remote {
-                url,
-                retries,
-                retry_delay,
-                receive_timeout,
-                headers,
-            } => {
+            InputArchive::Remote(input) => {
                 let mut request = reqwest::Client::new()
-                    .get(url.clone())
-                    .headers(headers.clone());
-                if let Some(timeout) = receive_timeout {
-                    request = request.timeout(*timeout);
+                    .get(input.url.clone())
+                    .headers(input.headers.clone());
+                if let Some(timeout) = input.receive_timeout {
+                    request = request.timeout(timeout);
                 }
-                Box::new(ReaderRemote::new(request, *retries, *retry_delay))
+                Box::new(ReaderRemote::new(request, input.retries, input.retry_delay))
             }
         };
         clone_archive(self, &mut *reader).await

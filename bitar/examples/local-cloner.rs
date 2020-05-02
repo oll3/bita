@@ -1,6 +1,4 @@
-use bitar;
 use bitar::{clone_from_archive, clone_from_readable, Archive, CloneOptions};
-use tokio;
 use tokio::fs::{File, OpenOptions};
 
 #[tokio::main]

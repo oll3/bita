@@ -2,7 +2,6 @@ use async_trait::async_trait;
 use futures_util::pin_mut;
 use futures_util::stream::StreamExt;
 use log::*;
-use num_cpus;
 use std::collections::HashMap;
 use std::io::SeekFrom;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, AsyncWrite, AsyncWriteExt};
