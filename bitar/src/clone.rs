@@ -121,15 +121,16 @@ where
 }
 
 /// Clone chunks from a readable source
-pub async fn clone_from_readable<I>(
+pub async fn clone_from_readable<I, C>(
     opts: &CloneOptions,
     input: &mut I,
     archive: &Archive,
     chunks: &mut ChunkIndex,
-    output: &mut dyn CloneOutput,
+    output: &mut C,
 ) -> Result<u64, Error>
 where
     I: AsyncRead + Unpin,
+    C: CloneOutput,
 {
     let mut total_read = 0;
     let hash_length = archive.chunk_hash_length();
@@ -174,13 +175,17 @@ where
 }
 
 /// Clone chunks from archive
-pub async fn clone_from_archive(
+pub async fn clone_from_archive<R, C>(
     opts: &CloneOptions,
-    reader: &mut dyn Reader,
+    reader: &mut R,
     archive: &Archive,
     chunks: &mut ChunkIndex,
-    output: &mut dyn CloneOutput,
-) -> Result<u64, Error> {
+    output: &mut C,
+) -> Result<u64, Error>
+where
+    R: Reader,
+    C: CloneOutput,
+{
     let mut total_fetched = 0u64;
     let grouped_chunks = archive.grouped_chunks(&chunks);
     for group in grouped_chunks {

@@ -89,8 +89,11 @@ async fn is_block_dev(file: &mut File) -> Result<bool, Error> {
 async fn is_block_dev(_file: &mut File) -> Result<bool, Error> {
     Ok(false)
 }
-async fn clone_archive(cmd: Command, reader: &mut dyn Reader) -> Result<(), Error> {
-    let archive = Archive::try_init(reader).await?;
+async fn clone_archive<R>(cmd: Command, mut reader: R) -> Result<(), Error>
+where
+    R: Reader,
+{
+    let archive = Archive::try_init(&mut reader).await?;
     let mut chunks_left = archive.source_index().clone();
     let mut total_read_from_seed = 0u64;
 
@@ -202,8 +205,14 @@ async fn clone_archive(cmd: Command, reader: &mut dyn Reader) -> Result<(), Erro
         chunks_left.len(),
         cmd.input_archive.source()
     );
-    let total_read_from_remote =
-        clone_from_archive(&clone_opts, reader, &archive, &mut chunks_left, &mut output).await?;
+    let total_read_from_remote = clone_from_archive(
+        &clone_opts,
+        &mut reader,
+        &archive,
+        &mut chunks_left,
+        &mut output,
+    )
+    .await?;
     info!(
         "Used {} bytes from {}",
         size_to_str(total_read_from_remote),
@@ -274,12 +283,16 @@ pub struct Command {
 
 impl Command {
     pub async fn run(self) -> Result<(), Error> {
-        let mut reader: Box<dyn Reader> = match &self.input_archive {
-            InputArchive::Local(path) => Box::new(
-                File::open(path)
-                    .await
-                    .expect("failed to open local archive"),
-            ),
+        match self.input_archive.clone() {
+            InputArchive::Local(path) => {
+                clone_archive(
+                    self,
+                    File::open(path)
+                        .await
+                        .expect("failed to open local archive"),
+                )
+                .await
+            }
             InputArchive::Remote(input) => {
                 let mut request = reqwest::Client::new()
                     .get(input.url.clone())
@@ -287,9 +300,12 @@ impl Command {
                 if let Some(timeout) = input.receive_timeout {
                     request = request.timeout(timeout);
                 }
-                Box::new(ReaderRemote::new(request, input.retries, input.retry_delay))
+                clone_archive(
+                    self,
+                    ReaderRemote::new(request, input.retries, input.retry_delay),
+                )
+                .await
             }
-        };
-        clone_archive(self, &mut *reader).await
+        }
     }
 }

@@ -4,7 +4,10 @@ use tokio::fs::File;
 use crate::string_utils::*;
 use bitar::{Archive, ChunkerConfig, ChunkerFilterConfig, Error, Reader, ReaderRemote};
 
-pub async fn print_archive_reader(reader: &mut dyn Reader) -> Result<(), Error> {
+pub async fn print_archive_reader<R>(reader: &mut R) -> Result<(), Error>
+where
+    R: Reader,
+{
     let archive = Archive::try_init(reader).await?;
     print_archive(&archive);
     Ok(())
@@ -77,13 +80,12 @@ pub struct Command {
 
 impl Command {
     pub async fn run(self) -> Result<(), Error> {
-        let mut reader: Box<dyn Reader> = if let Ok(uri) = self.input.parse::<reqwest::Url>() {
+        if let Ok(uri) = self.input.parse::<reqwest::Url>() {
             let request = reqwest::Client::new().get(uri);
-            Box::new(ReaderRemote::new(request, 0, None))
+            print_archive_reader(&mut ReaderRemote::new(request, 0, None)).await
         } else {
-            Box::new(File::open(&self.input).await?)
-        };
-        print_archive_reader(&mut *reader).await?;
-        Ok(())
+            let mut file = File::open(&self.input).await?;
+            print_archive_reader(&mut file).await
+        }
     }
 }

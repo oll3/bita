@@ -71,7 +71,10 @@ impl Archive {
         Ok(())
     }
 
-    pub async fn try_init(reader: &mut dyn Reader) -> Result<Self, Error> {
+    pub async fn try_init<R>(reader: &mut R) -> Result<Self, Error>
+    where
+        R: Reader,
+    {
         // Read the pre-header (file magic and size)
         let mut header = reader.read_at(0, header::PRE_HEADER_SIZE).await?;
         Self::verify_pre_header(&header)?;
