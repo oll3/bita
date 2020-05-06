@@ -6,10 +6,10 @@
 
 *bita* is a HTTP based file synchronization tool striving for low bandwidth usage through data reuse.
 
-* Reuse data from any local file or device :file_folder:
-* Clone using any file or block device as output :floppy_disk:
-* Host archives using any regular HTTP/HTTPS server or service :link:
-* Written in [Rust](https://www.rust-lang.org) for performance and quality :rocket:
+* Reuse data from any local file or device 📁
+* Clone using any file or block device as output 💾
+* Host archives using any regular HTTP/HTTPS server or service 🔗
+* Written in [Rust](https://www.rust-lang.org) for fun, performance and quality 🚀♥
 
 
 ## Software updates
