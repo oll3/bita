@@ -32,6 +32,7 @@ num_cpus = "1.13"
 [dev-dependencies]
 tempfile = "3.1"
 tokio = {version = "0.2", features = ["fs", "macros"] }
+hyper = "0.13"
 
 [dependencies.reqwest]
 version = "0.10"
