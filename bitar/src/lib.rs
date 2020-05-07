@@ -11,6 +11,7 @@ mod hashsum;
 mod header;
 mod http_range_request;
 mod reader;
+mod reader_remote;
 mod rolling_hash;
 
 pub use archive::Archive;
@@ -24,7 +25,8 @@ pub use compression::Compression;
 pub use error::Error;
 pub use hashsum::HashSum;
 pub use header::{build_header, ARCHIVE_MAGIC, PRE_HEADER_SIZE};
-pub use reader::{Reader, ReaderRemote};
+pub use reader::Reader;
+pub use reader_remote::ReaderRemote;
 pub use rolling_hash::{BuzHash, RollSum, RollingHash};
 
 pub mod chunk_dictionary {
