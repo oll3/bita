@@ -1,6 +1,6 @@
 [package]
 name = "bita"
-version = "0.6.3"
+version = "0.6.4"
 authors = ["Olle Sandberg <olle@b3rg.se>"]
 license = "MIT"
 edition = '2018'
@@ -24,7 +24,7 @@ fern = "0.6.0"
 chrono = "0.4.11"
 futures-util = "0.3.4"
 tokio = { version = "0.2.20", features = ["fs", "io-std", "sync", "io-util", "macros", "time", "rt-threaded"] }
-bitar = { version = "0.6.3", path = "bitar" }
+bitar = { version = "0.6.4", path = "bitar" }
 url = "2.1.1"
 num_cpus = "1.13.0"
 async-trait = "0.1.30"
