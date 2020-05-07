@@ -80,9 +80,8 @@ pub struct Command {
 
 impl Command {
     pub async fn run(self) -> Result<(), Error> {
-        if let Ok(uri) = self.input.parse::<reqwest::Url>() {
-            let request = reqwest::Client::new().get(uri);
-            print_archive_reader(&mut ReaderRemote::new(request, 0, None)).await
+        if let Ok(url) = self.input.parse::<reqwest::Url>() {
+            print_archive_reader(&mut ReaderRemote::from_url(url)).await
         } else {
             let mut file = File::open(&self.input).await?;
             print_archive_reader(&mut file).await

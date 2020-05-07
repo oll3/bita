@@ -8,6 +8,7 @@ use clap::{App, Arg, SubCommand};
 use log::*;
 use std::path::Path;
 use std::process;
+use std::time::Duration;
 use url::Url;
 
 use crate::string_utils::*;
@@ -142,11 +143,12 @@ fn parse_input_config(matches: &clap::ArgMatches<'_>) -> clone_cmd::InputArchive
                     .unwrap_or("0")
                     .parse()
                     .expect("failed to parse http-retry-count"),
-                retry_delay: matches.value_of("http-retry-delay").map(|v| {
-                    std::time::Duration::from_secs(
-                        v.parse().expect("failed to parse http-retry-delay"),
-                    )
-                }),
+                retry_delay: Duration::from_secs(
+                    matches
+                        .value_of("http-retry-delay")
+                        .map(|v| v.parse().expect("failed to parse http-retry-delay"))
+                        .unwrap_or(0),
+                ),
                 receive_timeout: matches.value_of("http-timeout").map(|v| {
                     std::time::Duration::from_secs(v.parse().expect("failed to parse http-timeout"))
                 }),

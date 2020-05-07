@@ -11,7 +11,7 @@ pub(crate) struct Builder {
     request: RequestBuilder,
     size: u64,
     offset: u64,
-    retry_delay: Option<Duration>,
+    retry_delay: Duration,
     retry_count: u32,
 }
 
@@ -21,11 +21,11 @@ impl Builder {
             request,
             offset,
             size,
-            retry_delay: None,
+            retry_delay: Duration::from_secs(0),
             retry_count: 0,
         }
     }
-    pub fn retry(mut self, retry_count: u32, retry_delay: Option<Duration>) -> Self {
+    pub fn retry(mut self, retry_count: u32, retry_delay: Duration) -> Self {
         self.retry_delay = retry_delay;
         self.retry_count = retry_count;
         self
@@ -78,9 +78,7 @@ impl Builder {
                         }
                     };
                 }
-                if let Some(retry_delay) = self.retry_delay {
-                    delay_for(retry_delay).await;
-                }
+                delay_for(self.retry_delay).await;
             }
         }
     }
@@ -116,9 +114,7 @@ impl Builder {
                     }
                 }
             }
-            if let Some(retry_delay) = self.retry_delay {
-                delay_for(retry_delay).await;
-            }
+            delay_for(self.retry_delay).await;
         }
     }
 }

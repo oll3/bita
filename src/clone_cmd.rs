@@ -249,7 +249,7 @@ where
 pub struct RemoteInput {
     pub url: Url,
     pub retries: u32,
-    pub retry_delay: Option<Duration>,
+    pub retry_delay: Duration,
     pub receive_timeout: Option<Duration>,
     pub headers: HeaderMap,
 }
@@ -302,7 +302,9 @@ impl Command {
                 }
                 clone_archive(
                     self,
-                    ReaderRemote::new(request, input.retries, input.retry_delay),
+                    ReaderRemote::from_request(request)
+                        .retries(input.retries)
+                        .retry_delay(input.retry_delay),
                 )
                 .await
             }

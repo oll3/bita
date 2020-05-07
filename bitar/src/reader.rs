@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use core::pin::Pin;
 use futures_core::stream::Stream;
 use futures_util::{pin_mut, StreamExt};
-use reqwest::RequestBuilder;
+use reqwest::{RequestBuilder, Url};
 use std::collections::VecDeque;
 use std::io::SeekFrom;
 use std::time::Duration;
@@ -50,19 +50,42 @@ where
     }
 }
 
+/// ReaderRemote is a helper for reading archives from a remote http location.
 pub struct ReaderRemote {
     request: RequestBuilder,
     retries: u32,
-    retry_delay: Option<Duration>,
+    retry_delay: Duration,
 }
 
 impl ReaderRemote {
-    pub fn new(request: RequestBuilder, retries: u32, retry_delay: Option<Duration>) -> Self {
+    /// Create a remote archive reader using RequestBuilder for the http request.
+    pub fn from_request(request: RequestBuilder) -> Self {
         Self {
             request,
-            retries,
-            retry_delay,
+            retries: 0,
+            retry_delay: Duration::from_secs(0),
         }
+    }
+
+    /// Create a remote archive reader using an URL and default parameters for the request.
+    pub fn from_url(url: Url) -> Self {
+        Self::from_request(reqwest::Client::new().get(url))
+    }
+
+    /// Set number of times to retry reading from the remote server if the request would fail
+    /// for any reason.
+    /// The reader will try to reconnect and continue download from where the failure occured.
+    /// Any progress made so far should not be lost.
+    pub fn retries(mut self, retries: u32) -> Self {
+        self.retries = retries;
+        self
+    }
+
+    /// Set a delay between attempts to reconnect to the remote server.
+    /// On failure the reader will wait for the given time before trying to reconnect.
+    pub fn retry_delay(mut self, retry_delay: Duration) -> Self {
+        self.retry_delay = retry_delay;
+        self
     }
 
     fn read_chunks<'a>(
