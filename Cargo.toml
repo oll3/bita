@@ -22,17 +22,21 @@ atty = "0.2.14"
 log = "0.4.8"
 fern = "0.6.0"
 chrono = "0.4.11"
-futures-util = "0.3.4"
+futures-util = "0.3.5"
 tokio = { version = "0.2.20", features = ["fs", "io-std", "sync", "io-util", "macros", "time", "rt-threaded"] }
 bitar = { version = "0.6.4", path = "bitar" }
 url = "2.1.1"
 num_cpus = "1.13.0"
 async-trait = "0.1.30"
-reqwest = "0.10.4"
+
+[dependencies.reqwest]
+version = "0.10.4"
+default-features = false
+features = ["stream"]
 
 [features]
 default = ["default-tls"]
 lzma-compression = ["bitar/lzma-compression"]
 zstd-compression = ["bitar/zstd-compression"]
-default-tls = ["bitar/default-tls"]
-rustls-tls = ["bitar/rustls-tls"]
+default-tls = ["reqwest/default-tls", "bitar/default-tls"]
+rustls-tls = ["reqwest/rustls-tls", "bitar/rustls-tls"]
