@@ -141,7 +141,7 @@ where
     }
 }
 
-impl<'a, T> Stream for Chunker<'a, T>
+impl<T> Stream for Chunker<'_, T>
 where
     T: AsyncRead + Unpin,
 {

@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-use futures_util::pin_mut;
 use futures_util::stream::StreamExt;
 use log::*;
 use std::collections::HashMap;
@@ -192,11 +191,9 @@ where
         // For each group of chunks
         let start_offset = archive.chunk_data_offset() + group[0].archive_offset;
         let compression = archive.chunk_compression();
-        let archive_chunk_stream = reader
-            .read_chunks(
-                start_offset,
-                group.iter().map(|c| c.archive_size as usize).collect(),
-            )
+        let chunks_sizes: Vec<usize> = group.iter().map(|c| c.archive_size as usize).collect();
+        let mut chunk_stream = reader
+            .read_chunks(start_offset, &chunks_sizes[..])
             .enumerate()
             .map(|(index, read_result)| {
                 let checksum = group[index].checksum.clone();
@@ -214,8 +211,7 @@ where
             })
             .buffered(opts.get_max_buffered_chunks());
 
-        pin_mut!(archive_chunk_stream);
-        while let Some(result) = archive_chunk_stream.next().await {
+        while let Some(result) = chunk_stream.next().await {
             // For each chunk read from archive
             let result = result?;
             let (hash, chunk) = result?;

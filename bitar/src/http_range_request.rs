@@ -1,28 +1,34 @@
-use async_stream::try_stream;
+use bytes::Bytes;
+use core::pin::Pin;
+use core::task::{Context, Poll};
 use futures_core::stream::Stream;
-use futures_util::{pin_mut, StreamExt};
+use futures_util::StreamExt;
 use reqwest::RequestBuilder;
+use std::future::Future;
 use std::time::Duration;
+
 use tokio::time::delay_for;
 
 use crate::Error;
 
-pub(crate) struct Builder {
-    request: RequestBuilder,
+pub(crate) struct Builder<'a> {
+    request: &'a RequestBuilder,
+    state: RequestState,
     size: u64,
     offset: u64,
     retry_delay: Duration,
     retry_count: u32,
 }
 
-impl Builder {
-    pub fn new(request: RequestBuilder, offset: u64, size: u64) -> Self {
+impl<'a> Builder<'a> {
+    pub fn new(request: &'a RequestBuilder, offset: u64, size: u64) -> Self {
         Self {
             request,
             offset,
             size,
             retry_delay: Duration::from_secs(0),
             retry_count: 0,
+            state: RequestState::Init,
         }
     }
     pub fn retry(mut self, retry_count: u32, retry_delay: Duration) -> Self {
@@ -30,63 +36,7 @@ impl Builder {
         self.retry_count = retry_count;
         self
     }
-    fn stream_fail(
-        request: RequestBuilder,
-        offset: u64,
-        size: u64,
-    ) -> impl Stream<Item = Result<bytes::Bytes, Error>> {
-        log::debug!(
-            "Reading from remote, starting at offset {} with size {}...",
-            offset,
-            size
-        );
-        let end_offset = offset + size - 1;
-        let request = request.header(
-            reqwest::header::RANGE,
-            format!("bytes={}-{}", offset, end_offset),
-        );
-        try_stream! {
-            let response = request.send().await?;
-            let mut stream = response.bytes_stream();
-            while let Some(item) = stream.next().await {
-                let chunk = item?;
-                yield chunk;
-            }
-        }
-    }
-    pub fn stream(mut self) -> impl Stream<Item = Result<bytes::Bytes, Error>> {
-        try_stream! {
-            loop {
-                let stream = Self::stream_fail(
-                    self.request.try_clone().ok_or(Error::RequestNotClonable)?,
-                    self.offset,
-                    self.size,
-                );
-                pin_mut!(stream);
-                while let Some(result) = stream.next().await {
-                    match result {
-                        Ok(item) => {
-                            self.offset += item.len() as u64;
-                            self.size -= item.len() as u64;
-                            yield item
-                        },
-                        Err(err) => if self.retry_count == 0 {
-                            Err(err)?
-                        } else {
-                            log::warn!("request failed (retrying soon): {}", err);
-                            self.retry_count -= 1;
-                        }
-                    };
-                }
-                delay_for(self.retry_delay).await;
-            }
-        }
-    }
-    async fn single_fail(
-        request: RequestBuilder,
-        offset: u64,
-        size: u64,
-    ) -> Result<bytes::Bytes, Error> {
+    async fn single_fail(request: RequestBuilder, offset: u64, size: u64) -> Result<Bytes, Error> {
         let end_offset = offset + size - 1;
         let request = request.header(
             reqwest::header::RANGE,
@@ -95,7 +45,7 @@ impl Builder {
         let response = request.send().await?;
         Ok(response.bytes().await?)
     }
-    pub async fn single(mut self) -> Result<bytes::Bytes, Error> {
+    pub async fn single(mut self) -> Result<Bytes, Error> {
         loop {
             match Self::single_fail(
                 self.request.try_clone().ok_or(Error::RequestNotClonable)?,
@@ -116,5 +66,77 @@ impl Builder {
             }
             delay_for(self.retry_delay).await;
         }
+    }
+
+    fn poll_read_fail(&mut self, cx: &mut Context) -> Poll<Option<Result<Bytes, Error>>> {
+        loop {
+            match &mut self.state {
+                RequestState::Init => {
+                    let end_offset = self.offset + self.size - 1;
+                    let request = match self.request.try_clone() {
+                        Some(request) => request,
+                        None => return Poll::Ready(Some(Err(Error::RequestNotClonable))),
+                    };
+                    let request = request
+                        .header(
+                            reqwest::header::RANGE,
+                            format!("bytes={}-{}", self.offset, end_offset),
+                        )
+                        .send();
+                    self.state = RequestState::Request(Box::new(request));
+                }
+                RequestState::Request(request) => match Pin::new(&mut *request).poll(cx) {
+                    Poll::Ready(Ok(response)) => {
+                        self.state = RequestState::Stream(Box::new(response.bytes_stream()));
+                    }
+                    Poll::Ready(Err(err)) => return Poll::Ready(Some(Err(Error::from(err)))),
+                    Poll::Pending => return Poll::Pending,
+                },
+                RequestState::Stream(stream) => match stream.poll_next_unpin(cx) {
+                    Poll::Ready(Some(Ok(item))) => {
+                        self.offset += item.len() as u64;
+                        self.size -= item.len() as u64;
+                        return Poll::Ready(Some(Ok(item)));
+                    }
+                    Poll::Ready(Some(Err(err))) => return Poll::Ready(Some(Err(Error::from(err)))),
+                    Poll::Ready(None) => return Poll::Ready(None),
+                    Poll::Pending => return Poll::Pending,
+                },
+                RequestState::Delay(delay) => match Pin::new(delay).poll(cx) {
+                    Poll::Ready(()) => self.state = RequestState::Init,
+                    Poll::Pending => return Poll::Pending,
+                },
+            }
+        }
+    }
+    fn poll_read(&mut self, cx: &mut Context) -> Poll<Option<Result<Bytes, Error>>> {
+        loop {
+            match self.poll_read_fail(cx) {
+                Poll::Ready(Some(Err(err))) => {
+                    if self.retry_count == 0 {
+                        return Poll::Ready(Some(Err(err)));
+                    } else {
+                        log::warn!("request failed (retrying soon): {}", err);
+                        self.retry_count -= 1;
+                        self.state = RequestState::Delay(delay_for(self.retry_delay));
+                    }
+                }
+                result => return result,
+            }
+        }
+    }
+}
+
+enum RequestState {
+    Init,
+    Request(Box<dyn Future<Output = Result<reqwest::Response, reqwest::Error>> + Send + Unpin>),
+    Stream(Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send + Unpin>),
+    Delay(tokio::time::Delay),
+}
+
+impl<'a> Stream for Builder<'a> {
+    type Item = Result<Bytes, Error>;
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        self.poll_read(cx)
     }
 }

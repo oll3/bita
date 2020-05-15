@@ -1,10 +1,9 @@
-use async_stream::try_stream;
 use async_trait::async_trait;
 use core::pin::Pin;
+use core::task::{Context, Poll};
 use futures_core::stream::Stream;
-use futures_util::{pin_mut, StreamExt};
+use futures_util::StreamExt;
 use reqwest::{RequestBuilder, Url};
-use std::collections::VecDeque;
 use std::time::Duration;
 
 use crate::error::Error;
@@ -52,46 +51,66 @@ impl ReaderRemote {
     fn read_chunk_stream<'a>(
         &'a mut self,
         start_offset: u64,
-        mut chunk_sizes: VecDeque<usize>,
+        chunk_sizes: &'a [usize],
     ) -> impl Stream<Item = Result<Vec<u8>, Error>> + 'a {
-        try_stream! {
-            let total_size: u64 = chunk_sizes.iter().map(|v| *v as u64).sum();
-            let request = http_range_request::Builder::new(
-                    self.request.try_clone().ok_or(Error::RequestNotClonable)?,
-                    start_offset,
-                    total_size,
-                )
-                .retry(self.retries, self.retry_delay);
+        let total_size: u64 = chunk_sizes.iter().map(|v| *v as u64).sum();
+        ChunkReader {
+            request: http_range_request::Builder::new(&self.request, start_offset, total_size)
+                .retry(self.retries, self.retry_delay),
+            chunk_buf: Vec::with_capacity(*chunk_sizes.get(0).unwrap_or(&0)),
+            chunk_index: 0,
+            chunk_sizes,
+        }
+    }
+}
 
-            let mut stream = request.stream();
-            pin_mut!(stream);
-            let mut chunk_buf: Vec<u8> = Vec::new();
-            while let Some(chunk_size) = chunk_sizes.pop_front() {
-                loop {
-                    if chunk_buf.len() >= chunk_size {
-                        yield chunk_buf.drain(..chunk_size).collect();
-                        break;
-                    }
-                    match stream.next().await {
-                        Some(Ok(tmp_buf)) => chunk_buf.extend_from_slice(&tmp_buf[..]),
-                        Some(Err(err)) => Err(err)?,
-                        None => {}
-                    }
+struct ChunkReader<'a> {
+    request: http_range_request::Builder<'a>,
+    chunk_buf: Vec<u8>,
+    chunk_index: usize,
+    chunk_sizes: &'a [usize],
+}
+
+impl<'a> ChunkReader<'a>
+where
+    Self: Unpin,
+{
+    fn poll_read(&mut self, cx: &mut Context) -> Poll<Option<Result<Vec<u8>, Error>>> {
+        while self.chunk_index < self.chunk_sizes.len() {
+            let chunk_size = self.chunk_sizes[self.chunk_index];
+            if self.chunk_buf.len() >= chunk_size {
+                self.chunk_index += 1;
+                return Poll::Ready(Some(Ok(self.chunk_buf.drain(..chunk_size).collect())));
+            }
+            match self.request.poll_next_unpin(cx) {
+                Poll::Ready(Some(Ok(item))) => {
+                    self.chunk_buf.extend_from_slice(&item[..]);
                 }
+                Poll::Ready(None) => return Poll::Ready(Some(Err(Error::UnexpectedEnd))),
+                Poll::Ready(Some(Err(err))) => return Poll::Ready(Some(Err(err))),
+                Poll::Pending => return Poll::Pending,
             }
         }
+        Poll::Ready(None)
+    }
+}
+
+impl<'a> Stream for ChunkReader<'a> {
+    type Item = Result<Vec<u8>, Error>;
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        self.poll_read(cx)
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let chunks_left = self.chunk_sizes.len() - self.chunk_index;
+        (chunks_left, Some(chunks_left))
     }
 }
 
 #[async_trait]
 impl Reader for ReaderRemote {
     async fn read_at(&mut self, offset: u64, size: usize) -> Result<Vec<u8>, Error> {
-        let request = http_range_request::Builder::new(
-            self.request.try_clone().ok_or(Error::RequestNotClonable)?,
-            offset,
-            size as u64,
-        )
-        .retry(self.retries, self.retry_delay);
+        let request = http_range_request::Builder::new(&self.request, offset, size as u64)
+            .retry(self.retries, self.retry_delay);
 
         let res = request.single().await?;
         if res.len() >= size {
@@ -106,7 +125,7 @@ impl Reader for ReaderRemote {
     fn read_chunks<'a>(
         &'a mut self,
         start_offset: u64,
-        chunk_sizes: VecDeque<usize>,
+        chunk_sizes: &'a [usize],
     ) -> Pin<Box<dyn Stream<Item = Result<Vec<u8>, Error>> + Send + 'a>> {
         Box::pin(self.read_chunk_stream(start_offset, chunk_sizes))
     }
@@ -220,9 +239,9 @@ mod tests {
         let (listener, port) = new_listener();
         let server = new_server(listener, expect.clone());
         let mut reader = new_reader(port);
-        let chunk_sizes: VecDeque<usize> = vec![6, 10, 4].into();
+        let chunk_sizes = vec![6, 10, 4];
         let stream = reader
-            .read_chunks(0, chunk_sizes.clone())
+            .read_chunks(0, &chunk_sizes[..])
             .map(|v| v.expect("item"));
         tokio::select! {
             _ = server => panic!("server ended"),
@@ -239,9 +258,9 @@ mod tests {
         let (listener, port) = new_listener();
         let server = new_server(listener, expect.clone());
         let mut reader = new_reader(port);
-        let chunk_sizes: VecDeque<usize> = vec![4, 10, 4].into();
+        let chunk_sizes = vec![4, 10, 4];
         let stream = reader
-            .read_chunks(2, chunk_sizes.clone())
+            .read_chunks(2, &chunk_sizes[..])
             .map(|v| v.expect("item"));
         tokio::select! {
             _ = server => panic!("server ended"),
