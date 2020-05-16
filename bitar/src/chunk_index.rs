@@ -73,7 +73,7 @@ impl ChunkIndex {
         let chunker = Chunker::new(chunker_config, readable);
         let mut chunk_stream = chunker
             .map(|result| {
-                tokio::task::spawn(async move {
+                tokio::task::spawn_blocking(move || {
                     result.map(|(offset, chunk)| {
                         (
                             HashSum::b2_digest(&chunk, hash_length as usize),

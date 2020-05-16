@@ -42,7 +42,7 @@ async fn chunk_file(
         let mut chunk_stream = chunker
             .map(|result| {
                 let (offset, chunk) = result.expect("error while chunking");
-                tokio::task::spawn(async move { (HashSum::b2_digest(&chunk, 64), offset, chunk) })
+                tokio::task::spawn_blocking(move || (HashSum::b2_digest(&chunk, 64), offset, chunk))
             })
             .buffered(num_chunk_buffers)
             .map(|result| {
@@ -55,7 +55,7 @@ async fn chunk_file(
                 }
             })
             .map(|(hash, offset, chunk, do_compress)| {
-                tokio::task::spawn(async move {
+                tokio::task::spawn_blocking(move || {
                     if do_compress {
                         // Compress unique chunks
                         let compressed_chunk = compression

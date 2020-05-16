@@ -136,7 +136,7 @@ where
     let seed_chunker = Chunker::new(archive.chunker_config(), input);
     let mut found_chunks = seed_chunker
         .map(|result| {
-            tokio::task::spawn(async move {
+            tokio::task::spawn_blocking(move || {
                 result.map(|(_offset, chunk)| {
                     (HashSum::b2_digest(&chunk, hash_length as usize), chunk)
                 })
@@ -201,7 +201,7 @@ where
                 if let Ok(chunk) = &read_result {
                     total_fetched += chunk.len() as u64;
                 }
-                tokio::task::spawn(async move {
+                tokio::task::spawn_blocking(move || {
                     let chunk = read_result?;
                     Ok::<_, Error>((
                         checksum.clone(),

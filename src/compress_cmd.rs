@@ -58,7 +58,7 @@ where
                 // Build hash of full source
                 source_hasher.input(&chunk);
                 source_size += chunk.len() as u64;
-                tokio::task::spawn(async move {
+                tokio::task::spawn_blocking(move || {
                     (
                         HashSum::b2_digest(&chunk, hash_length as usize),
                         offset,
@@ -88,7 +88,7 @@ where
                 })
             })
             .map(|(chunk_index, hash, offset, chunk)| {
-                tokio::task::spawn(async move {
+                tokio::task::spawn_blocking(move || {
                     // Compress each chunk
                     let compressed_chunk = compression
                         .compress(&chunk)
