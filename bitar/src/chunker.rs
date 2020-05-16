@@ -259,27 +259,22 @@ where
         loop {
             if self.buf_index >= self.read_buf.len() {
                 // Fill buffer from source
-                let rc = match refill_read_buf(
-                    cx,
-                    CHUNKER_BUF_SIZE,
-                    &mut self.read_buf,
-                    &mut self.source,
-                ) {
-                    Poll::Ready(Ok(n)) => n,
+                match refill_read_buf(cx, CHUNKER_BUF_SIZE, &mut self.read_buf, &mut self.source) {
+                    Poll::Ready(Ok(n)) if n == 0 => {
+                        // EOF
+                        if !self.read_buf.is_empty() {
+                            let chunk = self.read_buf[..].to_vec();
+                            self.read_buf.resize(0, 0);
+                            self.buf_index = 0;
+                            return Poll::Ready(Some(Ok((self.chunk_start, chunk))));
+                        } else {
+                            return Poll::Ready(None);
+                        }
+                    }
                     Poll::Ready(Err(e)) => return Poll::Ready(Some(Err(e))),
                     Poll::Pending => return Poll::Pending,
+                    _ => {}
                 };
-                if rc == 0 {
-                    // EOF
-                    if !self.read_buf.is_empty() {
-                        let chunk = self.read_buf[..].to_vec();
-                        self.read_buf.resize(0, 0);
-                        self.buf_index = 0;
-                        return Poll::Ready(Some(Ok((self.chunk_start, chunk))));
-                    } else {
-                        return Poll::Ready(None);
-                    }
-                }
                 while self.source_index < self.hasher.window_size() as u64
                     && self.buf_index < self.read_buf.len()
                 {
