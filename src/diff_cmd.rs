@@ -59,7 +59,7 @@ async fn chunk_file(
                     if do_compress {
                         // Compress unique chunks
                         let compressed_chunk = compression
-                            .compress(&chunk)
+                            .compress(chunk.clone())
                             .expect("failed to compress chunk");
                         (hash, offset, chunk.len(), Some(compressed_chunk.len()))
                     } else {

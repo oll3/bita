@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use bytes::{Bytes, BytesMut};
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use futures_core::stream::Stream;
@@ -52,12 +53,12 @@ impl ReaderRemote {
         &'a mut self,
         start_offset: u64,
         chunk_sizes: &'a [usize],
-    ) -> impl Stream<Item = Result<Vec<u8>, Error>> + 'a {
+    ) -> impl Stream<Item = Result<Bytes, Error>> + 'a {
         let total_size: u64 = chunk_sizes.iter().map(|v| *v as u64).sum();
         ChunkReader {
             request: http_range_request::Builder::new(&self.request, start_offset, total_size)
                 .retry(self.retries, self.retry_delay),
-            chunk_buf: Vec::with_capacity(*chunk_sizes.get(0).unwrap_or(&0)),
+            chunk_buf: BytesMut::with_capacity(*chunk_sizes.get(0).unwrap_or(&0)),
             chunk_index: 0,
             chunk_sizes,
         }
@@ -66,7 +67,7 @@ impl ReaderRemote {
 
 struct ChunkReader<'a> {
     request: http_range_request::Builder<'a>,
-    chunk_buf: Vec<u8>,
+    chunk_buf: BytesMut,
     chunk_index: usize,
     chunk_sizes: &'a [usize],
 }
@@ -75,12 +76,13 @@ impl<'a> ChunkReader<'a>
 where
     Self: Unpin,
 {
-    fn poll_read(&mut self, cx: &mut Context) -> Poll<Option<Result<Vec<u8>, Error>>> {
+    fn poll_read(&mut self, cx: &mut Context) -> Poll<Option<Result<Bytes, Error>>> {
         while self.chunk_index < self.chunk_sizes.len() {
             let chunk_size = self.chunk_sizes[self.chunk_index];
             if self.chunk_buf.len() >= chunk_size {
                 self.chunk_index += 1;
-                return Poll::Ready(Some(Ok(self.chunk_buf.drain(..chunk_size).collect())));
+                let chunk = self.chunk_buf.split_to(chunk_size).freeze();
+                return Poll::Ready(Some(Ok(chunk)));
             }
             match self.request.poll_next_unpin(cx) {
                 Poll::Ready(Some(Ok(item))) => {
@@ -96,7 +98,7 @@ where
 }
 
 impl<'a> Stream for ChunkReader<'a> {
-    type Item = Result<Vec<u8>, Error>;
+    type Item = Result<Bytes, Error>;
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         self.poll_read(cx)
     }
@@ -108,25 +110,25 @@ impl<'a> Stream for ChunkReader<'a> {
 
 #[async_trait]
 impl Reader for ReaderRemote {
-    async fn read_at(&mut self, offset: u64, size: usize) -> Result<Vec<u8>, Error> {
+    async fn read_at(&mut self, offset: u64, size: usize) -> Result<Bytes, Error> {
         let request = http_range_request::Builder::new(&self.request, offset, size as u64)
             .retry(self.retries, self.retry_delay);
 
-        let res = request.single().await?;
+        let mut res = request.single().await?;
         if res.len() >= size {
             // Truncate the response if bigger than requested size
-            Ok(res[..size].to_vec())
+            Ok(res.split_to(size))
         } else if res.len() < size {
             Err(Error::UnexpectedEnd)
         } else {
-            Ok(res[..].to_vec())
+            Ok(res)
         }
     }
     fn read_chunks<'a>(
         &'a mut self,
         start_offset: u64,
         chunk_sizes: &'a [usize],
-    ) -> Pin<Box<dyn Stream<Item = Result<Vec<u8>, Error>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send + 'a>> {
         Box::pin(self.read_chunk_stream(start_offset, chunk_sizes))
     }
 }
@@ -245,8 +247,8 @@ mod tests {
             .map(|v| v.expect("item"));
         tokio::select! {
             _ = server => panic!("server ended"),
-            chunks = stream.collect::<Vec<Vec<u8>>>() => assert_eq!(chunks, vec![
-                vec![1, 2, 3, 4, 5, 6], vec![7, 8, 9, 10, 11, 12, 13, 14, 15, 16], vec![17, 18, 19, 20],
+            chunks = stream.collect::<Vec<Bytes>>() => assert_eq!(chunks, vec![
+                Bytes::from(vec![1, 2, 3, 4, 5, 6]), Bytes::from(vec![7, 8, 9, 10, 11, 12, 13, 14, 15, 16]), Bytes::from(vec![17, 18, 19, 20]),
             ]),
         };
     }
@@ -264,8 +266,8 @@ mod tests {
             .map(|v| v.expect("item"));
         tokio::select! {
             _ = server => panic!("server ended"),
-            chunks = stream.collect::<Vec<Vec<u8>>>() => assert_eq!(chunks, vec![
-                vec![3, 4, 5, 6], vec![7, 8, 9, 10, 11, 12, 13, 14, 15, 16], vec![17, 18, 19, 20],
+            chunks = stream.collect::<Vec<Bytes>>() => assert_eq!(chunks, vec![
+                Bytes::from(vec![3, 4, 5, 6]), Bytes::from(vec![7, 8, 9, 10, 11, 12, 13, 14, 15, 16]), Bytes::from(vec![17, 18, 19, 20]),
             ]),
         };
     }

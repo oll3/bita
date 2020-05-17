@@ -1,8 +1,8 @@
-use std::io;
-
+use bytes::{Bytes, BytesMut};
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use futures_core::stream::Stream;
+use std::io;
 use tokio::io::AsyncRead;
 
 use crate::rolling_hash::{BuzHash, RollSum, RollingHash};
@@ -12,7 +12,7 @@ const CHUNKER_BUF_SIZE: usize = 1024 * 1024;
 fn refill_read_buf<T>(
     cx: &mut Context,
     want: usize,
-    read_buf: &mut Vec<u8>,
+    read_buf: &mut BytesMut,
     mut source: &mut T,
 ) -> Poll<Result<usize, io::Error>>
 where
@@ -145,7 +145,7 @@ impl<T> Stream for Chunker<'_, T>
 where
     T: AsyncRead + Unpin,
 {
-    type Item = Result<(u64, Vec<u8>), io::Error>;
+    type Item = Result<(u64, Bytes), io::Error>;
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         match *self {
             Chunker::BuzHash(ref mut c) => c.poll_chunk(cx),
@@ -160,7 +160,7 @@ pub struct FixedSizeChunker<'a, T> {
     chunk_size: usize,
     source_index: u64,
     chunk_start: u64,
-    read_buf: Vec<u8>,
+    read_buf: BytesMut,
 }
 
 impl<'a, T> FixedSizeChunker<'a, T>
@@ -171,19 +171,19 @@ where
         // Allow for chunk size less than buzhash window
         Self {
             chunk_size: fixed_size,
-            read_buf: Vec::with_capacity(fixed_size + CHUNKER_BUF_SIZE),
+            read_buf: BytesMut::with_capacity(fixed_size + CHUNKER_BUF_SIZE),
             source,
             chunk_start: 0,
             source_index: 0,
         }
     }
     #[allow(clippy::type_complexity)]
-    fn poll_chunk(&mut self, cx: &mut Context) -> Poll<Option<Result<(u64, Vec<u8>), io::Error>>> {
+    fn poll_chunk(&mut self, cx: &mut Context) -> Poll<Option<Result<(u64, Bytes), io::Error>>> {
         loop {
             if self.read_buf.len() >= self.chunk_size {
                 let offset_and_chunk = (
                     self.chunk_start,
-                    self.read_buf.drain(..self.chunk_size).collect::<Vec<u8>>(),
+                    self.read_buf.split_to(self.chunk_size).freeze(),
                 );
                 self.chunk_start = self.source_index;
                 return Poll::Ready(Some(Ok(offset_and_chunk)));
@@ -202,8 +202,7 @@ where
                 if rc == 0 {
                     // EOF
                     if !self.read_buf.is_empty() {
-                        let offset_and_chunk =
-                            (self.chunk_start, self.read_buf.drain(..).collect());
+                        let offset_and_chunk = (self.chunk_start, self.read_buf.split().freeze());
                         self.chunk_start = self.source_index;
                         return Poll::Ready(Some(Ok(offset_and_chunk)));
                     } else {
@@ -220,7 +219,7 @@ pub struct InternalChunker<'a, T, H> {
     filter_mask: u32,
     min_chunk_size: usize,
     max_chunk_size: usize,
-    read_buf: Vec<u8>,
+    read_buf: BytesMut,
     source: &'a mut T,
     buzhash_input_limit: usize,
     source_index: u64,
@@ -245,7 +244,7 @@ where
             min_chunk_size: config.min_chunk_size,
             max_chunk_size: config.max_chunk_size,
             hasher: RollingHash::new(config.window_size),
-            read_buf: Vec::with_capacity(config.max_chunk_size + CHUNKER_BUF_SIZE),
+            read_buf: BytesMut::with_capacity(config.max_chunk_size + CHUNKER_BUF_SIZE),
             source,
             buzhash_input_limit,
             source_index: 0,
@@ -255,7 +254,7 @@ where
     }
 
     #[allow(clippy::type_complexity)]
-    fn poll_chunk(&mut self, cx: &mut Context) -> Poll<Option<Result<(u64, Vec<u8>), io::Error>>> {
+    fn poll_chunk(&mut self, cx: &mut Context) -> Poll<Option<Result<(u64, Bytes), io::Error>>> {
         loop {
             if self.buf_index >= self.read_buf.len() {
                 // Fill buffer from source
@@ -263,7 +262,7 @@ where
                     Poll::Ready(Ok(n)) if n == 0 => {
                         // EOF
                         if !self.read_buf.is_empty() {
-                            let chunk = self.read_buf[..].to_vec();
+                            let chunk = self.read_buf.split().freeze();
                             self.read_buf.resize(0, 0);
                             self.buf_index = 0;
                             return Poll::Ready(Some(Ok((self.chunk_start, chunk))));
@@ -321,8 +320,8 @@ where
 
             self.source_index += (self.buf_index - start_buf_index) as u64;
             if got_chunk {
-                let offset_and_chunk = (self.chunk_start, self.read_buf[..self.buf_index].to_vec());
-                self.read_buf.drain(..self.buf_index);
+                let chunk = self.read_buf.split_to(self.buf_index).freeze();
+                let offset_and_chunk = (self.chunk_start, chunk);
                 self.buf_index = 0;
                 self.chunk_start = self.source_index;
                 return Poll::Ready(Some(Ok(offset_and_chunk)));
@@ -336,7 +335,7 @@ where
     T: AsyncRead + Unpin,
     H: RollingHash + Unpin,
 {
-    type Item = Result<(u64, Vec<u8>), io::Error>;
+    type Item = Result<(u64, Bytes), io::Error>;
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         self.poll_chunk(cx)
     }
@@ -491,7 +490,7 @@ mod tests {
                 Chunker::new(chunker_config, &mut Box::new(&SRC[..]))
                     .map(|result| {
                         let (offset, chunk) = result.unwrap();
-                        assert_eq!(chunk, [0x1f, 0x55, 0x39, 0x5e, 0xfa]);
+                        assert_eq!(chunk, Bytes::from(vec![0x1f, 0x55, 0x39, 0x5e, 0xfa]));
                         offset
                     })
                     .collect::<Vec<u64>>()
@@ -522,7 +521,7 @@ mod tests {
                 Chunker::new(chunker_config, &mut Box::new(&SRC[..]),)
                     .map(|result| {
                         let (offset, chunk) = result.unwrap();
-                        assert_eq!(chunk, [0x1f, 0x55, 0x39, 0x5e, 0xfa]);
+                        assert_eq!(chunk, Bytes::from(vec![0x1f, 0x55, 0x39, 0x5e, 0xfa]));
                         offset
                     })
                     .collect::<Vec<u64>>()

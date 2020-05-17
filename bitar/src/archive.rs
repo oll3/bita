@@ -1,4 +1,5 @@
 use blake2::{Blake2b, Digest};
+use bytes::Bytes;
 use std::convert::TryFrom;
 
 use crate::chunk_dictionary as dict;
@@ -76,7 +77,7 @@ impl Archive {
         R: Reader,
     {
         // Read the pre-header (file magic and size)
-        let mut header = reader.read_at(0, header::PRE_HEADER_SIZE).await?;
+        let mut header: Vec<u8> = reader.read_at(0, header::PRE_HEADER_SIZE).await?.to_vec();
         Self::verify_pre_header(&header)?;
 
         let dictionary_size =
@@ -84,8 +85,8 @@ impl Archive {
                 as usize;
 
         // Read the dictionary, chunk data offset and header hash
-        header.append(
-            &mut reader
+        header.extend_from_slice(
+            &reader
                 .read_at(header::PRE_HEADER_SIZE as u64, dictionary_size + 8 + 64)
                 .await?,
         );
@@ -225,16 +226,14 @@ impl Archive {
         compression: Compression,
         archive_checksum: &HashSum,
         source_size: usize,
-        archive_data: Vec<u8>,
-    ) -> Result<Vec<u8>, Error> {
+        archive_data: Bytes,
+    ) -> Result<Bytes, Error> {
         let mut hasher = Blake2b::new();
         let chunk_data = if archive_data.len() == source_size {
             // Archive data is not compressed
             archive_data
         } else {
-            let mut decompress_buf = vec![];
-            compression.decompress(archive_data, &mut decompress_buf)?;
-            decompress_buf
+            compression.decompress(archive_data, source_size)?
         };
 
         // Verify data by hash

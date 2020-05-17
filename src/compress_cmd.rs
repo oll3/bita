@@ -91,7 +91,7 @@ where
                 tokio::task::spawn_blocking(move || {
                     // Compress each chunk
                     let compressed_chunk = compression
-                        .compress(&chunk)
+                        .compress(chunk.clone())
                         .expect("failed to compress chunk");
                     (chunk_index, hash, offset, chunk, compressed_chunk)
                 })

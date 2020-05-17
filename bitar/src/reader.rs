@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use bytes::{Bytes, BytesMut};
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use futures_core::stream::Stream;
@@ -16,7 +17,7 @@ where
     start_offset: u64,
     chunk_sizes: &'a [usize],
     chunk_index: usize,
-    buf: Vec<u8>,
+    buf: BytesMut,
     buf_offset: usize,
     reader: &'a mut R,
 }
@@ -31,12 +32,12 @@ where
             should_seek: true,
             chunk_index: 0,
             start_offset,
-            buf: Vec::with_capacity(*chunk_sizes.get(0).unwrap_or(&0)),
+            buf: BytesMut::with_capacity(*chunk_sizes.get(0).unwrap_or(&0)),
             chunk_sizes,
             buf_offset: 0,
         }
     }
-    fn poll_chunk(&mut self, cx: &mut Context) -> Poll<Option<Result<Vec<u8>, Error>>>
+    fn poll_chunk(&mut self, cx: &mut Context) -> Poll<Option<Result<Bytes, Error>>>
     where
         R: AsyncSeekExt + AsyncRead + Send + Unpin,
         Self: Unpin + Send,
@@ -52,7 +53,7 @@ where
         while self.chunk_index < self.chunk_sizes.len() {
             let chunk_size = self.chunk_sizes[self.chunk_index];
             if self.buf_offset >= chunk_size {
-                let chunk = self.buf.drain(0..chunk_size).collect();
+                let chunk = self.buf.split_to(chunk_size).freeze();
                 self.buf_offset = 0;
                 self.chunk_index += 1;
                 self.buf.resize(chunk_size, 0);
@@ -75,7 +76,7 @@ impl<'a, R> Stream for ChunkReader<'a, R>
 where
     R: AsyncRead + AsyncSeek + Unpin + Send,
 {
-    type Item = Result<Vec<u8>, Error>;
+    type Item = Result<Bytes, Error>;
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         self.poll_chunk(cx)
     }
@@ -87,12 +88,12 @@ where
 
 #[async_trait]
 pub trait Reader {
-    async fn read_at<'a>(&'a mut self, offset: u64, size: usize) -> Result<Vec<u8>, Error>;
+    async fn read_at<'a>(&'a mut self, offset: u64, size: usize) -> Result<Bytes, Error>;
     fn read_chunks<'a>(
         &'a mut self,
         start_offset: u64,
         chunk_sizes: &'a [usize],
-    ) -> Pin<Box<dyn Stream<Item = Result<Vec<u8>, Error>> + Send + 'a>>;
+    ) -> Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send + 'a>>;
 }
 
 #[async_trait]
@@ -100,17 +101,20 @@ impl<T> Reader for T
 where
     T: AsyncRead + AsyncSeekExt + Unpin + Send,
 {
-    async fn read_at(&mut self, offset: u64, size: usize) -> Result<Vec<u8>, Error> {
+    async fn read_at(&mut self, offset: u64, size: usize) -> Result<Bytes, Error> {
         self.seek(SeekFrom::Start(offset)).await?;
-        let mut buf = vec![0; size];
+        let mut buf = BytesMut::with_capacity(size);
+        unsafe {
+            buf.set_len(size);
+        }
         self.read_exact(&mut buf).await?;
-        Ok(buf)
+        Ok(buf.freeze())
     }
     fn read_chunks<'a>(
         &'a mut self,
         start_offset: u64,
         chunk_sizes: &'a [usize],
-    ) -> Pin<Box<dyn Stream<Item = Result<Vec<u8>, Error>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send + 'a>> {
         Box::pin(ChunkReader::new(self, start_offset, chunk_sizes))
     }
 }
