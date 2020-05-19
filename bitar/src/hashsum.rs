@@ -1,36 +1,47 @@
 use blake2::{Blake2b, Digest};
+use smallvec::SmallVec;
 use std::fmt;
 use std::hash::{Hash, Hasher};
-
+/// A hash sum, typically used for representing chunk or source hash.
 #[derive(Clone, Debug, Default, Eq)]
-pub struct HashSum(Vec<u8>);
+pub struct HashSum(SmallVec<[u8; 32]>);
 
 impl HashSum {
+    /// Create new empty hash sum.
     pub fn new() -> Self {
         Self::default()
     }
+    /// Create new hash sum using blake2 to digest the given data.
     pub fn b2_digest(data: &[u8], hash_length: usize) -> Self {
         let mut b2 = Blake2b::new();
         b2.input(data);
         Self {
-            0: b2.result()[0..hash_length].to_vec(),
+            0: SmallVec::from_slice(&b2.result()[0..hash_length]),
         }
     }
+    /// Create new hash sum from vec.
     pub fn from_vec(v: Vec<u8>) -> Self {
-        Self { 0: v }
+        Self { 0: v.into() }
     }
+    /// Create new hash sum from slice.
     pub fn from_slice(s: &[u8]) -> Self {
-        Self::from_vec(s.to_vec())
+        Self {
+            0: SmallVec::from_slice(s),
+        }
     }
+    /// Returns a new vec containing the hash sum.
     pub fn to_vec(&self) -> Vec<u8> {
         self.0.to_vec()
     }
+    /// Returns the hash sum as a slice.
     pub fn slice(&self) -> &[u8] {
         &self.0[..]
     }
+    /// Returns the length of the hash sum in bytes.
     pub fn len(&self) -> usize {
         self.0.len()
     }
+    /// Returns true if the hash sum is empty.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
