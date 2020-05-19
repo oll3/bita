@@ -271,4 +271,19 @@ mod tests {
             ]),
         };
     }
+    #[tokio::test]
+    async fn connection_timeout() {
+        let (listener, port) = new_listener();
+        let _server = new_server(listener, vec![]);
+        let mut reader = ReaderRemote::from_request(
+            reqwest::Client::new()
+                .get(Url::parse(&format!("http://127.0.0.1:{}", port)).unwrap())
+                .timeout(Duration::from_millis(5)),
+        );
+        let chunk_sizes = vec![1];
+        match reader.read_chunks(0, &chunk_sizes[..]).next().await {
+            Some(Err(Error::Http(reqwest::Error { .. }))) => {}
+            _ => panic!("unexpected result"),
+        };
+    }
 }
