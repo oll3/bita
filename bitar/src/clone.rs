@@ -187,13 +187,15 @@ where
 {
     let mut total_fetched = 0u64;
     let grouped_chunks = archive.grouped_chunks(&chunks);
+    let mut chunk_sizes = Vec::new();
     for group in grouped_chunks {
         // For each group of chunks
         let start_offset = archive.chunk_data_offset() + group[0].archive_offset;
         let compression = archive.chunk_compression();
-        let chunks_sizes: Vec<usize> = group.iter().map(|c| c.archive_size as usize).collect();
+        chunk_sizes.clear();
+        chunk_sizes.extend(group.iter().map(|c| c.archive_size as usize));
         let mut chunk_stream = reader
-            .read_chunks(start_offset, &chunks_sizes[..])
+            .read_chunks(start_offset, &chunk_sizes[..])
             .enumerate()
             .map(|(index, read_result)| {
                 let checksum = group[index].checksum.clone();
@@ -203,10 +205,9 @@ where
                 }
                 tokio::task::spawn_blocking(move || {
                     let chunk = read_result?;
-                    Ok::<_, Error>((
-                        checksum.clone(),
-                        Archive::decompress_and_verify(compression, &checksum, source_size, chunk)?,
-                    ))
+                    let chunk =
+                        Archive::decompress_and_verify(compression, &checksum, source_size, chunk)?;
+                    Ok::<_, Error>((checksum, chunk))
                 })
             })
             .buffered(opts.get_max_buffered_chunks());
