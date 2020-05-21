@@ -4,7 +4,7 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 /// A hash sum, typically used for representing chunk or source hash.
 #[derive(Clone, Debug, Default, Eq)]
-pub struct HashSum(SmallVec<[u8; 32]>);
+pub struct HashSum(SmallVec<[u8; 64]>);
 
 impl HashSum {
     /// Create new empty hash sum.
