@@ -190,35 +190,29 @@ impl Archive {
         &self.rebuild_order
     }
 
-    // Group chunks which are placed in sequence inside archive
+    /// Returns chunks at adjacent location in archive grouped together.
     pub fn grouped_chunks(&self, chunks: &ChunkIndex) -> Vec<Vec<ChunkDescriptor>> {
-        let mut descriptors: Vec<ChunkDescriptor> = self
+        let mut group_list = Vec::new();
+        let mut group: Vec<ChunkDescriptor> = Vec::new();
+        for descriptor in self
             .chunk_order
             .iter()
             .filter(|chunk| chunks.contains(&chunk.checksum))
             .cloned()
-            .collect();
-
-        let mut group_list = vec![];
-        if descriptors.is_empty() {
-            return group_list;
-        }
-        let mut group = vec![descriptors.remove(0)];
-        while !descriptors.is_empty() {
-            let descriptors = descriptors.remove(0);
-
-            let prev_chunk_end = group.last().unwrap().archive_offset
-                + u64::from(group.last().unwrap().archive_size);
-
-            if prev_chunk_end == descriptors.archive_offset {
-                // Chunk is placed right next to the previous chunk
-                group.push(descriptors);
+        {
+            if let Some(prev) = group.last() {
+                let prev_chunk_end = prev.archive_offset + u64::from(prev.archive_size);
+                if prev_chunk_end == descriptor.archive_offset {
+                    // Chunk is placed right next to the previous chunk
+                    group.push(descriptor);
+                } else {
+                    group_list.push(group);
+                    group = vec![descriptor];
+                }
             } else {
-                group_list.push(group);
-                group = vec![descriptors];
+                group.push(descriptor);
             }
         }
-        group_list.push(group);
         group_list
     }
 
