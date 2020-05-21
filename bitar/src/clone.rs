@@ -1,4 +1,6 @@
 use async_trait::async_trait;
+use blake2::{Blake2b, Digest};
+use bytes::Bytes;
 use futures_util::stream::StreamExt;
 use log::*;
 use std::collections::HashMap;
@@ -205,8 +207,7 @@ where
                 }
                 tokio::task::spawn_blocking(move || {
                     let chunk = read_result?;
-                    let chunk =
-                        Archive::decompress_and_verify(compression, &checksum, source_size, chunk)?;
+                    let chunk = decompress_and_verify(compression, &checksum, source_size, chunk)?;
                     Ok::<_, Error>((checksum, chunk))
                 })
             })
@@ -226,4 +227,31 @@ where
         }
     }
     Ok(total_fetched)
+}
+
+fn decompress_and_verify(
+    compression: crate::Compression,
+    archive_checksum: &HashSum,
+    source_size: usize,
+    compressed: Bytes,
+) -> Result<Bytes, Error> {
+    let mut hasher = Blake2b::new();
+    let chunk = if compressed.len() == source_size {
+        // Archive data is not compressed
+        compressed
+    } else {
+        compression.decompress(compressed, source_size)?
+    };
+    // Verify data by hash
+    hasher.input(&chunk);
+    let checksum = HashSum::from_slice(&hasher.result()[..archive_checksum.len()]);
+    if checksum != *archive_checksum {
+        debug!(
+            "chunk checksum mismatch (expected: {}, got: {})",
+            checksum, archive_checksum,
+        );
+        Err(Error::ChecksumMismatch)
+    } else {
+        Ok(chunk)
+    }
 }

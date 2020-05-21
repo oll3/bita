@@ -1,5 +1,4 @@
 use blake2::{Blake2b, Digest};
-use bytes::Bytes;
 use std::convert::TryFrom;
 
 use crate::chunk_dictionary as dict;
@@ -214,33 +213,6 @@ impl Archive {
             }
         }
         group_list
-    }
-
-    pub fn decompress_and_verify(
-        compression: Compression,
-        archive_checksum: &HashSum,
-        source_size: usize,
-        archive_data: Bytes,
-    ) -> Result<Bytes, Error> {
-        let mut hasher = Blake2b::new();
-        let chunk_data = if archive_data.len() == source_size {
-            // Archive data is not compressed
-            archive_data
-        } else {
-            compression.decompress(archive_data, source_size)?
-        };
-
-        // Verify data by hash
-        hasher.input(&chunk_data);
-        let checksum = HashSum::from_slice(&hasher.result()[..archive_checksum.len()]);
-        if checksum != *archive_checksum {
-            panic!(
-                "Chunk hash mismatch (expected: {}, got: {})",
-                checksum, archive_checksum,
-            );
-        }
-
-        Ok(chunk_data)
     }
 }
 
