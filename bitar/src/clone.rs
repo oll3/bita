@@ -9,9 +9,10 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, AsyncWrite, As
 
 use crate::{Archive, ChunkIndex, Chunker, Error, HashSum, Reader, ReorderOp};
 
+/// Output while cloning.
 #[async_trait]
 pub trait CloneOutput {
-    /// Write a single chunk to output at the given offsets
+    /// Write a single chunk to output at the given offsets.
     async fn write_chunk(
         &mut self,
         hash: &HashSum,
@@ -34,14 +35,14 @@ where
     }
 }
 
-/// Clone options
+/// Clone options.
 #[derive(Default, Clone)]
 pub struct CloneOptions {
     pub max_buffered_chunks: usize,
 }
 
 impl CloneOptions {
-    /// Set the maximum number of chunk buffers to use while cloning
+    /// Set the maximum number of chunk buffers to use while cloning.
     ///
     /// 0 will result in an automatically selected value.
     pub fn max_buffered_chunks(mut self, num: usize) -> Self {
@@ -61,7 +62,9 @@ impl CloneOptions {
     }
 }
 
-/// Clone by moving data in output in-place
+/// Clone by re-ordering chunks in target in-place.
+///
+/// Can be used for any target which is Read, Write and Seek:able.
 pub async fn clone_in_place<T>(
     opts: &CloneOptions,
     chunks: &mut ChunkIndex,
@@ -121,7 +124,7 @@ where
     Ok(total_moved + in_place_total_size)
 }
 
-/// Clone chunks from a readable source
+/// Clone chunks from a readable source.
 pub async fn clone_from_readable<I, C>(
     opts: &CloneOptions,
     input: &mut I,
@@ -175,7 +178,7 @@ where
     Ok(total_read)
 }
 
-/// Clone chunks from archive
+/// Clone chunks from archive.
 pub async fn clone_from_archive<R, C>(
     opts: &CloneOptions,
     reader: &mut R,

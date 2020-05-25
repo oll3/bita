@@ -10,15 +10,27 @@ use crate::{
     ChunkLocation, Error, HashSum,
 };
 
+/// Represents a single chunk re-ordering operation.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ReorderOp<'a> {
+    /// The `Copy` operation says we should copy a chunk from the source location to the
+    /// destination offsets. If we already have the given chunk stored in memory (from a
+    /// previous `StoreInMem` operation) we should copy it from memory instead of from
+    /// the source.
     Copy {
+        /// Identifies the chunk to copy.
         hash: &'a HashSum,
+        /// Location to read the chunk from.
         source: ChunkLocation,
+        /// Where to write the the chunk to.
         dest: Vec<u64>,
     },
+    /// The `StoreInMem` operation says to read a chunk from the source and keep it in
+    /// memory until next `Copy` of the given chunk.
     StoreInMem {
+        /// Identifies the chunk to store in memory.
         hash: &'a HashSum,
+        /// Location to read the chunk from.
         source: ChunkLocation,
     },
 }
@@ -47,10 +59,14 @@ struct ChunkSizeAndOffset {
     offsets: BinaryHeap<u64>,
 }
 
+/// Represents the structure of chunks for a specific source file.
+///
+/// Allows us to map between chunk hashes and source content location.
 #[derive(Clone, Debug)]
 pub struct ChunkIndex(HashMap<HashSum, ChunkSizeAndOffset>);
 
 impl ChunkIndex {
+    /// Build a ChunkIndex from any readable source.
     pub async fn from_readable<T>(
         chunker_config: &ChunkerConfig,
         hash_length: usize,
@@ -94,7 +110,7 @@ impl ChunkIndex {
         }
         Ok(Self(chunk_lookup))
     }
-
+    /// Build a ChunkIndex from a ChunkDictionary.
     pub fn from_dictionary(dict: &ChunkDictionary) -> Self {
         let mut chunk_lookup: HashMap<HashSum, ChunkSizeAndOffset> = HashMap::new();
         let mut chunk_offset = 0;
@@ -119,40 +135,39 @@ impl ChunkIndex {
         });
         Self(chunk_lookup)
     }
-
+    /// Remove a chunk by hash.
     pub fn remove(&mut self, hash: &HashSum) -> bool {
         self.0.remove(hash).is_some()
     }
-
+    /// Test if a chunk is in the index.
     pub fn contains(&self, hash: &HashSum) -> bool {
         self.0.contains_key(hash)
     }
     fn get(&self, hash: &HashSum) -> Option<&ChunkSizeAndOffset> {
         self.0.get(hash)
     }
+    /// Get first source offset of a chunk.
     pub fn get_first_offset(&self, hash: &HashSum) -> Option<ChunkLocation> {
         self.get(&hash).map(|ChunkSizeAndOffset { size, offsets }| {
             ChunkLocation::new(*offsets.peek().unwrap(), *size)
         })
     }
-
+    /// Get number of chunks in the index.
     pub fn len(&self) -> usize {
         self.0.len()
     }
-
+    /// Test if index is empty.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
-
-    /// Iterate source offsets of a chunk
+    /// Iterate source offsets of a chunk.
     pub fn offsets<'a>(&'a self, hash: &HashSum) -> Option<impl Iterator<Item = u64> + 'a> {
         self.0.get(hash).map(|d| d.offsets.iter().copied())
     }
-    /// Iterate chunk hashes in index
+    /// Iterate chunk hashes in index.
     pub fn keys(&self) -> impl Iterator<Item = &HashSum> {
         self.0.keys()
     }
-
     /// Filter the given chunk index for chunks which are already in place in self
     ///
     /// Returns the number of chunks filtered and total size of them.
@@ -177,7 +192,6 @@ impl ChunkIndex {
         chunk_set.0 = new_set;
         (num_alread_in_place, total_size)
     }
-
     // Each chunk to reorder will potentially overwrite other chunks.
     // Hence we do a DFS for each chunk and the chunks it will overlap and build the
     // reordering operations in reversed order, down from the leaf nodes up to the root.
@@ -245,9 +259,13 @@ impl ChunkIndex {
             }
         }
     }
-
-    pub fn reorder_ops(&self, new_order: &Self) -> Vec<ReorderOp> {
-        // Create intersection between the two chunk sets to find which chunks that should be moved.
+    /// Get a description of how to transform one source file into another.
+    ///
+    /// The transformation is done by reordering the chunks of a file in place trying to match the new
+    /// order. Only the chunks present in both the current index and the new index will be reordered,
+    /// while chunks that are not present in the current index still has to be fetched from elsewhere.
+    pub fn reorder_ops(&self, new_order: &ChunkIndex) -> Vec<ReorderOp> {
+        // Generate an intersection between the two chunk sets to find which chunks that should be moved.
         // Also generate a layout of the source where we can go from offset+size to which chunks are
         // located within that range.
         let mut source_layout: ChunkLocationMap<&HashSum> = ChunkLocationMap::new();

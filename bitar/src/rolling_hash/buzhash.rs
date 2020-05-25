@@ -38,6 +38,7 @@ static BUZHASH_TABLE: &[u32] = &[
     0x87abd4a7, 0x2799ae4f, 0x3b80cac, 0xd56e7604, 0x8b07ed07, 0x944552c5, 0x5b93e058, 0x8fbd2c92,
 ];
 
+/// Rolling hash algorithm which can be used for chunking.
 #[derive(Clone)]
 pub struct BuzHash {
     buf: Vec<u32>,
@@ -51,6 +52,7 @@ pub struct BuzHash {
 }
 
 impl BuzHash {
+    /// Create a new instance of BuzHash with the given window size.
     pub fn new(window: usize) -> Self {
         BuzHash {
             index: 0,
@@ -63,16 +65,14 @@ impl BuzHash {
             repeated_input: 0,
         }
     }
-
     fn generate_seeded_table(seed: u32) -> Vec<u32> {
         BUZHASH_TABLE.iter().map(|x| x ^ seed).collect()
     }
-
-    // Hash is valid when window is full
+    /// Hash is valid when window is full.
     pub fn valid(&self) -> bool {
         self.window_full
     }
-
+    /// Should be used for processing input until hash is valid.
     pub fn init(&mut self, in_val: u8) {
         if !self.window_full {
             let in_val = self.buzhash_table[in_val as usize];
@@ -87,8 +87,7 @@ impl BuzHash {
             }
         }
     }
-
-    // Push and process a byte
+    /// Process a byte.
     pub fn input(&mut self, in_val: u8) {
         // If the buzhash window is full of the same value then there is no
         // need pushing another one of the same as it won't change the hash.
@@ -111,8 +110,7 @@ impl BuzHash {
             }
         }
     }
-
-    // Get current hash sum
+    /// Get current hash sum.
     pub fn sum(&self) -> u32 {
         self.hash_sum
     }

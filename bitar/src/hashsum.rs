@@ -2,7 +2,9 @@ use blake2::{Blake2b, Digest};
 use smallvec::SmallVec;
 use std::fmt;
 use std::hash::{Hash, Hasher};
-/// A hash sum, typically used for representing chunk or source hash.
+/// Holds a hash sum.
+///
+/// Typically used for representing the hash of a chunk or the hash of file.
 #[derive(Clone, Debug, Default, Eq)]
 pub struct HashSum(SmallVec<[u8; 64]>);
 

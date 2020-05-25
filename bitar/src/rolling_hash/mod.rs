@@ -4,6 +4,7 @@ mod rollsum;
 pub use buzhash::BuzHash;
 pub use rollsum::RollSum;
 
+/// Rolling hash.
 pub trait RollingHash {
     fn new(window_size: usize) -> Self;
     fn init(&mut self, value: u8) {

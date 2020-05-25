@@ -5,6 +5,7 @@ use std::io::Write;
 use crate::chunk_dictionary::{chunk_compression::CompressionType, ChunkCompression};
 use crate::Error;
 
+/// Compression helper type.
 #[derive(Debug, Clone, Copy)]
 pub enum Compression {
     None,
@@ -65,7 +66,7 @@ impl From<Compression> for ChunkCompression {
 }
 
 impl Compression {
-    // Compress a block of data with set compression
+    /// Compress a block of data with set compression.
     pub fn compress(self, input: Bytes) -> Result<Bytes, Error> {
         match self {
             #[cfg(feature = "lzma-compression")]
@@ -103,8 +104,7 @@ impl Compression {
             Compression::None => Ok(input),
         }
     }
-
-    // Decompress a block of data using the set compression
+    /// Decompress a block of data using the set compression.
     pub fn decompress(self, input: Bytes, size_hint: usize) -> Result<Bytes, Error> {
         match self {
             #[cfg(feature = "lzma-compression")]

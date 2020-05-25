@@ -1,21 +1,22 @@
 use blake2::{Blake2b, Digest};
 use std::convert::TryFrom;
 
-use crate::chunk_dictionary as dict;
-use crate::chunk_dictionary::{chunker_parameters::ChunkingAlgorithm, ChunkerParameters};
-use crate::chunk_index::ChunkIndex;
-use crate::chunker::ChunkerConfig;
-use crate::compression::Compression;
-use crate::header;
-use crate::Error;
-use crate::HashSum;
-use crate::Reader;
+use crate::{
+    chunk_dictionary as dict,
+    chunk_dictionary::{chunker_parameters::ChunkingAlgorithm, ChunkerParameters},
+    header, ChunkIndex, ChunkerConfig, Compression, Error, HashSum, Reader,
+};
 
-#[derive(Clone)]
+/// Description of a chunk within an archive.
+#[derive(Clone, Debug)]
 pub struct ChunkDescriptor {
+    /// Chunk checksum.
     pub checksum: HashSum,
+    /// Actual size of chunk data in the archive (may be compressed).
     pub archive_size: u32,
+    /// Byte offset of chunk in the archive.
     pub archive_offset: u64,
+    /// Size of the chunk data in source (uncompressed).
     pub source_size: u32,
 }
 
@@ -43,13 +44,9 @@ pub struct Archive {
     header_checksum: HashSum,
     chunk_compression: Compression,
     created_by_app_version: String,
-
-    // Where the chunk data starts inside archive
     chunk_data_offset: u64,
-
     source_total_size: u64,
     source_checksum: HashSum,
-
     chunker_config: ChunkerConfig,
     chunk_hash_length: usize,
 }
@@ -59,8 +56,8 @@ impl Archive {
         if pre_header.len() < header::ARCHIVE_MAGIC.len() {
             return Err(Error::NotAnArchive);
         }
-        // Allow both leagacy type file magic (prefixed with \0 but no null
-        // termination) and new type 'BITA\0'.
+        // Allow both legacy type file magic (prefixed with \0 but no null
+        // termination) and 'BITA\0'.
         if &pre_header[0..header::ARCHIVE_MAGIC.len()] != header::ARCHIVE_MAGIC
             && &pre_header[0..header::ARCHIVE_MAGIC.len()] != b"\0BITA1"
         {
@@ -69,6 +66,7 @@ impl Archive {
         Ok(())
     }
 
+    /// Try to initialize Archive from a Reader.
     pub async fn try_init<R>(reader: &mut R) -> Result<Self, Error>
     where
         R: Reader,
@@ -136,49 +134,62 @@ impl Archive {
             source_index,
         })
     }
-
+    /// Total number of chunks in archive (including duplicates).
     pub fn total_chunks(&self) -> usize {
         self.total_chunks
     }
+    /// Total number of unique chunks in archive (no duplicates).
     pub fn unique_chunks(&self) -> usize {
         self.chunk_order.len()
     }
+    /// Total size of chunks in archive when compressed.
     pub fn compressed_size(&self) -> u64 {
         self.chunk_order
             .iter()
             .map(|c| u64::from(c.archive_size))
             .sum()
     }
+    /// On which offset in the archive the chunk data starts at.
     pub fn chunk_data_offset(&self) -> u64 {
         self.chunk_data_offset
     }
+    /// Get archive chunk descriptors.
     pub fn chunk_descriptors(&self) -> &[ChunkDescriptor] {
         &self.chunk_order
     }
+    /// Total size of the original source file.
     pub fn total_source_size(&self) -> u64 {
         self.source_total_size
     }
-    pub fn chunker_config(&self) -> &ChunkerConfig {
-        &self.chunker_config
-    }
-    pub fn header_checksum(&self) -> &HashSum {
-        &self.header_checksum
-    }
+    /// Checksum of the original source file (Blake2).
     pub fn source_checksum(&self) -> &HashSum {
         &self.source_checksum
     }
+    /// Get the chunker configuration used when building the archive.
+    pub fn chunker_config(&self) -> &ChunkerConfig {
+        &self.chunker_config
+    }
+    /// Get the checksum of the archive header.
+    pub fn header_checksum(&self) -> &HashSum {
+        &self.header_checksum
+    }
+    /// Get the size of the archive header.
     pub fn header_size(&self) -> usize {
         self.header_size
     }
+    /// Get the hash length used for identifying chunks when building the archive.
     pub fn chunk_hash_length(&self) -> usize {
         self.chunk_hash_length
     }
+    /// Get the compression used for chunks in the archive.
     pub fn chunk_compression(&self) -> Compression {
         self.chunk_compression
     }
+    /// Get the version of crate used when building the archive.
     pub fn built_with_version(&self) -> &str {
         &self.created_by_app_version
     }
+    /// Get the ChunkIndex of the archive.
     pub fn source_index(&self) -> &ChunkIndex {
         &self.source_index
     }

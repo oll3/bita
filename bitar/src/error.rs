@@ -1,3 +1,4 @@
+/// Error type.
 pub enum Error {
     NotAnArchive,
     ChecksumMismatch,
