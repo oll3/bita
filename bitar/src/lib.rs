@@ -2,6 +2,7 @@
 
 mod archive;
 mod chunk_index;
+mod chunk_location;
 mod chunk_location_map;
 mod chunker;
 mod clone;
@@ -15,8 +16,8 @@ mod reader_remote;
 mod rolling_hash;
 
 pub use archive::Archive;
-pub use chunk_index::{ChunkIndex, ChunkSizeAndOffset, ReorderOp};
-pub use chunk_location_map::{ChunkLocation, ChunkLocationMap};
+pub use chunk_index::{ChunkIndex, ReorderOp};
+pub use chunk_location::ChunkLocation;
 pub use chunker::{Chunker, ChunkerConfig, ChunkerFilterBits, ChunkerFilterConfig};
 pub use clone::{
     clone_from_archive, clone_from_readable, clone_in_place, CloneOptions, CloneOutput,

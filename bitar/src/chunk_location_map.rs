@@ -1,39 +1,10 @@
-use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::ops::Bound;
 
-#[derive(Eq, PartialEq, Debug, Clone)]
-pub struct ChunkLocation {
-    pub offset: u64,
-    pub size: usize,
-}
-
-impl ChunkLocation {
-    pub fn new(offset: u64, size: usize) -> Self {
-        Self { offset, size }
-    }
-    pub fn end(&self) -> u64 {
-        self.offset + self.size as u64
-    }
-}
-
-impl Ord for ChunkLocation {
-    fn cmp(&self, other: &Self) -> Ordering {
-        match self.offset.cmp(&other.offset) {
-            Ordering::Equal => self.size.cmp(&other.size),
-            v => v,
-        }
-    }
-}
-
-impl PartialOrd for ChunkLocation {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
+use crate::ChunkLocation;
 
 #[derive(Default)]
-pub struct ChunkLocationMap<V> {
+pub(crate) struct ChunkLocationMap<V> {
     btm: BTreeMap<ChunkLocation, V>,
 }
 
@@ -43,19 +14,15 @@ impl<V> ChunkLocationMap<V> {
             btm: BTreeMap::new(),
         }
     }
-
-    /// Insert at location
-    /// Does not verify if the given location overlaps.
+    // Insert at location. Does not verify if the given location overlaps.
     pub fn insert(&mut self, location: ChunkLocation, value: V) {
         self.btm.insert(location, value);
     }
-
-    /// Remove at exact location
+    // Remove at exact location.
     pub fn remove(&mut self, location: &ChunkLocation) -> Option<V> {
         self.btm.remove(location)
     }
-
-    /// Iterate all locations which the given location overlaps
+    // Iterate all locations which the given location overlaps.
     pub fn iter_overlapping(
         &self,
         location: &ChunkLocation,
@@ -69,22 +36,6 @@ impl<V> ChunkLocationMap<V> {
             .rev()
             .take_while(move |(loc, _v)| location_offset < loc.end())
     }
-
-    pub fn iter(&self) -> impl Iterator<Item = (&ChunkLocation, &V)> {
-        self.btm.iter()
-    }
-
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = (&ChunkLocation, &mut V)> {
-        self.btm.iter_mut()
-    }
-
-    pub fn len(&self) -> usize {
-        self.btm.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.btm.is_empty()
-    }
 }
 
 #[cfg(test)]
@@ -97,7 +48,7 @@ mod tests {
         clm.insert(ChunkLocation::new(0, 10), 1);
         clm.insert(ChunkLocation::new(15, 7), 3);
         clm.insert(ChunkLocation::new(10, 5), 2);
-        let mut iter = clm.iter();
+        let mut iter = clm.btm.iter();
         assert_eq!(iter.next(), Some((&ChunkLocation::new(0, 10), &1)));
         assert_eq!(iter.next(), Some((&ChunkLocation::new(10, 5), &2)));
         assert_eq!(iter.next(), Some((&ChunkLocation::new(15, 7), &3)));
@@ -110,7 +61,7 @@ mod tests {
         clm.insert(ChunkLocation::new(15, 7), 3);
         clm.insert(ChunkLocation::new(10, 5), 2);
         assert_eq!(clm.remove(&ChunkLocation::new(15, 7)), Some(3));
-        assert_eq!(clm.len(), 2);
+        assert_eq!(clm.btm.len(), 2);
     }
     #[test]
     fn remove_first() {
@@ -118,7 +69,7 @@ mod tests {
         clm.insert(ChunkLocation::new(0, 10), 1);
         clm.insert(ChunkLocation::new(15, 7), 2);
         assert_eq!(clm.remove(&ChunkLocation::new(0, 10)), Some(1));
-        assert_eq!(clm.len(), 1);
+        assert_eq!(clm.btm.len(), 1);
     }
     #[test]
     fn remove_last() {
@@ -126,7 +77,7 @@ mod tests {
         clm.insert(ChunkLocation::new(0, 10), 1);
         clm.insert(ChunkLocation::new(15, 7), 2);
         assert_eq!(clm.remove(&ChunkLocation::new(15, 7)), Some(2));
-        assert_eq!(clm.len(), 1);
+        assert_eq!(clm.btm.len(), 1);
     }
     #[test]
     fn no_remove() {
@@ -136,7 +87,7 @@ mod tests {
         assert_eq!(clm.remove(&ChunkLocation::new(0, 1)), None);
         assert_eq!(clm.remove(&ChunkLocation::new(0, 9)), None);
         assert_eq!(clm.remove(&ChunkLocation::new(1, 10)), None);
-        assert_eq!(clm.len(), 2);
+        assert_eq!(clm.btm.len(), 2);
     }
     #[test]
     fn some_overlap() {

@@ -5,9 +5,9 @@ use tokio::io::AsyncRead;
 
 use crate::{
     chunk_dictionary::ChunkDictionary,
-    chunk_location_map::{ChunkLocation, ChunkLocationMap},
+    chunk_location_map::ChunkLocationMap,
     chunker::{Chunker, ChunkerConfig},
-    Error, HashSum,
+    ChunkLocation, Error, HashSum,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -26,13 +26,12 @@ pub enum ReorderOp<'a> {
 #[derive(Eq, PartialEq)]
 struct MoveChunk<'a> {
     hash: &'a HashSum,
-    source_offset: u64,
-    size: usize,
+    location: ChunkLocation,
 }
 
 impl<'a> Ord for MoveChunk<'a> {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.source_offset.cmp(&other.source_offset)
+        self.location.offset.cmp(&other.location.offset)
     }
 }
 
@@ -43,18 +42,9 @@ impl<'a> PartialOrd for MoveChunk<'a> {
 }
 
 #[derive(Clone, Debug)]
-pub struct ChunkSizeAndOffset {
-    pub size: usize,
-    pub offsets: BinaryHeap<u64>,
-}
-
-impl From<(usize, &[u64])> for ChunkSizeAndOffset {
-    fn from((size, offsets): (usize, &[u64])) -> Self {
-        Self {
-            size,
-            offsets: offsets.iter().copied().collect(),
-        }
-    }
+struct ChunkSizeAndOffset {
+    size: usize,
+    offsets: BinaryHeap<u64>,
 }
 
 #[derive(Clone, Debug)]
@@ -137,13 +127,13 @@ impl ChunkIndex {
     pub fn contains(&self, hash: &HashSum) -> bool {
         self.0.contains_key(hash)
     }
-
-    pub fn get(&self, hash: &HashSum) -> Option<&ChunkSizeAndOffset> {
+    fn get(&self, hash: &HashSum) -> Option<&ChunkSizeAndOffset> {
         self.0.get(hash)
     }
-    pub fn get_first_offset(&self, hash: &HashSum) -> Option<(usize, u64)> {
-        self.get(&hash)
-            .map(|ChunkSizeAndOffset { size, offsets }| (*size, *offsets.peek().unwrap()))
+    pub fn get_first_offset(&self, hash: &HashSum) -> Option<ChunkLocation> {
+        self.get(&hash).map(|ChunkSizeAndOffset { size, offsets }| {
+            ChunkLocation::new(*offsets.peek().unwrap(), *size)
+        })
     }
 
     pub fn len(&self) -> usize {
@@ -158,12 +148,6 @@ impl ChunkIndex {
     pub fn offsets<'a>(&'a self, hash: &HashSum) -> Option<impl Iterator<Item = u64> + 'a> {
         self.0.get(hash).map(|d| d.offsets.iter().copied())
     }
-
-    /// Iterate index
-    pub fn iter(&self) -> impl Iterator<Item = (&HashSum, &ChunkSizeAndOffset)> {
-        self.0.iter()
-    }
-
     /// Iterate chunk hashes in index
     pub fn keys(&self) -> impl Iterator<Item = &HashSum> {
         self.0.keys()
@@ -231,19 +215,17 @@ impl ChunkIndex {
                             // filter overlapping chunks with same hash
                             .filter(|(_, &overlapped_hash)| chunk.hash != overlapped_hash)
                             .for_each(|(_location, &overlapped_hash)| {
-                                let (chunk_size, chunk_offset) =
-                                    self.get_first_offset(overlapped_hash).unwrap();
+                                let location = self.get_first_offset(overlapped_hash).unwrap();
                                 if visited.contains(overlapped_hash) {
                                     ops.push(ReorderOp::StoreInMem {
                                         hash: overlapped_hash,
-                                        source: ChunkLocation::new(chunk_offset, chunk_size),
+                                        source: location,
                                     });
                                 } else {
                                     child_stack.push((
                                         MoveChunk {
                                             hash: overlapped_hash,
-                                            source_offset: chunk_offset,
-                                            size: chunk_size,
+                                            location,
                                         },
                                         None,
                                     ));
@@ -254,7 +236,7 @@ impl ChunkIndex {
                 }
                 *op = Some(ReorderOp::Copy {
                     hash: chunk.hash,
-                    source: ChunkLocation::new(chunk.source_offset, chunk.size),
+                    source: chunk.location.clone(),
                     dest: destinations,
                 });
                 stack.append(&mut child_stack);
@@ -275,24 +257,21 @@ impl ChunkIndex {
                 .iter()
                 .filter_map(|cl| {
                     if new_order.contains(cl.0) {
-                        let (size, offset) = self.get_first_offset(cl.0).unwrap();
-                        source_layout.insert(ChunkLocation::new(offset, size), cl.0);
+                        let location = self.get_first_offset(cl.0).unwrap();
+                        source_layout.insert(location.clone(), cl.0);
                         Some(MoveChunk {
                             hash: cl.0,
-                            source_offset: offset,
-                            size,
+                            location,
                         })
                     } else {
                         None
                     }
                 })
                 .collect::<Vec<MoveChunk>>();
-
             // Sort chunks on source offset to make the reordering deterministic.
             chunks.sort();
             chunks
         };
-
         let mut ops: Vec<ReorderOp> = Vec::new();
         let mut chunks_processed: HashSet<&HashSum> = HashSet::new();
         chunks_to_move.into_iter().for_each(|chunk| {
@@ -334,6 +313,15 @@ impl std::iter::FromIterator<(HashSum, ChunkSizeAndOffset)> for ChunkIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    impl From<(usize, &[u64])> for ChunkSizeAndOffset {
+        fn from((size, offsets): (usize, &[u64])) -> Self {
+            Self {
+                size,
+                offsets: offsets.iter().copied().collect(),
+            }
+        }
+    }
 
     #[test]
     fn reorder_with_overlap_and_loop() {
