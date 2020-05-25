@@ -30,12 +30,10 @@ impl From<dict::ChunkDescriptor> for ChunkDescriptor {
     }
 }
 
+/// A readable archive.
 pub struct Archive {
     // Array representing the order of chunks in archive
     chunk_order: Vec<ChunkDescriptor>,
-
-    // Howto rebuild the source. Vector with indexes pointing into chunk_order.
-    rebuild_order: Vec<u32>,
 
     // Chunk index describing the source file construct
     source_index: ChunkIndex,
@@ -132,7 +130,6 @@ impl Archive {
                 dictionary.chunk_compression.ok_or(Error::CorruptArchive)?,
             )?,
             total_chunks: dictionary.rebuild_order.iter().count(),
-            rebuild_order: dictionary.rebuild_order,
             chunk_data_offset,
             chunk_hash_length: chunker_params.chunk_hash_length as usize,
             chunker_config: ChunkerConfig::try_from(chunker_params)?,
@@ -185,10 +182,6 @@ impl Archive {
     pub fn source_index(&self) -> &ChunkIndex {
         &self.source_index
     }
-    pub fn rebuild_order(&self) -> &[u32] {
-        &self.rebuild_order
-    }
-
     /// Returns chunks at adjacent location in archive grouped together.
     pub fn grouped_chunks(&self, chunks: &ChunkIndex) -> Vec<Vec<ChunkDescriptor>> {
         let mut group_list = Vec::new();
