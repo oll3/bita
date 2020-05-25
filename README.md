@@ -1,6 +1,6 @@
 [![Build Status](https://travis-ci.com/oll3/bita.svg?branch=master)](https://travis-ci.com/oll3/bita)
 [![](http://meritbadge.herokuapp.com/bita)](https://crates.io/crates/bita)
-
+[![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ## bita
 
@@ -9,6 +9,7 @@
 * Reuse data from any local file or device 📁
 * Clone using any file or block device as output 💾
 * Host archives using any regular HTTP/HTTPS server or service 🔗
+* Include in your own project using [bitar](bitar/README.md) 💫
 * Written in [Rust](https://www.rust-lang.org) for fun, performance and quality 🚀♥
 
 

@@ -1,16 +1,18 @@
-[![](http://meritbadge.herokuapp.com/bitar)](https://crates.io/crates/bitar)
+[![crates.io](http://meritbadge.herokuapp.com/bitar)](https://crates.io/crates/bitar)
+[![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](../LICENSE)
 
 ## bitar
 
-A library for low bandwidth file synchronization over http.
+A library for low bandwidth file synchronization over HTTP.
 
-See [bita](https://github.com/oll3/bita) for a more detailed description of the synchronization concept.
+* [Documentation](https://docs.rs/bitar)
+* See [bita](https://github.com/oll3/bita) for a more detailed description of the synchronization process.
 
 ### Usage
 
-Multiple examples of how to use *bitar* is available under the ![examples](examples) directory.
+Examples of how to use *bitar* is available under the ![examples](examples) directory.
 
 ```console
-# Run example using cargo:
+# Run example using cargo
 cargo run --example local-cloner
 ```
