@@ -12,7 +12,7 @@ use crate::info_cmd;
 use crate::string_utils::*;
 use bitar::build_header;
 use bitar::chunk_dictionary as dict;
-use bitar::{Chunker, ChunkerConfig, Compression, Error, HashSum};
+use bitar::{Chunker, ChunkerConfig, Compression, HashSum};
 
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -30,7 +30,7 @@ async fn chunk_input<T>(
         u64,
         Vec<usize>,
     ),
-    Error,
+    Box<dyn std::error::Error>,
 >
 where
     T: AsyncRead + Unpin,
@@ -160,7 +160,7 @@ pub struct Command {
     pub num_chunk_buffers: usize,
 }
 impl Command {
-    pub async fn run(self) -> Result<(), Error> {
+    pub async fn run(self) -> Result<(), Box<dyn std::error::Error>> {
         let chunker_config = self.chunker_config.clone();
         let compression = self.compression;
         let mut output_file = std::fs::OpenOptions::new()

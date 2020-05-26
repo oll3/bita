@@ -11,10 +11,7 @@ use url::Url;
 
 use crate::info_cmd;
 use crate::string_utils::*;
-use bitar::{
-    clone_from_archive, clone_from_readable, clone_in_place, Archive, CloneOptions, CloneOutput,
-    Error, HashSum, Reader, ReaderRemote,
-};
+use bitar::{clone, clone::CloneOutput, Archive, HashSum, Reader, ReaderRemote};
 
 struct OutputFile {
     file: File,
@@ -22,7 +19,7 @@ struct OutputFile {
 }
 
 impl OutputFile {
-    async fn new_from(mut file: File) -> Result<Self, Error> {
+    async fn new_from(mut file: File) -> Result<Self, std::io::Error> {
         let block_dev = is_block_dev(&mut file).await?;
         Ok(Self { file, block_dev })
     }
@@ -31,18 +28,18 @@ impl OutputFile {
         self.block_dev
     }
 
-    async fn size(&mut self) -> Result<u64, Error> {
+    async fn size(&mut self) -> Result<u64, std::io::Error> {
         self.file.seek(SeekFrom::Start(0)).await?;
         let size = self.file.seek(SeekFrom::End(0)).await?;
         Ok(size)
     }
 
-    async fn resize(&mut self, source_file_size: u64) -> Result<(), Error> {
+    async fn resize(&mut self, source_file_size: u64) -> Result<(), std::io::Error> {
         self.file.set_len(source_file_size).await?;
         Ok(())
     }
 
-    async fn checksum(&mut self) -> Result<HashSum, Error> {
+    async fn checksum(&mut self) -> Result<HashSum, std::io::Error> {
         self.file.seek(SeekFrom::Start(0)).await?;
         let mut output_hasher = Blake2b::new();
         let mut buffer: Vec<u8> = vec![0; 4 * 1024 * 1024];
@@ -59,12 +56,13 @@ impl OutputFile {
 
 #[async_trait]
 impl CloneOutput for OutputFile {
+    type Error = std::io::Error;
     async fn write_chunk(
         &mut self,
         _hash: &HashSum,
         offsets: &[u64],
         buf: &[u8],
-    ) -> Result<(), Error> {
+    ) -> Result<(), Self::Error> {
         for &offset in offsets {
             self.file.seek(SeekFrom::Start(offset)).await?;
             self.file.write_all(buf).await?;
@@ -75,7 +73,7 @@ impl CloneOutput for OutputFile {
 
 // Check if file is a regular file or block device
 #[cfg(unix)]
-async fn is_block_dev(file: &mut File) -> Result<bool, Error> {
+async fn is_block_dev(file: &mut File) -> Result<bool, std::io::Error> {
     use std::os::linux::fs::MetadataExt;
     let meta = file.metadata().await?;
     if meta.st_mode() & 0x6000 == 0x6000 {
@@ -86,12 +84,14 @@ async fn is_block_dev(file: &mut File) -> Result<bool, Error> {
 }
 
 #[cfg(not(unix))]
-async fn is_block_dev(_file: &mut File) -> Result<bool, Error> {
+async fn is_block_dev(_file: &mut File) -> Result<bool, std::io::Error> {
     Ok(false)
 }
-async fn clone_archive<R>(cmd: Command, mut reader: R) -> Result<(), Error>
+
+async fn clone_archive<R>(cmd: Command, mut reader: R) -> Result<(), Box<dyn std::error::Error>>
 where
     R: Reader,
+    R::Error: 'static,
 {
     let archive = Archive::try_init(&mut reader).await?;
     let mut chunks_left = archive.source_index().clone();
@@ -141,11 +141,11 @@ where
     }
 
     // Build an index of the output file's chunks
-    let clone_opts = CloneOptions::default().max_buffered_chunks(cmd.num_chunk_buffers);
+    let clone_opts = clone::Options::default().max_buffered_chunks(cmd.num_chunk_buffers);
     if cmd.seed_output {
         info!("Updating chunks of {} in-place...", cmd.output.display());
         let used_from_self =
-            clone_in_place(&clone_opts, &mut chunks_left, &archive, &mut output.file).await?;
+            clone::in_place(&clone_opts, &mut chunks_left, &archive, &mut output.file).await?;
         info!(
             "Used {} from {}",
             size_to_str(used_from_self),
@@ -165,7 +165,7 @@ where
             "Scanning stdin for chunks ({} left to find)...",
             chunks_left.len()
         );
-        let bytes_to_output = clone_from_readable(
+        let bytes_to_output = clone::from_readable(
             &clone_opts,
             &mut tokio::io::stdin(),
             &archive,
@@ -184,7 +184,7 @@ where
         let mut file = File::open(seed_path)
             .await
             .expect("failed to open seed file");
-        let bytes_to_output = clone_from_readable(
+        let bytes_to_output = clone::from_readable(
             &clone_opts,
             &mut file,
             &archive,
@@ -205,7 +205,7 @@ where
         chunks_left.len(),
         cmd.input_archive.source()
     );
-    let total_read_from_remote = clone_from_archive(
+    let total_read_from_remote = clone::from_archive(
         &clone_opts,
         &mut reader,
         &archive,
@@ -282,7 +282,7 @@ pub struct Command {
 }
 
 impl Command {
-    pub async fn run(self) -> Result<(), Error> {
+    pub async fn run(self) -> Result<(), Box<dyn std::error::Error>> {
         match self.input_archive.clone() {
             InputArchive::Local(path) => {
                 clone_archive(

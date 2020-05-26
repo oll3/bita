@@ -6,7 +6,7 @@ use tokio::fs::File;
 
 use crate::info_cmd;
 use crate::string_utils::*;
-use bitar::{Chunker, ChunkerConfig, Compression, Error, HashSum};
+use bitar::{Chunker, ChunkerConfig, Compression, HashSum};
 
 #[derive(Clone, Debug)]
 struct ChunkDescriptor {
@@ -29,7 +29,7 @@ async fn chunk_file(
     chunker_config: &ChunkerConfig,
     compression: Compression,
     num_chunk_buffers: usize,
-) -> Result<ChunkerResult, Error> {
+) -> Result<ChunkerResult, Box<dyn std::error::Error>> {
     let mut descriptors: HashMap<HashSum, ChunkDescriptor> = HashMap::new();
     let mut chunks = HashSet::new();
     let mut total_size = 0u64;
@@ -160,7 +160,7 @@ pub struct Command {
 }
 
 impl Command {
-    pub async fn run(self) -> Result<(), Error> {
+    pub async fn run(self) -> Result<(), Box<dyn std::error::Error>> {
         let chunker_config = &self.chunker_config;
         let compression = self.compression;
 

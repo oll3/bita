@@ -2,11 +2,12 @@ use log::*;
 use tokio::fs::File;
 
 use crate::string_utils::*;
-use bitar::{Archive, ChunkerConfig, ChunkerFilterConfig, Error, Reader, ReaderRemote};
+use bitar::{Archive, ChunkerConfig, ChunkerFilterConfig, Reader, ReaderRemote};
 
-pub async fn print_archive_reader<R>(reader: &mut R) -> Result<(), Error>
+pub async fn print_archive_reader<R>(reader: &mut R) -> Result<(), Box<dyn std::error::Error>>
 where
     R: Reader,
+    R::Error: 'static,
 {
     let archive = Archive::try_init(reader).await?;
     print_archive(&archive);
@@ -79,7 +80,7 @@ pub struct Command {
 }
 
 impl Command {
-    pub async fn run(self) -> Result<(), Error> {
+    pub async fn run(self) -> Result<(), Box<dyn std::error::Error>> {
         if let Ok(url) = self.input.parse::<reqwest::Url>() {
             print_archive_reader(&mut ReaderRemote::from_url(url)).await
         } else {
