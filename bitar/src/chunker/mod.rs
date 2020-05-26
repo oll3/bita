@@ -1,3 +1,8 @@
+//! Chunker related functions and types.
+mod config;
+
+pub use config::{Config, FilterBits, FilterConfig};
+
 use bytes::{Bytes, BytesMut};
 use core::pin::Pin;
 use core::task::{Context, Poll};
@@ -5,7 +10,10 @@ use futures_core::stream::Stream;
 use std::io;
 use tokio::io::AsyncRead;
 
-use crate::rolling_hash::{BuzHash, RollSum, RollingHash};
+use crate::{
+    chunker,
+    rolling_hash::{BuzHash, RollSum, RollingHash},
+};
 
 const CHUNKER_BUF_SIZE: usize = 1024 * 1024;
 
@@ -54,86 +62,6 @@ where
     Poll::Ready(Ok(read_count))
 }
 
-/// Helper type for creating a bit mask to use while scanning for chunk boundaries.
-///
-/// The bit mask given from the filter is used to match against the rolling hash sum.
-/// When `sum | filter_mask == sum` then we have found a chunk boundary.
-/// That is, with a mask set to 0b1 a chunk will be found every 2nd byte on average.
-/// With a mask set to 0b11 a chunk will be found every 4th byte on average.
-#[derive(Clone, Copy, Debug)]
-pub struct ChunkerFilterBits(u32);
-
-impl ChunkerFilterBits {
-    /// Create new filter mask with an average target size of the given value.
-    ///
-    /// The actual target size will be the given size rounded down to the closest power of 2 value.
-    pub fn from_size(size: u32) -> Self {
-        Self(30 - size.leading_zeros())
-    }
-    /// Create new filter mask from a number of bits.
-    ///
-    /// Eg 1 => 0b1, 2 => 0b11, 3 => 0b111 etc.
-    pub fn from_bits(bits: u32) -> Self {
-        Self(bits)
-    }
-    /// Get the bit mask value of the filter.
-    pub fn mask(self) -> u32 {
-        (!0 as u32) >> (32 - self.0)
-    }
-    /// Get the average target size from the filter.
-    pub fn chunk_target_average(self) -> u32 {
-        1 << (self.0 + 1)
-    }
-    /// Get number of bits set in the filter.
-    pub fn bits(self) -> u32 {
-        self.0
-    }
-}
-
-/// Filter configuration to use while scanning for chunk boundaries.
-#[derive(Clone, Debug)]
-pub struct ChunkerFilterConfig {
-    /// Bit mask filter resulting in an average chunk size.
-    pub filter_bits: ChunkerFilterBits,
-    /// No chunks smaller than `min_chunk_size`.
-    pub min_chunk_size: usize,
-    /// No chunks bigger than `max_chunk_size`.
-    pub max_chunk_size: usize,
-    /// Number of bytes kept in the rolling hash window while scanning.
-    pub window_size: usize,
-}
-
-/// Algorithm and configuration to use while scanning for chunk boundaries.
-#[derive(Clone, Debug)]
-pub enum ChunkerConfig {
-    BuzHash(ChunkerFilterConfig),
-    RollSum(ChunkerFilterConfig),
-    FixedSize(usize),
-}
-
-impl ChunkerConfig {
-    pub fn is_hash(&self) -> bool {
-        match self {
-            ChunkerConfig::BuzHash(_) | ChunkerConfig::RollSum(_) => true,
-            ChunkerConfig::FixedSize(_) => false,
-        }
-    }
-}
-
-impl std::fmt::Display for ChunkerConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                ChunkerConfig::BuzHash(_) => "BuzHash",
-                ChunkerConfig::RollSum(_) => "RollSum",
-                ChunkerConfig::FixedSize(_) => "Fixed Size",
-            }
-        )
-    }
-}
-
 /// The chunker takes a readable source and scans it for chunk boundaries.
 /// The chunks found are emitted as a stream.
 pub enum Chunker<'a, T>
@@ -149,15 +77,15 @@ impl<'a, T> Chunker<'a, T>
 where
     T: AsyncRead + Unpin,
 {
-    pub fn new(config: &ChunkerConfig, source: &'a mut T) -> Self {
+    pub fn new(config: &chunker::Config, source: &'a mut T) -> Self {
         match config {
-            ChunkerConfig::BuzHash(hash_config) => {
+            chunker::Config::BuzHash(hash_config) => {
                 Chunker::BuzHash(InternalChunker::<T, BuzHash>::new(hash_config, source))
             }
-            ChunkerConfig::RollSum(hash_config) => {
+            chunker::Config::RollSum(hash_config) => {
                 Chunker::RollSum(InternalChunker::<T, RollSum>::new(hash_config, source))
             }
-            ChunkerConfig::FixedSize(fixed_size) => {
+            chunker::Config::FixedSize(fixed_size) => {
                 Chunker::FixedSize(FixedSizeChunker::<T>::new(*fixed_size, source))
             }
         }
@@ -255,7 +183,7 @@ where
     T: AsyncRead + Unpin,
     H: RollingHash,
 {
-    fn new(config: &ChunkerFilterConfig, source: &'a mut T) -> Self {
+    fn new(config: &chunker::FilterConfig, source: &'a mut T) -> Self {
         // Allow for chunk size less than buzhash window
         let buzhash_input_limit = if config.min_chunk_size >= config.window_size {
             config.min_chunk_size - config.window_size
@@ -416,14 +344,14 @@ mod tests {
     #[tokio::test]
     async fn single_byte_per_source_read() {
         for chunker_config in &[
-            ChunkerConfig::RollSum(ChunkerFilterConfig {
-                filter_bits: ChunkerFilterBits(10),
+            chunker::Config::RollSum(chunker::FilterConfig {
+                filter_bits: chunker::FilterBits(10),
                 min_chunk_size: 20,
                 max_chunk_size: 600,
                 window_size: 10,
             }),
-            ChunkerConfig::BuzHash(ChunkerFilterConfig {
-                filter_bits: ChunkerFilterBits(10),
+            chunker::Config::BuzHash(chunker::FilterConfig {
+                filter_bits: chunker::FilterBits(10),
                 min_chunk_size: 20,
                 max_chunk_size: 600,
                 window_size: 10,
@@ -463,14 +391,14 @@ mod tests {
     #[tokio::test]
     async fn zero_data() {
         for chunker_config in &[
-            ChunkerConfig::RollSum(ChunkerFilterConfig {
-                filter_bits: ChunkerFilterBits(5),
+            chunker::Config::RollSum(chunker::FilterConfig {
+                filter_bits: chunker::FilterBits(5),
                 min_chunk_size: 3,
                 max_chunk_size: 640,
                 window_size: 5,
             }),
-            ChunkerConfig::BuzHash(ChunkerFilterConfig {
-                filter_bits: ChunkerFilterBits(5),
+            chunker::Config::BuzHash(chunker::FilterConfig {
+                filter_bits: chunker::FilterBits(5),
                 min_chunk_size: 3,
                 max_chunk_size: 640,
                 window_size: 5,
@@ -494,14 +422,14 @@ mod tests {
     #[tokio::test]
     async fn source_smaller_than_hash_window() {
         for chunker_config in &[
-            ChunkerConfig::RollSum(ChunkerFilterConfig {
-                filter_bits: ChunkerFilterBits(5),
+            chunker::Config::RollSum(chunker::FilterConfig {
+                filter_bits: chunker::FilterBits(5),
                 min_chunk_size: 0,
                 max_chunk_size: 40,
                 window_size: 10,
             }),
-            ChunkerConfig::BuzHash(ChunkerFilterConfig {
-                filter_bits: ChunkerFilterBits(5),
+            chunker::Config::BuzHash(chunker::FilterConfig {
+                filter_bits: chunker::FilterBits(5),
                 min_chunk_size: 0,
                 max_chunk_size: 40,
                 window_size: 10,
@@ -525,14 +453,14 @@ mod tests {
     #[tokio::test]
     async fn source_smaller_than_min_chunk() {
         for chunker_config in &[
-            ChunkerConfig::RollSum(ChunkerFilterConfig {
-                filter_bits: ChunkerFilterBits(5),
+            chunker::Config::RollSum(chunker::FilterConfig {
+                filter_bits: chunker::FilterBits(5),
                 min_chunk_size: 10,
                 max_chunk_size: 40,
                 window_size: 5,
             }),
-            ChunkerConfig::BuzHash(ChunkerFilterConfig {
-                filter_bits: ChunkerFilterBits(5),
+            chunker::Config::BuzHash(chunker::FilterConfig {
+                filter_bits: chunker::FilterBits(5),
                 min_chunk_size: 10,
                 max_chunk_size: 40,
                 window_size: 5,
@@ -587,8 +515,8 @@ mod tests {
         }
 
         let chunk_offsets = Chunker::new(
-            &ChunkerConfig::BuzHash(ChunkerFilterConfig {
-                filter_bits: ChunkerFilterBits(5),
+            &chunker::Config::BuzHash(chunker::FilterConfig {
+                filter_bits: chunker::FilterBits(5),
                 min_chunk_size: 3,
                 max_chunk_size: 640,
                 window_size: 5,
@@ -682,8 +610,8 @@ mod tests {
             }
         }
         let chunk_offsets = Chunker::new(
-            &ChunkerConfig::BuzHash(ChunkerFilterConfig {
-                filter_bits: ChunkerFilterBits(6),
+            &chunker::Config::BuzHash(chunker::FilterConfig {
+                filter_bits: chunker::FilterBits(6),
                 min_chunk_size: 64,
                 max_chunk_size: 1024,
                 window_size: 20,

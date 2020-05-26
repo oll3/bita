@@ -10,9 +10,7 @@ pub enum CompressionError {
     #[cfg(feature = "lzma-compression")]
     LZMA(lzma::LzmaError),
 }
-
 impl std::error::Error for CompressionError {}
-
 impl std::fmt::Display for CompressionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -22,13 +20,11 @@ impl std::fmt::Display for CompressionError {
         }
     }
 }
-
 impl From<std::io::Error> for CompressionError {
     fn from(e: std::io::Error) -> Self {
         Self::IO(e)
     }
 }
-
 #[cfg(feature = "lzma-compression")]
 impl From<lzma::LzmaError> for CompressionError {
     fn from(e: lzma::LzmaError) -> Self {

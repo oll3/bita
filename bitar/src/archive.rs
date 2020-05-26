@@ -6,7 +6,7 @@ use crate::{
         chunk_compression::CompressionType, chunker_parameters::ChunkingAlgorithm,
         ChunkCompression, ChunkerParameters,
     },
-    header, ChunkIndex, ChunkerConfig, Compression, CompressionError, HashSum, Reader,
+    chunker, header, ChunkIndex, Compression, CompressionError, HashSum, Reader,
 };
 
 #[derive(Debug)]
@@ -20,9 +20,7 @@ pub enum ArchiveError<R> {
     UnknownCompression,
     CompressionError(CompressionError),
 }
-
 impl<R> std::error::Error for ArchiveError<R> where R: std::error::Error {}
-
 impl<R> std::fmt::Display for ArchiveError<R>
 where
     R: std::error::Error,
@@ -40,13 +38,11 @@ where
         }
     }
 }
-
 impl<E> From<prost::DecodeError> for ArchiveError<E> {
     fn from(err: prost::DecodeError) -> Self {
         Self::DictionaryDecode(err)
     }
 }
-
 impl<E> From<CompressionError> for ArchiveError<E> {
     fn from(err: CompressionError) -> Self {
         Self::CompressionError(err)
@@ -93,7 +89,7 @@ pub struct Archive {
     chunk_data_offset: u64,
     source_total_size: u64,
     source_checksum: HashSum,
-    chunker_config: ChunkerConfig,
+    chunker_config: chunker::Config,
     chunk_hash_length: usize,
 }
 
@@ -221,7 +217,7 @@ impl Archive {
         &self.source_checksum
     }
     /// Get the chunker configuration used when building the archive.
-    pub fn chunker_config(&self) -> &ChunkerConfig {
+    pub fn chunker_config(&self) -> &chunker::Config {
         &self.chunker_config
     }
     /// Get the checksum of the archive header.
@@ -275,26 +271,22 @@ impl Archive {
     }
 }
 
-fn chunker_config_from_params<R>(p: ChunkerParameters) -> Result<ChunkerConfig, ArchiveError<R>> {
+fn chunker_config_from_params<R>(p: ChunkerParameters) -> Result<chunker::Config, ArchiveError<R>> {
     match ChunkingAlgorithm::from_i32(p.chunking_algorithm) {
-        Some(ChunkingAlgorithm::Buzhash) => {
-            Ok(ChunkerConfig::BuzHash(crate::ChunkerFilterConfig {
-                filter_bits: crate::ChunkerFilterBits::from_bits(p.chunk_filter_bits),
-                min_chunk_size: p.min_chunk_size as usize,
-                max_chunk_size: p.max_chunk_size as usize,
-                window_size: p.rolling_hash_window_size as usize,
-            }))
-        }
-        Some(ChunkingAlgorithm::Rollsum) => {
-            Ok(ChunkerConfig::RollSum(crate::ChunkerFilterConfig {
-                filter_bits: crate::ChunkerFilterBits::from_bits(p.chunk_filter_bits),
-                min_chunk_size: p.min_chunk_size as usize,
-                max_chunk_size: p.max_chunk_size as usize,
-                window_size: p.rolling_hash_window_size as usize,
-            }))
-        }
+        Some(ChunkingAlgorithm::Buzhash) => Ok(chunker::Config::BuzHash(chunker::FilterConfig {
+            filter_bits: chunker::FilterBits::from_bits(p.chunk_filter_bits),
+            min_chunk_size: p.min_chunk_size as usize,
+            max_chunk_size: p.max_chunk_size as usize,
+            window_size: p.rolling_hash_window_size as usize,
+        })),
+        Some(ChunkingAlgorithm::Rollsum) => Ok(chunker::Config::RollSum(chunker::FilterConfig {
+            filter_bits: chunker::FilterBits::from_bits(p.chunk_filter_bits),
+            min_chunk_size: p.min_chunk_size as usize,
+            max_chunk_size: p.max_chunk_size as usize,
+            window_size: p.rolling_hash_window_size as usize,
+        })),
         Some(ChunkingAlgorithm::FixedSize) => {
-            Ok(ChunkerConfig::FixedSize(p.max_chunk_size as usize))
+            Ok(chunker::Config::FixedSize(p.max_chunk_size as usize))
         }
         _ => Err(ArchiveError::UnknownChunkingAlgorithm),
     }

@@ -13,9 +13,9 @@ use std::time::Duration;
 use url::Url;
 
 use crate::string_utils::*;
+use bitar::chunker;
 use bitar::Compression;
 use bitar::HashSum;
-use bitar::{ChunkerConfig, ChunkerFilterBits, ChunkerFilterConfig};
 
 pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -31,12 +31,12 @@ enum Command {
 fn parse_hash_chunker_config(
     matches: &clap::ArgMatches<'_>,
     default_window_size: &str,
-) -> ChunkerFilterConfig {
+) -> chunker::FilterConfig {
     let avg_chunk_size = parse_size(matches.value_of("avg-chunk-size").unwrap_or("64KiB"));
     let min_chunk_size = parse_size(matches.value_of("min-chunk-size").unwrap_or("16KiB"));
     let max_chunk_size = parse_size(matches.value_of("max-chunk-size").unwrap_or("16MiB"));
 
-    let filter_bits = ChunkerFilterBits::from_size(avg_chunk_size as u32);
+    let filter_bits = chunker::FilterBits::from_size(avg_chunk_size as u32);
     if min_chunk_size > avg_chunk_size {
         panic!("min-chunk-size > avg-chunk-size");
     }
@@ -49,7 +49,7 @@ fn parse_hash_chunker_config(
             .unwrap_or(default_window_size),
     );
 
-    ChunkerFilterConfig {
+    chunker::FilterConfig {
         filter_bits,
         min_chunk_size,
         max_chunk_size,
@@ -57,7 +57,7 @@ fn parse_hash_chunker_config(
     }
 }
 
-fn parse_chunker_config(matches: &clap::ArgMatches<'_>) -> ChunkerConfig {
+fn parse_chunker_config(matches: &clap::ArgMatches<'_>) -> chunker::Config {
     match (
         matches.value_of("fixed-size"),
         matches
@@ -66,9 +66,9 @@ fn parse_chunker_config(matches: &clap::ArgMatches<'_>) -> ChunkerConfig {
             .to_lowercase()
             .as_ref(),
     ) {
-        (Some(fixed_size), _) => ChunkerConfig::FixedSize(parse_size(fixed_size)),
-        (_, "rollsum") => ChunkerConfig::RollSum(parse_hash_chunker_config(matches, "64B")),
-        (_, "buzhash") => ChunkerConfig::RollSum(parse_hash_chunker_config(matches, "16B")),
+        (Some(fixed_size), _) => chunker::Config::FixedSize(parse_size(fixed_size)),
+        (_, "rollsum") => chunker::Config::RollSum(parse_hash_chunker_config(matches, "64B")),
+        (_, "buzhash") => chunker::Config::RollSum(parse_hash_chunker_config(matches, "16B")),
         _ => unreachable!(),
     }
 }

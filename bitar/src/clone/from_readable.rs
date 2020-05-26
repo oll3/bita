@@ -2,7 +2,7 @@ use futures_util::stream::StreamExt;
 use log::*;
 use tokio::io::AsyncRead;
 
-use crate::{clone, Archive, ChunkIndex, Chunker, HashSum};
+use crate::{chunker::Chunker, clone, Archive, ChunkIndex, HashSum};
 
 #[derive(Debug)]
 pub enum CloneFromReadableError<T> {

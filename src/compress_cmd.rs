@@ -12,13 +12,13 @@ use tokio::prelude::*;
 use crate::info_cmd;
 use crate::string_utils::*;
 use bitar::chunk_dictionary as dict;
-use bitar::{Chunker, ChunkerConfig, Compression, HashSum};
+use bitar::{chunker, Compression, HashSum};
 
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 async fn chunk_input<T>(
     mut input: T,
-    chunker_config: &ChunkerConfig,
+    chunker_config: &chunker::Config,
     compression: Compression,
     temp_file_path: &std::path::Path,
     hash_length: usize,
@@ -51,7 +51,7 @@ where
             temp_file_path.display()
         ))?;
     {
-        let chunker = Chunker::new(chunker_config, &mut input);
+        let chunker = chunker::Chunker::new(chunker_config, &mut input);
         let mut chunk_stream = chunker
             .map(|result| {
                 let (offset, chunk) = result.expect("error while chunking");
@@ -153,7 +153,7 @@ pub struct Command {
     pub output: PathBuf,
     pub temp_file: PathBuf,
     pub hash_length: usize,
-    pub chunker_config: ChunkerConfig,
+    pub chunker_config: chunker::Config,
     pub compression_level: u32,
     pub compression: Compression,
     pub num_chunk_buffers: usize,
@@ -204,7 +204,7 @@ impl Command {
             };
 
         let chunker_params = match self.chunker_config {
-            ChunkerConfig::BuzHash(hash_config) => dict::ChunkerParameters {
+            chunker::Config::BuzHash(hash_config) => dict::ChunkerParameters {
                 chunk_filter_bits: hash_config.filter_bits.bits(),
                 min_chunk_size: hash_config.min_chunk_size as u32,
                 max_chunk_size: hash_config.max_chunk_size as u32,
@@ -212,7 +212,7 @@ impl Command {
                 chunk_hash_length: self.hash_length as u32,
                 chunking_algorithm: dict::chunker_parameters::ChunkingAlgorithm::Buzhash as i32,
             },
-            ChunkerConfig::RollSum(hash_config) => dict::ChunkerParameters {
+            chunker::Config::RollSum(hash_config) => dict::ChunkerParameters {
                 chunk_filter_bits: hash_config.filter_bits.bits(),
                 min_chunk_size: hash_config.min_chunk_size as u32,
                 max_chunk_size: hash_config.max_chunk_size as u32,
@@ -220,7 +220,7 @@ impl Command {
                 chunk_hash_length: self.hash_length as u32,
                 chunking_algorithm: dict::chunker_parameters::ChunkingAlgorithm::Rollsum as i32,
             },
-            ChunkerConfig::FixedSize(chunk_size) => dict::ChunkerParameters {
+            chunker::Config::FixedSize(chunk_size) => dict::ChunkerParameters {
                 min_chunk_size: 0,
                 chunk_filter_bits: 0,
                 rolling_hash_window_size: 0,

@@ -1,4 +1,4 @@
-//! Clone helpers.
+//! Clone functions and types.
 mod from_archive;
 mod from_readable;
 mod in_place;

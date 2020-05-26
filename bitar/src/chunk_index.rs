@@ -4,9 +4,7 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 use tokio::io::AsyncRead;
 
 use crate::{
-    chunk_dictionary::ChunkDictionary,
-    chunk_location_map::ChunkLocationMap,
-    chunker::{Chunker, ChunkerConfig},
+    chunk_dictionary::ChunkDictionary, chunk_location_map::ChunkLocationMap, chunker,
     ChunkLocation, HashSum,
 };
 
@@ -68,7 +66,7 @@ pub struct ChunkIndex(HashMap<HashSum, ChunkSizeAndOffset>);
 impl ChunkIndex {
     /// Build a ChunkIndex from any readable source.
     pub async fn from_readable<T>(
-        chunker_config: &ChunkerConfig,
+        chunker_config: &chunker::Config,
         hash_length: usize,
         max_buffered_chunks: usize,
         readable: &mut T,
@@ -76,7 +74,7 @@ impl ChunkIndex {
     where
         T: AsyncRead + Unpin,
     {
-        let chunker = Chunker::new(chunker_config, readable);
+        let chunker = chunker::Chunker::new(chunker_config, readable);
         let mut chunk_stream = chunker
             .map(|result| {
                 tokio::task::spawn_blocking(move || {

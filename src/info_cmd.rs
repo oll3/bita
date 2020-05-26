@@ -3,7 +3,7 @@ use log::*;
 use tokio::fs::File;
 
 use crate::string_utils::*;
-use bitar::{Archive, ChunkerConfig, ChunkerFilterConfig, Reader, ReaderRemote};
+use bitar::{chunker, Archive, Reader, ReaderRemote};
 
 pub async fn print_archive_reader<R>(reader: &mut R) -> Result<()>
 where
@@ -15,7 +15,7 @@ where
     Ok(())
 }
 
-fn print_rolling_hash_config(hc: &ChunkerFilterConfig) {
+fn print_rolling_hash_config(hc: &chunker::FilterConfig) {
     info!(
         "  Rolling hash window size: {}",
         size_to_str(hc.window_size)
@@ -29,12 +29,12 @@ fn print_rolling_hash_config(hc: &ChunkerFilterConfig) {
     );
 }
 
-pub fn print_chunker_config(config: &ChunkerConfig) {
+pub fn print_chunker_config(config: &chunker::Config) {
     info!("  Chunking algorithm: {}", config);
     match config {
-        ChunkerConfig::BuzHash(hc) => print_rolling_hash_config(hc),
-        ChunkerConfig::RollSum(hc) => print_rolling_hash_config(hc),
-        ChunkerConfig::FixedSize(chunk_size) => {
+        chunker::Config::BuzHash(hc) => print_rolling_hash_config(hc),
+        chunker::Config::RollSum(hc) => print_rolling_hash_config(hc),
+        chunker::Config::FixedSize(chunk_size) => {
             info!("  Fixed chunk size: {}", size_to_str(*chunk_size));
         }
     }

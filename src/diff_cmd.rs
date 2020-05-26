@@ -7,7 +7,7 @@ use tokio::fs::File;
 
 use crate::info_cmd;
 use crate::string_utils::*;
-use bitar::{Chunker, ChunkerConfig, Compression, HashSum};
+use bitar::{chunker, Compression, HashSum};
 
 #[derive(Clone, Debug)]
 struct ChunkDescriptor {
@@ -27,7 +27,7 @@ struct ChunkerResult {
 
 async fn chunk_file(
     path: &Path,
-    chunker_config: &ChunkerConfig,
+    chunker_config: &chunker::Config,
     compression: Compression,
     num_chunk_buffers: usize,
 ) -> Result<ChunkerResult> {
@@ -39,7 +39,7 @@ async fn chunk_file(
     {
         let mut file = File::open(path).await.expect("failed to open output file");
         let mut unique_chunk = HashSet::new();
-        let chunker = Chunker::new(chunker_config, &mut file);
+        let chunker = chunker::Chunker::new(chunker_config, &mut file);
         let mut chunk_stream = chunker
             .map(|result| {
                 let (offset, chunk) = result.expect("error while chunking");
@@ -154,7 +154,7 @@ fn selection_string(
 pub struct Command {
     pub input_a: PathBuf,
     pub input_b: PathBuf,
-    pub chunker_config: ChunkerConfig,
+    pub chunker_config: chunker::Config,
     pub compression_level: u32,
     pub compression: Compression,
     pub num_chunk_buffers: usize,
