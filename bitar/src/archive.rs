@@ -9,7 +9,6 @@ use crate::{
     header, ChunkIndex, ChunkerConfig, Compression, CompressionError, HashSum, Reader,
 };
 
-/// Archive error.
 #[derive(Debug)]
 pub enum ArchiveError<R> {
     NotAnArchive,
@@ -112,8 +111,7 @@ impl Archive {
         }
         Ok(())
     }
-
-    /// Try to initialize Archive from a Reader.
+    /// Try to initialize an archive from a reader.
     pub async fn try_init<R>(reader: &mut R) -> Result<Self, ArchiveError<R::Error>>
     where
         R: Reader,

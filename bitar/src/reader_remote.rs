@@ -10,16 +10,13 @@ use std::time::Duration;
 use crate::http_range_request;
 use crate::reader::Reader;
 
-/// ReaderRemote error.
 #[derive(Debug)]
 pub enum ReaderRemoteError {
     UnexpectedEnd,
     RequestNotClonable,
     Http(reqwest::Error),
 }
-
 impl std::error::Error for ReaderRemoteError {}
-
 impl std::fmt::Display for ReaderRemoteError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -29,14 +26,13 @@ impl std::fmt::Display for ReaderRemoteError {
         }
     }
 }
-
 impl From<reqwest::Error> for ReaderRemoteError {
     fn from(e: reqwest::Error) -> Self {
         Self::Http(e)
     }
 }
 
-/// ReaderRemote is a helper for reading archives from a remote http location.
+/// Read archive from remote location.
 pub struct ReaderRemote {
     request: RequestBuilder,
     retries: u32,
@@ -52,28 +48,25 @@ impl ReaderRemote {
             retry_delay: Duration::from_secs(0),
         }
     }
-
     /// Create a remote archive reader using an URL and default parameters for the request.
     pub fn from_url(url: Url) -> Self {
         Self::from_request(reqwest::Client::new().get(url))
     }
-
-    /// Set number of times to retry reading from the remote server if the request would fail
-    /// for any reason.
+    /// Set number of times to retry on failure
+    ///
     /// The reader will try to reconnect and continue download from where the failure occured.
     /// Any progress made so far should not be lost.
     pub fn retries(mut self, retries: u32) -> Self {
         self.retries = retries;
         self
     }
-
     /// Set a delay between attempts to reconnect to the remote server.
+    ///
     /// On failure the reader will wait for the given time before trying to reconnect.
     pub fn retry_delay(mut self, retry_delay: Duration) -> Self {
         self.retry_delay = retry_delay;
         self
     }
-
     fn read_chunk_stream<'a>(
         &'a mut self,
         start_offset: u64,

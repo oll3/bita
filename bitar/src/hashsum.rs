@@ -2,6 +2,7 @@ use blake2::{Blake2b, Digest};
 use smallvec::SmallVec;
 use std::fmt;
 use std::hash::{Hash, Hasher};
+
 /// Holds a hash sum.
 ///
 /// Typically used for representing the hash of a chunk or the hash of file.

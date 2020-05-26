@@ -4,7 +4,6 @@ use std::io::Write;
 
 use crate::chunk_dictionary::{chunk_compression::CompressionType, ChunkCompression};
 
-/// Compression error.
 #[derive(Debug)]
 pub enum CompressionError {
     IO(std::io::Error),

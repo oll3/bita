@@ -11,7 +11,6 @@ use tokio::prelude::*;
 
 use crate::info_cmd;
 use crate::string_utils::*;
-use bitar::build_header;
 use bitar::chunk_dictionary as dict;
 use bitar::{Chunker, ChunkerConfig, Compression, HashSum};
 
@@ -241,7 +240,7 @@ impl Command {
             source_total_size: source_size,
             chunker_params: Some(chunker_params),
         };
-        let header_buf = build_header(&file_header, None)?;
+        let header_buf = bitar::header::build(&file_header, None)?;
         output_file.write_all(&header_buf).context(format!(
             "Failed to write header to output file {}",
             self.output.display()

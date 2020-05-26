@@ -73,7 +73,6 @@ impl<'a> Builder<'a> {
             delay_for(self.retry_delay).await;
         }
     }
-
     fn poll_read_fail(
         &mut self,
         cx: &mut Context,
