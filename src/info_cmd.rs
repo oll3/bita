@@ -1,10 +1,11 @@
+use anyhow::Result;
 use log::*;
 use tokio::fs::File;
 
 use crate::string_utils::*;
 use bitar::{Archive, ChunkerConfig, ChunkerFilterConfig, Reader, ReaderRemote};
 
-pub async fn print_archive_reader<R>(reader: &mut R) -> Result<(), Box<dyn std::error::Error>>
+pub async fn print_archive_reader<R>(reader: &mut R) -> Result<()>
 where
     R: Reader,
     R::Error: 'static,
@@ -80,7 +81,7 @@ pub struct Command {
 }
 
 impl Command {
-    pub async fn run(self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn run(self) -> Result<()> {
         if let Ok(url) = self.input.parse::<reqwest::Url>() {
             print_archive_reader(&mut ReaderRemote::from_url(url)).await
         } else {

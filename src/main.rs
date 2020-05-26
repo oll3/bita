@@ -4,6 +4,7 @@ mod diff_cmd;
 mod info_cmd;
 mod string_utils;
 
+use anyhow::Result;
 use clap::{App, Arg, SubCommand};
 use log::*;
 use std::path::Path;
@@ -498,16 +499,14 @@ fn parse_opts() -> Command {
     }
 }
 
-#[tokio::main]
-async fn main() {
-    let result = match parse_opts() {
-        Command::Compress(cmd) => cmd.run().await,
-        Command::Clone(cmd) => cmd.run().await,
-        Command::Info(cmd) => cmd.run().await,
-        Command::Diff(cmd) => cmd.run().await,
-    };
-    if let Err(ref e) = result {
-        error!("error: {}", e);
-        ::std::process::exit(1);
-    }
+fn main() -> Result<()> {
+    let mut rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(async {
+        match parse_opts() {
+            Command::Compress(cmd) => cmd.run().await,
+            Command::Clone(cmd) => cmd.run().await,
+            Command::Info(cmd) => cmd.run().await,
+            Command::Diff(cmd) => cmd.run().await,
+        }
+    })
 }

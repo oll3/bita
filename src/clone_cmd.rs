@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use blake2::{Blake2b, Digest};
 use log::*;
@@ -88,12 +89,15 @@ async fn is_block_dev(_file: &mut File) -> Result<bool, std::io::Error> {
     Ok(false)
 }
 
-async fn clone_archive<R>(cmd: Command, mut reader: R) -> Result<(), Box<dyn std::error::Error>>
+async fn clone_archive<R>(cmd: Command, mut reader: R) -> Result<()>
 where
     R: Reader,
     R::Error: 'static,
 {
-    let archive = Archive::try_init(&mut reader).await?;
+    let archive = Archive::try_init(&mut reader).await.context(format!(
+        "Failed to read archive at {}",
+        cmd.input_archive.source()
+    ))?;
     let mut chunks_left = archive.source_index().clone();
     let mut total_read_from_seed = 0u64;
 
@@ -103,7 +107,7 @@ where
     // Verify the header checksum if requested
     if let Some(ref expected_checksum) = cmd.header_checksum {
         if *expected_checksum != *archive.header_checksum() {
-            panic!("header checksum mismatch");
+            return Err(anyhow!("Header checksum mismatch"));
         } else {
             info!("Header checksum verified OK");
         }
@@ -122,7 +126,7 @@ where
         .create_new(!cmd.force_create && !cmd.seed_output)
         .open(&cmd.output)
         .await
-        .expect("failed to open output file");
+        .context(format!("Failed to open {}", cmd.output.display()))?;
 
     let mut output = OutputFile::new_from(output_file).await?;
 
@@ -132,11 +136,11 @@ where
     if output.is_block_dev() {
         let size = output.size().await?;
         if size != archive.total_source_size() {
-            panic!(
-                "size of output device ({}) differ from size of archive target file ({})",
+            return Err(anyhow!(
+                "Size of output device ({}) differ from size of archive target file ({})",
                 size_to_str(size),
                 size_to_str(archive.total_source_size())
-            );
+            ));
         }
     }
 
@@ -145,7 +149,9 @@ where
     if cmd.seed_output {
         info!("Updating chunks of {} in-place...", cmd.output.display());
         let used_from_self =
-            clone::in_place(&clone_opts, &mut chunks_left, &archive, &mut output.file).await?;
+            clone::in_place(&clone_opts, &mut chunks_left, &archive, &mut output.file)
+                .await
+                .context("Failed to clone in place")?;
         info!(
             "Used {} from {}",
             size_to_str(used_from_self),
@@ -156,7 +162,10 @@ where
 
     if !output.is_block_dev() {
         // Resize output file to same size as the archive source
-        output.resize(archive.total_source_size()).await?;
+        output
+            .resize(archive.total_source_size())
+            .await
+            .context(format!("Failed to resize {}", cmd.output.display()))?;
     }
 
     // Read chunks from seed files
@@ -172,18 +181,19 @@ where
             &mut chunks_left,
             &mut output,
         )
-        .await?;
+        .await
+        .context("Failed to clone from stdin")?;
         info!("Used {} bytes from stdin", size_to_str(bytes_to_output));
     }
     for seed_path in &cmd.seed_files {
+        let mut file = File::open(seed_path)
+            .await
+            .context(format!("Failed to open seed file {}", seed_path.display()))?;
         info!(
             "Scanning {} for chunks ({} left to find)...",
             seed_path.display(),
             chunks_left.len()
         );
-        let mut file = File::open(seed_path)
-            .await
-            .expect("failed to open seed file");
         let bytes_to_output = clone::from_readable(
             &clone_opts,
             &mut file,
@@ -191,7 +201,8 @@ where
             &mut chunks_left,
             &mut output,
         )
-        .await?;
+        .await
+        .context(format!("Failed to clone from {}", seed_path.display()))?;
         info!(
             "Used {} bytes from {}",
             size_to_str(bytes_to_output),
@@ -212,7 +223,11 @@ where
         &mut chunks_left,
         &mut output,
     )
-    .await?;
+    .await
+    .context(format!(
+        "Failed to clone from archive at {}",
+        cmd.input_archive.source()
+    ))?;
     info!(
         "Used {} bytes from {}",
         size_to_str(total_read_from_remote),
@@ -221,18 +236,21 @@ where
 
     if cmd.verify_output {
         info!("Verifying checksum of {}...", cmd.output.display());
-        let sum = output.checksum().await?;
+        let sum = output.checksum().await.context(format!(
+            "Failed to create checksum of {}",
+            cmd.output.display()
+        ))?;
         let expected_checksum = archive.source_checksum();
         if sum == *expected_checksum {
             info!("Checksum verified Ok");
         } else {
-            panic!(
-                "checksum mismatch ({}: {}, {}: {})",
+            return Err(anyhow!(
+                "Checksum mismatch ({}: {}, {}: {})",
                 cmd.output.display(),
                 sum,
                 cmd.input_archive.source(),
                 expected_checksum
-            );
+            ));
         }
     }
 
@@ -282,14 +300,14 @@ pub struct Command {
 }
 
 impl Command {
-    pub async fn run(self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn run(self) -> Result<()> {
         match self.input_archive.clone() {
             InputArchive::Local(path) => {
                 clone_archive(
                     self,
-                    File::open(path)
+                    File::open(&path)
                         .await
-                        .expect("failed to open local archive"),
+                        .context(format!("Failed to open {}", path.display()))?,
                 )
                 .await
             }

@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Context, Result};
 use blake2::{Blake2b, Digest};
 use futures_util::future;
 use futures_util::stream::StreamExt;
@@ -23,15 +24,12 @@ async fn chunk_input<T>(
     temp_file_path: &std::path::Path,
     hash_length: usize,
     num_chunk_buffers: usize,
-) -> Result<
-    (
-        Vec<u8>,
-        Vec<bitar::chunk_dictionary::ChunkDescriptor>,
-        u64,
-        Vec<usize>,
-    ),
-    Box<dyn std::error::Error>,
->
+) -> Result<(
+    Vec<u8>,
+    Vec<bitar::chunk_dictionary::ChunkDescriptor>,
+    u64,
+    Vec<usize>,
+)>
 where
     T: AsyncRead + Unpin,
 {
@@ -49,7 +47,10 @@ where
         .truncate(true)
         .open(temp_file_path)
         .await
-        .expect("failed to open temp file");
+        .context(format!(
+            "Failed to open temp file {}",
+            temp_file_path.display()
+        ))?;
     {
         let chunker = Chunker::new(chunker_config, &mut input);
         let mut chunk_stream = chunker
@@ -80,7 +81,6 @@ where
                 };
                 // Store a pointer (as index) to unique chunk index for each chunk
                 chunk_order.push(chunk_index);
-
                 future::ready(if unique {
                     Some((chunk_index, hash, offset, chunk))
                 } else {
@@ -100,7 +100,7 @@ where
 
         while let Some(result) = chunk_stream.next().await {
             let (index, hash, offset, chunk, compressed_chunk) =
-                result.expect("error while compressing chunk");
+                result.context("Error while compressing")?;
             let chunk_len = chunk.len();
             let use_uncompressed_chunk = compressed_chunk.len() >= chunk_len;
             debug!(
@@ -134,7 +134,7 @@ where
             temp_file
                 .write_all(&use_data)
                 .await
-                .expect("Failed to write to temp file");
+                .context("Failed to write to temp file")?;
         }
     }
     Ok((
@@ -160,7 +160,7 @@ pub struct Command {
     pub num_chunk_buffers: usize,
 }
 impl Command {
-    pub async fn run(self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn run(self) -> Result<()> {
         let chunker_config = self.chunker_config.clone();
         let compression = self.compression;
         let mut output_file = std::fs::OpenOptions::new()
@@ -169,15 +169,19 @@ impl Command {
             .create(self.force_create)
             .truncate(self.force_create)
             .create_new(!self.force_create)
-            .open(self.output.clone())
-            .expect("failed to open output file");
+            .open(&self.output)
+            .context(format!(
+                "Failed to open output file {}",
+                self.output.display()
+            ))?;
 
         let (source_hash, archive_chunks, source_size, chunk_order) =
             if let Some(input_path) = self.input {
                 chunk_input(
-                    File::open(input_path)
-                        .await
-                        .expect("failed to open input file"),
+                    File::open(&input_path).await.context(format!(
+                        "Failed to open input file {}",
+                        input_path.display()
+                    ))?,
                     &chunker_config,
                     compression,
                     &self.temp_file,
@@ -197,7 +201,7 @@ impl Command {
                 )
                 .await?
             } else {
-                panic!("Missing input");
+                return Err(anyhow!("Missing input"));
             };
 
         let chunker_params = match self.chunker_config {
@@ -238,16 +242,25 @@ impl Command {
             chunker_params: Some(chunker_params),
         };
         let header_buf = build_header(&file_header, None)?;
-        output_file
-            .write_all(&header_buf)
-            .expect("failed to write header");
+        output_file.write_all(&header_buf).context(format!(
+            "Failed to write header to output file {}",
+            self.output.display()
+        ))?;
         {
-            let mut temp_file =
-                std::fs::File::open(&self.temp_file).expect("failed to open temporary file");
-            std::io::copy(&mut temp_file, &mut output_file)
-                .expect("failed to write chunk data to output file");
+            let mut temp_file = std::fs::File::open(&self.temp_file).context(format!(
+                "Failed to open temp file {}",
+                self.temp_file.display()
+            ))?;
+            std::io::copy(&mut temp_file, &mut output_file).context(format!(
+                "Failed to copy from temp file {} to output file {}",
+                self.temp_file.display(),
+                self.output.display()
+            ))?;
         }
-        std::fs::remove_file(&self.temp_file).expect("unable to remove temporary file");
+        std::fs::remove_file(&self.temp_file).context(format!(
+            "Failed to remove temporary file {}",
+            self.temp_file.display()
+        ))?;
         drop(output_file);
         {
             // Print archive info
