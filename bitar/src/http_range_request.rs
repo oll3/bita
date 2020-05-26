@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use tokio::time::delay_for;
 
-use crate::Error;
+use crate::reader_remote::ReaderRemoteError;
 
 pub(crate) struct Builder<'a> {
     request: &'a RequestBuilder,
@@ -36,7 +36,11 @@ impl<'a> Builder<'a> {
         self.retry_count = retry_count;
         self
     }
-    async fn single_fail(request: RequestBuilder, offset: u64, size: u64) -> Result<Bytes, Error> {
+    async fn single_fail(
+        request: RequestBuilder,
+        offset: u64,
+        size: u64,
+    ) -> Result<Bytes, ReaderRemoteError> {
         let end_offset = offset + size - 1;
         let request = request.header(
             reqwest::header::RANGE,
@@ -45,10 +49,12 @@ impl<'a> Builder<'a> {
         let response = request.send().await?;
         Ok(response.bytes().await?)
     }
-    pub async fn single(mut self) -> Result<Bytes, Error> {
+    pub async fn single(mut self) -> Result<Bytes, ReaderRemoteError> {
         loop {
             match Self::single_fail(
-                self.request.try_clone().ok_or(Error::RequestNotClonable)?,
+                self.request
+                    .try_clone()
+                    .ok_or(ReaderRemoteError::RequestNotClonable)?,
                 self.offset,
                 self.size,
             )
@@ -68,14 +74,19 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn poll_read_fail(&mut self, cx: &mut Context) -> Poll<Option<Result<Bytes, Error>>> {
+    fn poll_read_fail(
+        &mut self,
+        cx: &mut Context,
+    ) -> Poll<Option<Result<Bytes, ReaderRemoteError>>> {
         loop {
             match &mut self.state {
                 RequestState::Init => {
                     let end_offset = self.offset + self.size - 1;
                     let request = match self.request.try_clone() {
                         Some(request) => request,
-                        None => return Poll::Ready(Some(Err(Error::RequestNotClonable))),
+                        None => {
+                            return Poll::Ready(Some(Err(ReaderRemoteError::RequestNotClonable)))
+                        }
                     };
                     let request = request
                         .header(
@@ -89,7 +100,9 @@ impl<'a> Builder<'a> {
                     Poll::Ready(Ok(response)) => {
                         self.state = RequestState::Stream(Box::new(response.bytes_stream()));
                     }
-                    Poll::Ready(Err(err)) => return Poll::Ready(Some(Err(Error::from(err)))),
+                    Poll::Ready(Err(err)) => {
+                        return Poll::Ready(Some(Err(ReaderRemoteError::from(err))))
+                    }
                     Poll::Pending => return Poll::Pending,
                 },
                 RequestState::Stream(stream) => match stream.poll_next_unpin(cx) {
@@ -98,7 +111,9 @@ impl<'a> Builder<'a> {
                         self.size -= item.len() as u64;
                         return Poll::Ready(Some(Ok(item)));
                     }
-                    Poll::Ready(Some(Err(err))) => return Poll::Ready(Some(Err(Error::from(err)))),
+                    Poll::Ready(Some(Err(err))) => {
+                        return Poll::Ready(Some(Err(ReaderRemoteError::from(err))))
+                    }
                     Poll::Ready(None) => return Poll::Ready(None),
                     Poll::Pending => return Poll::Pending,
                 },
@@ -109,7 +124,7 @@ impl<'a> Builder<'a> {
             }
         }
     }
-    fn poll_read(&mut self, cx: &mut Context) -> Poll<Option<Result<Bytes, Error>>> {
+    fn poll_read(&mut self, cx: &mut Context) -> Poll<Option<Result<Bytes, ReaderRemoteError>>> {
         loop {
             match self.poll_read_fail(cx) {
                 Poll::Ready(Some(Err(err))) => {
@@ -135,7 +150,7 @@ enum RequestState {
 }
 
 impl<'a> Stream for Builder<'a> {
-    type Item = Result<Bytes, Error>;
+    type Item = Result<Bytes, ReaderRemoteError>;
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         self.poll_read(cx)
     }

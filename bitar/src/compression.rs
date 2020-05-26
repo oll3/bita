@@ -3,7 +3,39 @@ use bytes::Bytes;
 use std::io::Write;
 
 use crate::chunk_dictionary::{chunk_compression::CompressionType, ChunkCompression};
-use crate::Error;
+
+/// Compression error.
+#[derive(Debug)]
+pub enum CompressionError {
+    IO(std::io::Error),
+    #[cfg(feature = "lzma-compression")]
+    LZMA(lzma::LzmaError),
+}
+
+impl std::error::Error for CompressionError {}
+
+impl std::fmt::Display for CompressionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::IO(err) => write!(f, "i/o error: {}", err),
+            #[cfg(feature = "lzma-compression")]
+            Self::LZMA(err) => write!(f, "LZMA error: {}", err),
+        }
+    }
+}
+
+impl From<std::io::Error> for CompressionError {
+    fn from(e: std::io::Error) -> Self {
+        Self::IO(e)
+    }
+}
+
+#[cfg(feature = "lzma-compression")]
+impl From<lzma::LzmaError> for CompressionError {
+    fn from(e: lzma::LzmaError) -> Self {
+        Self::LZMA(e)
+    }
+}
 
 /// Compression helper type.
 #[derive(Debug, Clone, Copy)]
@@ -29,25 +61,6 @@ impl std::fmt::Display for Compression {
     }
 }
 
-impl std::convert::TryFrom<ChunkCompression> for Compression {
-    type Error = Error;
-    fn try_from(c: ChunkCompression) -> Result<Self, Self::Error> {
-        match CompressionType::from_i32(c.compression) {
-            #[cfg(feature = "lzma-compression")]
-            Some(CompressionType::Lzma) => Ok(Self::LZMA(c.compression_level)),
-            #[cfg(not(feature = "lzma-compression"))]
-            Some(CompressionType::Lzma) => panic!("LZMA compression not enabled"),
-            #[cfg(feature = "zstd-compression")]
-            Some(CompressionType::Zstd) => Ok(Self::ZSTD(c.compression_level)),
-            #[cfg(not(feature = "zstd-compression"))]
-            Some(CompressionType::Zstd) => panic!("ZSTD compression not enabled"),
-            Some(CompressionType::Brotli) => Ok(Self::Brotli(c.compression_level)),
-            Some(CompressionType::None) => Ok(Self::None),
-            None => Err(Error::UnknownCompression),
-        }
-    }
-}
-
 impl From<Compression> for ChunkCompression {
     fn from(c: Compression) -> Self {
         let (chunk_compression, chunk_compression_level) = match c {
@@ -67,7 +80,7 @@ impl From<Compression> for ChunkCompression {
 
 impl Compression {
     /// Compress a block of data with set compression.
-    pub fn compress(self, input: Bytes) -> Result<Bytes, Error> {
+    pub fn compress(self, input: Bytes) -> Result<Bytes, CompressionError> {
         match self {
             #[cfg(feature = "lzma-compression")]
             Compression::LZMA(ref level) => {
@@ -105,7 +118,7 @@ impl Compression {
         }
     }
     /// Decompress a block of data using the set compression.
-    pub fn decompress(self, input: Bytes, size_hint: usize) -> Result<Bytes, Error> {
+    pub fn decompress(self, input: Bytes, size_hint: usize) -> Result<Bytes, CompressionError> {
         match self {
             #[cfg(feature = "lzma-compression")]
             Compression::LZMA(_) => {

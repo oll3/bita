@@ -7,8 +7,6 @@ use std::future::Future;
 use std::io::SeekFrom;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
-use crate::error::Error;
-
 struct ChunkReader<'a, R>
 where
     R: AsyncRead + AsyncSeek + Unpin + Send + ?Sized,
@@ -37,7 +35,7 @@ where
             buf_offset: 0,
         }
     }
-    fn poll_chunk(&mut self, cx: &mut Context) -> Poll<Option<Result<Bytes, Error>>>
+    fn poll_chunk(&mut self, cx: &mut Context) -> Poll<Option<Result<Bytes, std::io::Error>>>
     where
         R: AsyncSeekExt + AsyncRead + Send + Unpin,
         Self: Unpin + Send,
@@ -46,7 +44,7 @@ where
             let mut seek = self.reader.seek(SeekFrom::Start(self.start_offset));
             match Pin::new(&mut seek).poll(cx) {
                 Poll::Ready(Ok(_rc)) => self.should_seek = false,
-                Poll::Ready(Err(err)) => return Poll::Ready(Some(Err(Error::from(err)))),
+                Poll::Ready(Err(err)) => return Poll::Ready(Some(Err(err))),
                 Poll::Pending => return Poll::Pending,
             }
         }
@@ -64,7 +62,7 @@ where
             }
             match Pin::new(&mut self.reader).poll_read(cx, &mut self.buf[self.buf_offset..]) {
                 Poll::Ready(Ok(rc)) => self.buf_offset += rc,
-                Poll::Ready(Err(err)) => return Poll::Ready(Some(Err(Error::from(err)))),
+                Poll::Ready(Err(err)) => return Poll::Ready(Some(Err(err))),
                 Poll::Pending => return Poll::Pending,
             }
         }
@@ -76,7 +74,7 @@ impl<'a, R> Stream for ChunkReader<'a, R>
 where
     R: AsyncRead + AsyncSeek + Unpin + Send,
 {
-    type Item = Result<Bytes, Error>;
+    type Item = Result<Bytes, std::io::Error>;
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         self.poll_chunk(cx)
     }
@@ -89,12 +87,13 @@ where
 /// Read bytes at offset.
 #[async_trait]
 pub trait Reader {
-    async fn read_at<'a>(&'a mut self, offset: u64, size: usize) -> Result<Bytes, Error>;
+    type Error: std::error::Error + Send + Sync;
+    async fn read_at<'a>(&'a mut self, offset: u64, size: usize) -> Result<Bytes, Self::Error>;
     fn read_chunks<'a>(
         &'a mut self,
         start_offset: u64,
         chunk_sizes: &'a [usize],
-    ) -> Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send + 'a>>;
+    ) -> Pin<Box<dyn Stream<Item = Result<Bytes, Self::Error>> + Send + 'a>>;
 }
 
 #[async_trait]
@@ -102,7 +101,8 @@ impl<T> Reader for T
 where
     T: AsyncRead + AsyncSeekExt + Unpin + Send,
 {
-    async fn read_at(&mut self, offset: u64, size: usize) -> Result<Bytes, Error> {
+    type Error = std::io::Error;
+    async fn read_at(&mut self, offset: u64, size: usize) -> Result<Bytes, std::io::Error> {
         self.seek(SeekFrom::Start(offset)).await?;
         let mut buf = BytesMut::with_capacity(size);
         unsafe {
@@ -115,7 +115,7 @@ where
         &'a mut self,
         start_offset: u64,
         chunk_sizes: &'a [usize],
-    ) -> Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Stream<Item = Result<Bytes, std::io::Error>> + Send + 'a>> {
         Box::pin(ChunkReader::new(self, start_offset, chunk_sizes))
     }
 }

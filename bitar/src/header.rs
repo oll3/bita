@@ -2,7 +2,6 @@ use blake2::{Blake2b, Digest};
 use prost::Message;
 
 use crate::chunk_dictionary::ChunkDictionary;
-use crate::error::Error;
 
 /// Bita archive file magic
 pub const ARCHIVE_MAGIC: &[u8; 6] = b"BITA1\0";
@@ -22,7 +21,7 @@ pub const PRE_HEADER_SIZE: usize = 6 + std::mem::size_of::<u64>();
 pub fn build_header(
     dictionary: &ChunkDictionary,
     chunk_data_offset: Option<u64>,
-) -> Result<Vec<u8>, Error> {
+) -> Result<Vec<u8>, std::io::Error> {
     let mut header: Vec<u8> = vec![];
     let mut hasher = Blake2b::new();
     let mut dictionary_buf: Vec<u8> = Vec::new();

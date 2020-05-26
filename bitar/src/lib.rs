@@ -5,9 +5,7 @@ mod chunk_index;
 mod chunk_location;
 mod chunk_location_map;
 mod chunker;
-mod clone;
 mod compression;
-mod error;
 mod hashsum;
 mod header;
 mod http_range_request;
@@ -15,19 +13,17 @@ mod reader;
 mod reader_remote;
 mod rolling_hash;
 
-pub use archive::Archive;
+pub mod clone;
+
+pub use archive::{Archive, ArchiveError};
 pub use chunk_index::{ChunkIndex, ReorderOp};
 pub use chunk_location::ChunkLocation;
 pub use chunker::{Chunker, ChunkerConfig, ChunkerFilterBits, ChunkerFilterConfig};
-pub use clone::{
-    clone_from_archive, clone_from_readable, clone_in_place, CloneOptions, CloneOutput,
-};
-pub use compression::Compression;
-pub use error::Error;
+pub use compression::{Compression, CompressionError};
 pub use hashsum::HashSum;
 pub use header::{build_header, ARCHIVE_MAGIC, PRE_HEADER_SIZE};
 pub use reader::Reader;
-pub use reader_remote::ReaderRemote;
+pub use reader_remote::{ReaderRemote, ReaderRemoteError};
 pub use rolling_hash::{BuzHash, RollSum, RollingHash};
 
 pub mod chunk_dictionary {

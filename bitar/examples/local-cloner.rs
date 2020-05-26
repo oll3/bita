@@ -1,4 +1,4 @@
-use bitar::{clone_from_archive, clone_from_readable, Archive, CloneOptions};
+use bitar::{clone, Archive};
 use tokio::fs::{File, OpenOptions};
 
 #[tokio::main]
@@ -23,8 +23,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut chunks_to_clone = archive.source_index().clone();
 
     // Use as much data as possible from the example seed
-    let read_seed_bytes = clone_from_readable(
-        &CloneOptions::default(),
+    let read_seed_bytes = clone::from_readable(
+        &clone::Options::default(),
         &mut OpenOptions::new().read(true).open(example_seed).await?,
         &archive,
         &mut chunks_to_clone,
@@ -34,8 +34,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .expect("clone from seed");
 
     // Fetch the rest of the chunks from the archive
-    let read_archive_bytes = clone_from_archive(
-        &CloneOptions::default(),
+    let read_archive_bytes = clone::from_archive(
+        &clone::Options::default(),
         &mut archive_file,
         &archive,
         &mut chunks_to_clone,

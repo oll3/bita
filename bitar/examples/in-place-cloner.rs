@@ -1,4 +1,4 @@
-use bitar::{clone_from_archive, clone_in_place, Archive, CloneOptions};
+use bitar::{clone, Archive};
 use tokio::fs::{File, OpenOptions};
 
 #[tokio::main]
@@ -23,13 +23,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut chunks_to_clone = archive.source_index().clone();
 
     // Scan the output file and reuse any data available
-    let clone_opts = CloneOptions::default();
-    let reused_bytes = clone_in_place(&clone_opts, &mut chunks_to_clone, &archive, &mut output)
+    let clone_opts = clone::Options::default();
+    let reused_bytes = clone::in_place(&clone_opts, &mut chunks_to_clone, &archive, &mut output)
         .await
         .expect("clone in place");
 
     // Fetch the rest of the chunks from the archive
-    let read_archive_bytes = clone_from_archive(
+    let read_archive_bytes = clone::from_archive(
         &clone_opts,
         &mut archive_file,
         &archive,

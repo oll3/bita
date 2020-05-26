@@ -7,9 +7,34 @@ use futures_util::StreamExt;
 use reqwest::{RequestBuilder, Url};
 use std::time::Duration;
 
-use crate::error::Error;
 use crate::http_range_request;
 use crate::reader::Reader;
+
+/// ReaderRemote error.
+#[derive(Debug)]
+pub enum ReaderRemoteError {
+    UnexpectedEnd,
+    RequestNotClonable,
+    Http(reqwest::Error),
+}
+
+impl std::error::Error for ReaderRemoteError {}
+
+impl std::fmt::Display for ReaderRemoteError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnexpectedEnd => write!(f, "unexpected end"),
+            Self::RequestNotClonable => write!(f, "request is not clonable"),
+            Self::Http(err) => write!(f, "http error: {}", err),
+        }
+    }
+}
+
+impl From<reqwest::Error> for ReaderRemoteError {
+    fn from(e: reqwest::Error) -> Self {
+        Self::Http(e)
+    }
+}
 
 /// ReaderRemote is a helper for reading archives from a remote http location.
 pub struct ReaderRemote {
@@ -53,7 +78,7 @@ impl ReaderRemote {
         &'a mut self,
         start_offset: u64,
         chunk_sizes: &'a [usize],
-    ) -> impl Stream<Item = Result<Bytes, Error>> + 'a {
+    ) -> impl Stream<Item = Result<Bytes, ReaderRemoteError>> + 'a {
         let total_size: u64 = chunk_sizes.iter().map(|v| *v as u64).sum();
         ChunkReader {
             request: http_range_request::Builder::new(&self.request, start_offset, total_size)
@@ -76,7 +101,7 @@ impl<'a> ChunkReader<'a>
 where
     Self: Unpin,
 {
-    fn poll_read(&mut self, cx: &mut Context) -> Poll<Option<Result<Bytes, Error>>> {
+    fn poll_read(&mut self, cx: &mut Context) -> Poll<Option<Result<Bytes, ReaderRemoteError>>> {
         while self.chunk_index < self.chunk_sizes.len() {
             let chunk_size = self.chunk_sizes[self.chunk_index];
             if self.chunk_buf.len() >= chunk_size {
@@ -88,7 +113,9 @@ where
                 Poll::Ready(Some(Ok(item))) => {
                     self.chunk_buf.extend_from_slice(&item[..]);
                 }
-                Poll::Ready(None) => return Poll::Ready(Some(Err(Error::UnexpectedEnd))),
+                Poll::Ready(None) => {
+                    return Poll::Ready(Some(Err(ReaderRemoteError::UnexpectedEnd)))
+                }
                 Poll::Ready(Some(Err(err))) => return Poll::Ready(Some(Err(err))),
                 Poll::Pending => return Poll::Pending,
             }
@@ -98,7 +125,7 @@ where
 }
 
 impl<'a> Stream for ChunkReader<'a> {
-    type Item = Result<Bytes, Error>;
+    type Item = Result<Bytes, ReaderRemoteError>;
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         self.poll_read(cx)
     }
@@ -110,7 +137,8 @@ impl<'a> Stream for ChunkReader<'a> {
 
 #[async_trait]
 impl Reader for ReaderRemote {
-    async fn read_at(&mut self, offset: u64, size: usize) -> Result<Bytes, Error> {
+    type Error = ReaderRemoteError;
+    async fn read_at(&mut self, offset: u64, size: usize) -> Result<Bytes, ReaderRemoteError> {
         let request = http_range_request::Builder::new(&self.request, offset, size as u64)
             .retry(self.retries, self.retry_delay);
 
@@ -119,7 +147,7 @@ impl Reader for ReaderRemote {
             // Truncate the response if bigger than requested size
             Ok(res.split_to(size))
         } else if res.len() < size {
-            Err(Error::UnexpectedEnd)
+            Err(ReaderRemoteError::UnexpectedEnd)
         } else {
             Ok(res)
         }
@@ -128,7 +156,7 @@ impl Reader for ReaderRemote {
         &'a mut self,
         start_offset: u64,
         chunk_sizes: &'a [usize],
-    ) -> Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Stream<Item = Result<Bytes, ReaderRemoteError>> + Send + 'a>> {
         Box::pin(self.read_chunk_stream(start_offset, chunk_sizes))
     }
 }
@@ -230,7 +258,7 @@ mod tests {
         let read = reader.read_at(0, 10);
         tokio::select! {
             _ = server => panic!("server ended"),
-            data = read => match data.unwrap_err() { Error::UnexpectedEnd => {} err=> panic!(err) },
+            data = read => match data.unwrap_err() { ReaderRemoteError::UnexpectedEnd => {} err=> panic!(err) },
         };
     }
     #[tokio::test]
@@ -282,7 +310,7 @@ mod tests {
         );
         let chunk_sizes = vec![1];
         match reader.read_chunks(0, &chunk_sizes[..]).next().await {
-            Some(Err(Error::Http(reqwest::Error { .. }))) => {}
+            Some(Err(ReaderRemoteError::Http(reqwest::Error { .. }))) => {}
             _ => panic!("unexpected result"),
         };
     }

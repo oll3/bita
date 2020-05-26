@@ -7,7 +7,7 @@ use crate::{
     chunk_dictionary::ChunkDictionary,
     chunk_location_map::ChunkLocationMap,
     chunker::{Chunker, ChunkerConfig},
-    ChunkLocation, Error, HashSum,
+    ChunkLocation, HashSum,
 };
 
 /// Represents a single chunk re-ordering operation.
@@ -72,7 +72,7 @@ impl ChunkIndex {
         hash_length: usize,
         max_buffered_chunks: usize,
         readable: &mut T,
-    ) -> Result<Self, Error>
+    ) -> Result<Self, std::io::Error>
     where
         T: AsyncRead + Unpin,
     {
