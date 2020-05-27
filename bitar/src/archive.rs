@@ -50,7 +50,7 @@ impl<E> From<CompressionError> for ArchiveError<E> {
 }
 
 /// Description of a chunk within an archive.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ChunkDescriptor {
     /// Chunk checksum.
     pub checksum: HashSum,
@@ -245,30 +245,38 @@ impl Archive {
         &self.source_index
     }
     /// Returns chunks at adjacent location in archive grouped together.
-    pub fn grouped_chunks(&self, chunks: &ChunkIndex) -> Vec<Vec<ChunkDescriptor>> {
-        let mut group_list = Vec::new();
-        let mut group: Vec<ChunkDescriptor> = Vec::new();
-        for descriptor in self
-            .chunk_order
-            .iter()
-            .filter(|chunk| chunks.contains(&chunk.checksum))
-            .cloned()
-        {
-            if let Some(prev) = group.last() {
-                let prev_chunk_end = prev.archive_offset + u64::from(prev.archive_size);
-                if prev_chunk_end == descriptor.archive_offset {
-                    // Chunk is placed right next to the previous chunk
-                    group.push(descriptor);
-                } else {
-                    group_list.push(group);
-                    group = vec![descriptor];
-                }
-            } else {
-                group.push(descriptor);
-            }
-        }
-        group_list
+    pub fn grouped_chunks(&self, filter_chunks: &ChunkIndex) -> Vec<Vec<ChunkDescriptor>> {
+        group_chunks(
+            self.chunk_order
+                .iter()
+                .filter(|chunk| filter_chunks.contains(&chunk.checksum)),
+        )
     }
+}
+
+fn group_chunks<'a>(
+    chunk_order: impl Iterator<Item = &'a ChunkDescriptor>,
+) -> Vec<Vec<ChunkDescriptor>> {
+    let mut group_list = Vec::new();
+    let mut group: Vec<ChunkDescriptor> = Vec::new();
+    for descriptor in chunk_order.cloned() {
+        if let Some(prev) = group.last() {
+            let prev_chunk_end = prev.archive_offset + u64::from(prev.archive_size);
+            if prev_chunk_end == descriptor.archive_offset {
+                // Chunk is placed right next to the previous chunk
+                group.push(descriptor);
+            } else {
+                group_list.push(group);
+                group = vec![descriptor];
+            }
+        } else {
+            group.push(descriptor);
+        }
+    }
+    if !group.is_empty() {
+        group_list.push(group);
+    }
+    group_list
 }
 
 fn chunker_config_from_params<R>(p: ChunkerParameters) -> Result<chunker::Config, ArchiveError<R>> {
@@ -312,4 +320,174 @@ fn u64_from_le_slice(v: &[u8]) -> u64 {
     let mut tmp: [u8; 8] = Default::default();
     tmp.copy_from_slice(v);
     u64::from_le_bytes(tmp)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn grouped_chunks_all_adjacent() {
+        let chunk_order = [
+            ChunkDescriptor {
+                checksum: vec![0].into(),
+                archive_offset: 0,
+                archive_size: 10,
+                source_size: 10,
+            },
+            ChunkDescriptor {
+                checksum: vec![1].into(),
+                archive_offset: 10,
+                archive_size: 10,
+                source_size: 10,
+            },
+        ];
+        assert_eq!(
+            group_chunks(chunk_order.iter()),
+            vec![vec![
+                ChunkDescriptor {
+                    checksum: vec![0].into(),
+                    archive_offset: 0,
+                    archive_size: 10,
+                    source_size: 10,
+                },
+                ChunkDescriptor {
+                    checksum: vec![1].into(),
+                    archive_offset: 10,
+                    archive_size: 10,
+                    source_size: 10,
+                },
+            ]]
+        );
+    }
+    #[test]
+    fn grouped_chunks_no_adjacent() {
+        let chunk_order = [
+            ChunkDescriptor {
+                checksum: vec![0].into(),
+                archive_offset: 0,
+                archive_size: 10,
+                source_size: 10,
+            },
+            ChunkDescriptor {
+                checksum: vec![1].into(),
+                archive_offset: 11,
+                archive_size: 10,
+                source_size: 10,
+            },
+        ];
+        assert_eq!(
+            group_chunks(chunk_order.iter()),
+            vec![
+                vec![ChunkDescriptor {
+                    checksum: vec![0].into(),
+                    archive_offset: 0,
+                    archive_size: 10,
+                    source_size: 10,
+                }],
+                vec![ChunkDescriptor {
+                    checksum: vec![1].into(),
+                    archive_offset: 11,
+                    archive_size: 10,
+                    source_size: 10,
+                },]
+            ]
+        );
+    }
+    #[test]
+    fn grouped_chunks_first_adjacent() {
+        let chunk_order = [
+            ChunkDescriptor {
+                checksum: vec![0].into(),
+                archive_offset: 0,
+                archive_size: 10,
+                source_size: 10,
+            },
+            ChunkDescriptor {
+                checksum: vec![1].into(),
+                archive_offset: 10,
+                archive_size: 10,
+                source_size: 10,
+            },
+            ChunkDescriptor {
+                checksum: vec![2].into(),
+                archive_offset: 21,
+                archive_size: 10,
+                source_size: 10,
+            },
+        ];
+        assert_eq!(
+            group_chunks(chunk_order.iter()),
+            vec![
+                vec![
+                    ChunkDescriptor {
+                        checksum: vec![0].into(),
+                        archive_offset: 0,
+                        archive_size: 10,
+                        source_size: 10,
+                    },
+                    ChunkDescriptor {
+                        checksum: vec![1].into(),
+                        archive_offset: 10,
+                        archive_size: 10,
+                        source_size: 10,
+                    }
+                ],
+                vec![ChunkDescriptor {
+                    checksum: vec![2].into(),
+                    archive_offset: 21,
+                    archive_size: 10,
+                    source_size: 10,
+                },]
+            ]
+        );
+    }
+    #[test]
+    fn grouped_chunks_last_adjacent() {
+        let chunk_order = [
+            ChunkDescriptor {
+                checksum: vec![0].into(),
+                archive_offset: 0,
+                archive_size: 10,
+                source_size: 10,
+            },
+            ChunkDescriptor {
+                checksum: vec![1].into(),
+                archive_offset: 11,
+                archive_size: 10,
+                source_size: 10,
+            },
+            ChunkDescriptor {
+                checksum: vec![2].into(),
+                archive_offset: 21,
+                archive_size: 10,
+                source_size: 10,
+            },
+        ];
+        assert_eq!(
+            group_chunks(chunk_order.iter()),
+            vec![
+                vec![ChunkDescriptor {
+                    checksum: vec![0].into(),
+                    archive_offset: 0,
+                    archive_size: 10,
+                    source_size: 10,
+                },],
+                vec![
+                    ChunkDescriptor {
+                        checksum: vec![1].into(),
+                        archive_offset: 11,
+                        archive_size: 10,
+                        source_size: 10,
+                    },
+                    ChunkDescriptor {
+                        checksum: vec![2].into(),
+                        archive_offset: 21,
+                        archive_size: 10,
+                        source_size: 10,
+                    },
+                ]
+            ]
+        );
+    }
 }
