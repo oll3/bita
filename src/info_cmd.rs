@@ -30,7 +30,14 @@ fn print_rolling_hash_config(hc: &chunker::FilterConfig) {
 }
 
 pub fn print_chunker_config(config: &chunker::Config) {
-    info!("  Chunking algorithm: {}", config);
+    info!(
+        "  Chunking algorithm: {}",
+        match config {
+            chunker::Config::BuzHash(_) => "BuzHash",
+            chunker::Config::RollSum(_) => "RollSum",
+            chunker::Config::FixedSize(_) => "Fixed Size",
+        }
+    );
     match config {
         chunker::Config::BuzHash(hc) => print_rolling_hash_config(hc),
         chunker::Config::RollSum(hc) => print_rolling_hash_config(hc),
@@ -42,7 +49,7 @@ pub fn print_chunker_config(config: &chunker::Config) {
 
 pub fn print_archive(archive: &Archive) {
     info!("Archive: ");
-    info!("  Version: {}", archive.built_with_version());
+    info!("  Built with version: {}", archive.built_with_version());
     info!(
         "  Archive size: {}",
         size_to_str(archive.compressed_size() + archive.header_size() as u64)
