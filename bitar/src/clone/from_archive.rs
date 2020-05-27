@@ -55,9 +55,9 @@ pub async fn from_archive<R, C>(
 ) -> Result<u64, CloneFromArchiveError<C::Error, R::Error>>
 where
     R: Reader,
-    R::Error: 'static,
+    R::Error: Sync + Send + 'static,
     C: clone::CloneOutput,
-    C::Error: 'static,
+    C::Error: Sync + Send + 'static,
 {
     let mut total_fetched = 0u64;
     let grouped_chunks = archive.grouped_chunks(&chunks);

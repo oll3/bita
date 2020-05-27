@@ -92,7 +92,7 @@ async fn is_block_dev(_file: &mut File) -> Result<bool, std::io::Error> {
 async fn clone_archive<R>(cmd: Command, mut reader: R) -> Result<()>
 where
     R: Reader,
-    R::Error: 'static,
+    R::Error: std::error::Error + Send + Sync + 'static,
 {
     let archive = Archive::try_init(&mut reader).await.context(format!(
         "Failed to read archive at {}",

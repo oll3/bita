@@ -7,7 +7,7 @@ use crate::HashSum;
 /// Output while cloning.
 #[async_trait]
 pub trait CloneOutput {
-    type Error: std::error::Error + Send + Sync;
+    type Error;
     /// Write a single chunk to output at the given offsets.
     async fn write_chunk(
         &mut self,

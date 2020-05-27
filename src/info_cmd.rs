@@ -8,7 +8,7 @@ use bitar::{chunker, Archive, Reader, ReaderRemote};
 pub async fn print_archive_reader<R>(reader: &mut R) -> Result<()>
 where
     R: Reader,
-    R::Error: 'static,
+    R::Error: std::error::Error + Send + Sync + 'static,
 {
     let archive = Archive::try_init(reader).await?;
     print_archive(&archive);

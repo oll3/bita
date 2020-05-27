@@ -87,7 +87,7 @@ where
 /// Read bytes at offset.
 #[async_trait]
 pub trait Reader {
-    type Error: std::error::Error + Send + Sync;
+    type Error;
     async fn read_at<'a>(&'a mut self, offset: u64, size: usize) -> Result<Bytes, Self::Error>;
     fn read_chunks<'a>(
         &'a mut self,
