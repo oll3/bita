@@ -3,16 +3,20 @@ use bytes::{Bytes, BytesMut};
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use futures_core::stream::Stream;
-use std::future::Future;
 use std::io::SeekFrom;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
+
+enum State {
+    Seek(u64),
+    PollSeek,
+    Read,
+}
 
 struct ChunkReader<'a, R>
 where
     R: AsyncRead + AsyncSeek + Unpin + Send + ?Sized,
 {
-    should_seek: bool,
-    start_offset: u64,
+    state: State,
     chunk_sizes: &'a [usize],
     chunk_index: usize,
     buf: BytesMut,
@@ -27,46 +31,56 @@ where
     fn new(reader: &'a mut R, start_offset: u64, chunk_sizes: &'a [usize]) -> Self {
         ChunkReader {
             reader,
-            should_seek: true,
+            state: State::Seek(start_offset),
             chunk_index: 0,
-            start_offset,
             buf: BytesMut::with_capacity(*chunk_sizes.get(0).unwrap_or(&0)),
             chunk_sizes,
             buf_offset: 0,
         }
     }
-    fn poll_chunk(&mut self, cx: &mut Context) -> Poll<Option<Result<Bytes, std::io::Error>>>
+    fn poll_chunk<'b>(&'b mut self, cx: &mut Context) -> Poll<Option<Result<Bytes, std::io::Error>>>
     where
-        R: AsyncSeekExt + AsyncRead + Send + Unpin,
+        R: AsyncSeek + AsyncRead + Send + Unpin,
         Self: Unpin + Send,
     {
-        if self.should_seek {
-            let mut seek = self.reader.seek(SeekFrom::Start(self.start_offset));
-            match Pin::new(&mut seek).poll(cx) {
-                Poll::Ready(Ok(_rc)) => self.should_seek = false,
-                Poll::Ready(Err(err)) => return Poll::Ready(Some(Err(err))),
-                Poll::Pending => return Poll::Pending,
+        loop {
+            match self.state {
+                State::Seek(offset) => {
+                    match Pin::new(&mut self.reader).start_seek(cx, SeekFrom::Start(offset)) {
+                        Poll::Ready(Ok(())) => self.state = State::PollSeek,
+                        Poll::Ready(Err(err)) => return Poll::Ready(Some(Err(err))),
+                        Poll::Pending => return Poll::Pending,
+                    }
+                }
+                State::PollSeek => match Pin::new(&mut self.reader).poll_complete(cx) {
+                    Poll::Ready(Ok(_rc)) => self.state = State::Read,
+                    Poll::Ready(Err(err)) => return Poll::Ready(Some(Err(err))),
+                    Poll::Pending => return Poll::Pending,
+                },
+                State::Read => {
+                    while self.chunk_index < self.chunk_sizes.len() {
+                        let chunk_size = self.chunk_sizes[self.chunk_index];
+                        if self.buf_offset >= chunk_size {
+                            let chunk = self.buf.split_to(chunk_size).freeze();
+                            self.buf_offset -= chunk_size;
+                            self.chunk_index += 1;
+                            return Poll::Ready(Some(Ok(chunk)));
+                        }
+                        if self.buf.len() < chunk_size {
+                            self.buf.resize(chunk_size, 0);
+                        }
+                        match Pin::new(&mut self.reader)
+                            .poll_read(cx, &mut self.buf[self.buf_offset..])
+                        {
+                            Poll::Ready(Ok(rc)) => self.buf_offset += rc,
+                            Poll::Ready(Err(err)) => return Poll::Ready(Some(Err(err))),
+                            Poll::Pending => return Poll::Pending,
+                        }
+                    }
+                    return Poll::Ready(None);
+                }
             }
         }
-        while self.chunk_index < self.chunk_sizes.len() {
-            let chunk_size = self.chunk_sizes[self.chunk_index];
-            if self.buf_offset >= chunk_size {
-                let chunk = self.buf.split_to(chunk_size).freeze();
-                self.buf_offset = 0;
-                self.chunk_index += 1;
-                self.buf.resize(chunk_size, 0);
-                return Poll::Ready(Some(Ok(chunk)));
-            }
-            if self.buf.len() < chunk_size {
-                self.buf.resize(chunk_size, 0);
-            }
-            match Pin::new(&mut self.reader).poll_read(cx, &mut self.buf[self.buf_offset..]) {
-                Poll::Ready(Ok(rc)) => self.buf_offset += rc,
-                Poll::Ready(Err(err)) => return Poll::Ready(Some(Err(err))),
-                Poll::Pending => return Poll::Pending,
-            }
-        }
-        Poll::Ready(None)
     }
 }
 
@@ -104,12 +118,12 @@ where
     type Error = std::io::Error;
     async fn read_at(&mut self, offset: u64, size: usize) -> Result<Bytes, std::io::Error> {
         self.seek(SeekFrom::Start(offset)).await?;
-        let mut buf = BytesMut::with_capacity(size);
+        let mut buf = Vec::with_capacity(size);
         unsafe {
             buf.set_len(size);
         }
-        self.read_exact(&mut buf).await?;
-        Ok(buf.freeze())
+        self.read_exact(&mut buf[..]).await?;
+        Ok(Bytes::from(buf))
     }
     fn read_chunks<'a>(
         &'a mut self,
