@@ -89,14 +89,14 @@ async fn is_block_dev(_file: &mut File) -> Result<bool, std::io::Error> {
     Ok(false)
 }
 
-async fn clone_archive<R>(cmd: Command, mut reader: R) -> Result<()>
+async fn clone_archive<R>(opts: Options, mut reader: R) -> Result<()>
 where
     R: Reader,
     R::Error: std::error::Error + Send + Sync + 'static,
 {
     let archive = Archive::try_init(&mut reader).await.context(format!(
         "Failed to read archive at {}",
-        cmd.input_archive.source()
+        opts.input_archive.source()
     ))?;
     let mut chunks_left = archive.source_index().clone();
     let mut total_read_from_seed = 0u64;
@@ -105,7 +105,7 @@ where
     println!();
 
     // Verify the header checksum if requested
-    if let Some(ref expected_checksum) = cmd.header_checksum {
+    if let Some(ref expected_checksum) = opts.header_checksum {
         if *expected_checksum != *archive.header_checksum() {
             return Err(anyhow!("Header checksum mismatch"));
         } else {
@@ -114,19 +114,19 @@ where
     }
     info!(
         "Cloning archive {} to {}...",
-        cmd.input_archive.source(),
-        cmd.output.display()
+        opts.input_archive.source(),
+        opts.output.display()
     );
 
     // Create or open output file
     let output_file = tokio::fs::OpenOptions::new()
         .write(true)
-        .read(cmd.verify_output || cmd.seed_output)
-        .create(cmd.force_create || cmd.seed_output)
-        .create_new(!cmd.force_create && !cmd.seed_output)
-        .open(&cmd.output)
+        .read(opts.verify_output || opts.seed_output)
+        .create(opts.force_create || opts.seed_output)
+        .create_new(!opts.force_create && !opts.seed_output)
+        .open(&opts.output)
         .await
-        .context(format!("Failed to open {}", cmd.output.display()))?;
+        .context(format!("Failed to open {}", opts.output.display()))?;
 
     let mut output = OutputFile::new_from(output_file).await?;
 
@@ -145,9 +145,9 @@ where
     }
 
     // Build an index of the output file's chunks
-    let clone_opts = clone::Options::default().max_buffered_chunks(cmd.num_chunk_buffers);
-    if cmd.seed_output {
-        info!("Updating chunks of {} in-place...", cmd.output.display());
+    let clone_opts = clone::Options::default().max_buffered_chunks(opts.num_chunk_buffers);
+    if opts.seed_output {
+        info!("Updating chunks of {} in-place...", opts.output.display());
         let used_from_self =
             clone::in_place(&clone_opts, &mut chunks_left, &archive, &mut output.file)
                 .await
@@ -155,7 +155,7 @@ where
         info!(
             "Used {} from {}",
             size_to_str(used_from_self),
-            cmd.output.display()
+            opts.output.display()
         );
         total_read_from_seed += used_from_self;
     }
@@ -165,11 +165,11 @@ where
         output
             .resize(archive.total_source_size())
             .await
-            .context(format!("Failed to resize {}", cmd.output.display()))?;
+            .context(format!("Failed to resize {}", opts.output.display()))?;
     }
 
     // Read chunks from seed files
-    if cmd.seed_stdin && !atty::is(atty::Stream::Stdin) {
+    if opts.seed_stdin && !atty::is(atty::Stream::Stdin) {
         info!(
             "Scanning stdin for chunks ({} left to find)...",
             chunks_left.len()
@@ -185,7 +185,7 @@ where
         .context("Failed to clone from stdin")?;
         info!("Used {} bytes from stdin", size_to_str(bytes_to_output));
     }
-    for seed_path in &cmd.seed_files {
+    for seed_path in &opts.seed_files {
         let mut file = File::open(seed_path)
             .await
             .context(format!("Failed to open seed file {}", seed_path.display()))?;
@@ -214,7 +214,7 @@ where
     info!(
         "Fetching {} chunks from {}...",
         chunks_left.len(),
-        cmd.input_archive.source()
+        opts.input_archive.source()
     );
     let total_read_from_remote = clone::from_archive(
         &clone_opts,
@@ -226,19 +226,19 @@ where
     .await
     .context(format!(
         "Failed to clone from archive at {}",
-        cmd.input_archive.source()
+        opts.input_archive.source()
     ))?;
     info!(
         "Used {} bytes from {}",
         size_to_str(total_read_from_remote),
-        cmd.input_archive.source()
+        opts.input_archive.source()
     );
 
-    if cmd.verify_output {
-        info!("Verifying checksum of {}...", cmd.output.display());
+    if opts.verify_output {
+        info!("Verifying checksum of {}...", opts.output.display());
         let sum = output.checksum().await.context(format!(
             "Failed to create checksum of {}",
-            cmd.output.display()
+            opts.output.display()
         ))?;
         let expected_checksum = archive.source_checksum();
         if sum == *expected_checksum {
@@ -246,9 +246,9 @@ where
         } else {
             return Err(anyhow!(
                 "Checksum mismatch ({}: {}, {}: {})",
-                cmd.output.display(),
+                opts.output.display(),
                 sum,
-                cmd.input_archive.source(),
+                opts.input_archive.source(),
                 expected_checksum
             ));
         }
@@ -287,7 +287,7 @@ impl InputArchive {
 }
 
 #[derive(Debug, Clone)]
-pub struct Command {
+pub struct Options {
     pub force_create: bool,
     pub input_archive: InputArchive,
     pub header_checksum: Option<HashSum>,
@@ -299,33 +299,31 @@ pub struct Command {
     pub num_chunk_buffers: usize,
 }
 
-impl Command {
-    pub async fn run(self) -> Result<()> {
-        match self.input_archive.clone() {
-            InputArchive::Local(path) => {
-                clone_archive(
-                    self,
-                    File::open(&path)
-                        .await
-                        .context(format!("Failed to open {}", path.display()))?,
-                )
-                .await
+pub async fn clone_cmd(opts: Options) -> Result<()> {
+    match opts.input_archive.clone() {
+        InputArchive::Local(path) => {
+            clone_archive(
+                opts,
+                File::open(&path)
+                    .await
+                    .context(format!("Failed to open {}", path.display()))?,
+            )
+            .await
+        }
+        InputArchive::Remote(input) => {
+            let mut request = reqwest::Client::new()
+                .get(input.url.clone())
+                .headers(input.headers.clone());
+            if let Some(timeout) = input.receive_timeout {
+                request = request.timeout(timeout);
             }
-            InputArchive::Remote(input) => {
-                let mut request = reqwest::Client::new()
-                    .get(input.url.clone())
-                    .headers(input.headers.clone());
-                if let Some(timeout) = input.receive_timeout {
-                    request = request.timeout(timeout);
-                }
-                clone_archive(
-                    self,
-                    ReaderRemote::from_request(request)
-                        .retries(input.retries)
-                        .retry_delay(input.retry_delay),
-                )
-                .await
-            }
+            clone_archive(
+                opts,
+                ReaderRemote::from_request(request)
+                    .retries(input.retries)
+                    .retry_delay(input.retry_delay),
+            )
+            .await
         }
     }
 }

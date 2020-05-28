@@ -82,18 +82,11 @@ pub fn print_archive(archive: &Archive) {
     );
 }
 
-#[derive(Debug, Clone)]
-pub struct Command {
-    pub input: String,
-}
-
-impl Command {
-    pub async fn run(self) -> Result<()> {
-        if let Ok(url) = self.input.parse::<reqwest::Url>() {
-            print_archive_reader(&mut ReaderRemote::from_url(url)).await
-        } else {
-            let mut file = File::open(&self.input).await?;
-            print_archive_reader(&mut file).await
-        }
+pub async fn info_cmd(input: String) -> Result<()> {
+    if let Ok(url) = input.parse::<reqwest::Url>() {
+        print_archive_reader(&mut ReaderRemote::from_url(url)).await
+    } else {
+        let mut file = File::open(&input).await?;
+        print_archive_reader(&mut file).await
     }
 }

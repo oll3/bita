@@ -4,8 +4,9 @@ mod diff_cmd;
 mod info_cmd;
 mod string_utils;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use clap::{App, Arg, SubCommand};
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::path::Path;
 use std::time::Duration;
 use url::Url;
@@ -21,46 +22,50 @@ pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 fn parse_hash_chunker_config(
     matches: &clap::ArgMatches<'_>,
     default_window_size: &str,
-) -> chunker::FilterConfig {
-    let avg_chunk_size = parse_size(matches.value_of("avg-chunk-size").unwrap_or("64KiB"));
-    let min_chunk_size = parse_size(matches.value_of("min-chunk-size").unwrap_or("16KiB"));
-    let max_chunk_size = parse_size(matches.value_of("max-chunk-size").unwrap_or("16MiB"));
-
+) -> Result<chunker::FilterConfig> {
+    let avg_chunk_size = parse_size(matches.value_of("avg-chunk-size").unwrap_or("64KiB"))?;
+    let min_chunk_size = parse_size(matches.value_of("min-chunk-size").unwrap_or("16KiB"))?;
+    let max_chunk_size = parse_size(matches.value_of("max-chunk-size").unwrap_or("16MiB"))?;
     let filter_bits = chunker::FilterBits::from_size(avg_chunk_size as u32);
     if min_chunk_size > avg_chunk_size {
-        panic!("min-chunk-size > avg-chunk-size");
+        return Err(anyhow!(
+            "Min chunk size can't be bigger than the target average chunk size"
+        ));
     }
     if max_chunk_size < avg_chunk_size {
-        panic!("max-chunk-size < avg-chunk-size");
+        return Err(anyhow!(
+            "Max chunk size can't be smaller than the target average chunk size"
+        ));
     }
     let window_size = parse_size(
         matches
             .value_of("rolling-window-size")
             .unwrap_or(default_window_size),
-    );
-
-    chunker::FilterConfig {
+    )?;
+    Ok(chunker::FilterConfig {
         filter_bits,
         min_chunk_size,
         max_chunk_size,
         window_size,
-    }
+    })
 }
 
-fn parse_chunker_config(matches: &clap::ArgMatches<'_>) -> chunker::Config {
-    match (
-        matches.value_of("fixed-size"),
-        matches
-            .value_of("hash-chunking")
-            .unwrap_or("RollSum")
-            .to_lowercase()
-            .as_ref(),
-    ) {
-        (Some(fixed_size), _) => chunker::Config::FixedSize(parse_size(fixed_size)),
-        (_, "rollsum") => chunker::Config::RollSum(parse_hash_chunker_config(matches, "64B")),
-        (_, "buzhash") => chunker::Config::RollSum(parse_hash_chunker_config(matches, "16B")),
-        _ => unreachable!(),
-    }
+fn parse_chunker_config(matches: &clap::ArgMatches<'_>) -> Result<chunker::Config> {
+    Ok(
+        match (
+            matches.value_of("fixed-size"),
+            matches
+                .value_of("hash-chunking")
+                .unwrap_or("RollSum")
+                .to_lowercase()
+                .as_ref(),
+        ) {
+            (Some(fixed_size), _) => chunker::Config::FixedSize(parse_size(fixed_size)?),
+            (_, "rollsum") => chunker::Config::RollSum(parse_hash_chunker_config(matches, "64B")?),
+            (_, "buzhash") => chunker::Config::RollSum(parse_hash_chunker_config(matches, "16B")?),
+            _ => unreachable!(),
+        },
+    )
 }
 
 pub fn compression_names() -> String {
@@ -77,53 +82,55 @@ pub fn compression_names() -> String {
     s
 }
 
-fn parse_compression(matches: &clap::ArgMatches<'_>) -> (Compression, u32) {
+fn parse_compression(matches: &clap::ArgMatches<'_>) -> Result<Compression> {
     let compression_level = matches
         .value_of("compression-level")
         .unwrap_or("6")
         .parse()
-        .expect("invalid compression level value");
-
+        .context("Failed to parse compression level")?;
     if compression_level < 1 || compression_level > 19 {
-        panic!("compression level not within range");
+        return Err(anyhow!(
+            "Compression level ({}) not within range (1 - 19)",
+            compression_level
+        ));
     }
-
-    let compression = match matches
-        .value_of("compression")
-        .unwrap_or("brotli")
-        .to_lowercase()
-        .as_ref()
-    {
-        #[cfg(feature = "lzma-compression")]
-        "lzma" => Compression::LZMA(compression_level),
-        #[cfg(feature = "zstd-compression")]
-        "zstd" => Compression::ZSTD(compression_level),
-        "brotli" => Compression::Brotli(compression_level),
-        "none" => Compression::None,
-        name => panic!("invalid compression {}", name),
-    };
-    (compression, compression_level)
+    Ok(
+        match matches
+            .value_of("compression")
+            .unwrap_or("brotli")
+            .to_lowercase()
+            .as_ref()
+        {
+            #[cfg(feature = "lzma-compression")]
+            "lzma" => Compression::LZMA(compression_level),
+            #[cfg(feature = "zstd-compression")]
+            "zstd" => Compression::ZSTD(compression_level),
+            "brotli" => Compression::Brotli(compression_level),
+            "none" => Compression::None,
+            name => return Err(anyhow!("Invalid compression ({})", name)),
+        },
+    )
 }
 
-fn parse_size(size_str: &str) -> usize {
+fn parse_size(size_str: &str) -> Result<usize> {
     let size_val: String = size_str.chars().filter(|a| a.is_numeric()).collect();
-    let size_val: usize = size_val.parse().expect("parse");
+    let size_val: usize = size_val.parse().context("Failed to parse")?;
     let size_unit: String = size_str.chars().filter(|a| !a.is_numeric()).collect();
     if size_unit.is_empty() {
-        return size_val;
+        return Ok(size_val);
     }
-    match size_unit.as_str() {
+    Ok(match size_unit.as_str() {
         "GiB" => 1024 * 1024 * 1024 * size_val,
         "MiB" => 1024 * 1024 * size_val,
         "KiB" => 1024 * size_val,
         "B" => size_val,
-        _ => panic!("Invalid size unit"),
-    }
+        unit => return Err(anyhow!("Invalid unit ({})", unit)),
+    })
 }
 
-fn parse_input_config(matches: &clap::ArgMatches<'_>) -> clone_cmd::InputArchive {
+fn parse_input_config(matches: &clap::ArgMatches<'_>) -> Result<clone_cmd::InputArchive> {
     let input = matches.value_of("INPUT").unwrap().to_string();
-    match input.parse::<Url>() {
+    Ok(match input.parse::<Url>() {
         Ok(url) => {
             // Use as URL
             clone_cmd::InputArchive::Remote(Box::new(clone_cmd::RemoteInput {
@@ -132,31 +139,37 @@ fn parse_input_config(matches: &clap::ArgMatches<'_>) -> clone_cmd::InputArchive
                     .value_of("http-retry-count")
                     .unwrap_or("0")
                     .parse()
-                    .expect("failed to parse http-retry-count"),
+                    .context("Failed to parse http-retry-count")?,
                 retry_delay: Duration::from_secs(
                     matches
                         .value_of("http-retry-delay")
-                        .map(|v| v.parse().expect("failed to parse http-retry-delay"))
-                        .unwrap_or(0),
+                        .map(|v| v.parse())
+                        .unwrap_or(Ok(0))
+                        .context("Failed to parse http-retry-delay")?,
                 ),
-                receive_timeout: matches.value_of("http-timeout").map(|v| {
-                    std::time::Duration::from_secs(v.parse().expect("failed to parse http-timeout"))
-                }),
+                receive_timeout: if let Some(v) = matches.value_of("http-timeout") {
+                    Some(Duration::from_secs(
+                        v.parse().context("Failed to parse http-timeout")?,
+                    ))
+                } else {
+                    None
+                },
                 headers: match matches.values_of("http-header") {
-                    Some(values) => values
-                        .map(|header| {
-                            let mut split = header.splitn(2, ' ');
-                            let name = split.next().unwrap().trim_end_matches(':').trim();
-                            let value = split.next().expect("missing header value").trim();
-                            (
-                                reqwest::header::HeaderName::from_bytes(&name.as_bytes())
-                                    .expect("invalid header name"),
-                                reqwest::header::HeaderValue::from_str(value)
-                                    .expect("invalid header value"),
-                            )
-                        })
-                        .collect(),
-                    None => reqwest::header::HeaderMap::new(),
+                    Some(values) => {
+                        let mut headers = HeaderMap::new();
+                        for header in values {
+                            let mut split = header.splitn(2, ':');
+                            let name = split.next().unwrap().trim_end_matches(": ").trim();
+                            let value = split.next().context("Missing header value")?.trim();
+                            headers.insert(
+                                HeaderName::from_bytes(&name.as_bytes())
+                                    .context("Invalid header name")?,
+                                HeaderValue::from_str(value).context("Invalid header value")?,
+                            );
+                        }
+                        headers
+                    }
+                    None => HeaderMap::new(),
                 },
             }))
         }
@@ -164,10 +177,10 @@ fn parse_input_config(matches: &clap::ArgMatches<'_>) -> clone_cmd::InputArchive
             // Use as path
             clone_cmd::InputArchive::Local(input.into())
         }
-    }
+    })
 }
 
-fn init_log(level: log::LevelFilter) {
+fn init_log(level: log::LevelFilter) -> Result<()> {
     let local_level = level;
     fern::Dispatch::new()
         .format(move |out, message, record| {
@@ -187,7 +200,8 @@ fn init_log(level: log::LevelFilter) {
         .level(level)
         .chain(std::io::stdout())
         .apply()
-        .expect("unable to initialize log");
+        .context("Unable to initialize log")?;
+    Ok(())
 }
 
 fn add_chunker_args<'a, 'b>(
@@ -400,17 +414,17 @@ async fn parse_opts() -> Result<()> {
         0 => log::LevelFilter::Info,
         1 => log::LevelFilter::Debug,
         _ => log::LevelFilter::Trace,
-    });
+    })?;
 
-    let num_chunk_buffers: usize = matches
-        .value_of("buffered-chunks")
-        .map(|v| v.parse().expect("invalid buffered-chunks value"))
-        .unwrap_or_else(|| match num_cpus::get() {
+    let num_chunk_buffers: usize = if let Some(v) = matches.value_of("buffered-chunks") {
+        v.parse().context("Invalid buffered-chunks value")?
+    } else {
+        match num_cpus::get() {
             // Single buffer if we have a single core, otherwise number of cores x 2
             0 | 1 => 1,
             n => n * 2,
-        });
-
+        }
+    };
     if let Some(matches) = matches.subcommand_matches("compress") {
         let output = Path::new(matches.value_of("OUTPUT").unwrap());
         let input = if let Some(input) = matches.value_of("INPUT") {
@@ -420,20 +434,18 @@ async fn parse_opts() -> Result<()> {
         };
         let temp_file = Path::with_extension(output, ".tmp");
         let hash_length = matches.value_of("hash-length").unwrap_or("64");
-        let chunker_config = parse_chunker_config(&matches);
-        let (compression, compression_level) = parse_compression(matches);
-        compress_cmd::Command {
+        let chunker_config = parse_chunker_config(&matches)?;
+        let compression = parse_compression(matches)?;
+        compress_cmd::compress_cmd(compress_cmd::Options {
             input,
             output: output.to_path_buf(),
-            hash_length: hash_length.parse().expect("invalid hash length value"),
+            hash_length: hash_length.parse().context("Invalid hash length value")?,
             force_create: matches.is_present("force-create"),
             temp_file,
             chunker_config,
             compression,
-            compression_level,
             num_chunk_buffers,
-        }
-        .run()
+        })
         .await
     } else if let Some(matches) = matches.subcommand_matches("clone") {
         let output = matches.value_of("OUTPUT").unwrap_or("");
@@ -452,11 +464,15 @@ async fn parse_opts() -> Result<()> {
             .map(|s| Path::new(s).to_path_buf())
             .collect();
         let seed_output = matches.is_present("seed-output");
-        let header_checksum = matches
-            .value_of("verify-header")
-            .map(|c| HashSum::from_vec(hex_str_to_vec(c).expect("failed to parse checksum")));
-        let input_archive = parse_input_config(&matches);
-        clone_cmd::Command {
+        let header_checksum = if let Some(c) = matches.value_of("verify-header") {
+            Some(HashSum::from_vec(
+                hex_str_to_vec(c).context("Failed to parse checksum")?,
+            ))
+        } else {
+            None
+        };
+        let input_archive = parse_input_config(&matches)?;
+        clone_cmd::clone_cmd(clone_cmd::Options {
             input_archive,
             header_checksum,
             output: Path::new(output).to_path_buf(),
@@ -466,30 +482,23 @@ async fn parse_opts() -> Result<()> {
             verify_output: matches.is_present("verify-output"),
             seed_output,
             num_chunk_buffers,
-        }
-        .run()
+        })
         .await
     } else if let Some(matches) = matches.subcommand_matches("info") {
         let input = matches.value_of("INPUT").unwrap();
-        info_cmd::Command {
-            input: input.to_string(),
-        }
-        .run()
-        .await
+        info_cmd::info_cmd(input.to_string()).await
     } else if let Some(matches) = matches.subcommand_matches("diff") {
         let input_a = Path::new(matches.value_of("A").unwrap());
         let input_b = Path::new(matches.value_of("B").unwrap());
-        let chunker_config = parse_chunker_config(&matches);
-        let (compression, compression_level) = parse_compression(matches);
-        diff_cmd::Command {
+        let chunker_config = parse_chunker_config(&matches)?;
+        let compression = parse_compression(matches)?;
+        diff_cmd::diff_cmd(diff_cmd::Options {
             input_a: input_a.to_path_buf(),
             input_b: input_b.to_path_buf(),
             chunker_config,
             compression,
-            compression_level,
             num_chunk_buffers,
-        }
-        .run()
+        })
         .await
     } else {
         Err(anyhow!("Unknown command"))

@@ -151,72 +151,69 @@ fn selection_string(
 }
 
 #[derive(Debug, Clone)]
-pub struct Command {
+pub struct Options {
     pub input_a: PathBuf,
     pub input_b: PathBuf,
     pub chunker_config: chunker::Config,
-    pub compression_level: u32,
     pub compression: Compression,
     pub num_chunk_buffers: usize,
 }
 
-impl Command {
-    pub async fn run(self) -> Result<()> {
-        let chunker_config = &self.chunker_config;
-        let compression = self.compression;
+pub async fn diff_cmd(opts: Options) -> Result<()> {
+    let chunker_config = &opts.chunker_config;
+    let compression = opts.compression;
 
-        info!("Chunker config:");
-        info_cmd::print_chunker_config(chunker_config);
-        println!();
+    info!("Chunker config:");
+    info_cmd::print_chunker_config(chunker_config);
+    println!();
 
-        info!("Scanning {} ...", self.input_a.display());
-        let a = chunk_file(
-            &self.input_a,
-            chunker_config,
-            compression,
-            self.num_chunk_buffers,
-        )
-        .await?;
+    info!("Scanning {} ...", opts.input_a.display());
+    let a = chunk_file(
+        &opts.input_a,
+        chunker_config,
+        compression,
+        opts.num_chunk_buffers,
+    )
+    .await?;
 
-        info!("Scanning {} ...", self.input_b.display());
-        let b = chunk_file(
-            &self.input_b,
-            chunker_config,
-            compression,
-            self.num_chunk_buffers,
-        )
-        .await?;
+    info!("Scanning {} ...", opts.input_b.display());
+    let b = chunk_file(
+        &opts.input_b,
+        chunker_config,
+        compression,
+        opts.num_chunk_buffers,
+    )
+    .await?;
 
-        let mut descriptors_ab: HashMap<HashSum, ChunkDescriptor> = HashMap::new();
-        for descriptor in a.descriptors.iter().chain(&b.descriptors) {
-            if let Some(d) = descriptors_ab.get_mut(descriptor.0) {
-                d.occurrences.append(&mut d.occurrences.clone());
-            } else {
-                descriptors_ab.insert(descriptor.0.clone(), descriptor.1.clone());
-            }
+    let mut descriptors_ab: HashMap<HashSum, ChunkDescriptor> = HashMap::new();
+    for descriptor in a.descriptors.iter().chain(&b.descriptors) {
+        if let Some(d) = descriptors_ab.get_mut(descriptor.0) {
+            d.occurrences.append(&mut d.occurrences.clone());
+        } else {
+            descriptors_ab.insert(descriptor.0.clone(), descriptor.1.clone());
         }
-
-        let union_ab: Vec<HashSum> = a.chunks.union(&b.chunks).cloned().collect();
-        let intersection_ab: Vec<HashSum> = a.chunks.intersection(&b.chunks).cloned().collect();
-        let diff_ab: Vec<HashSum> = a.chunks.difference(&b.chunks).cloned().collect();
-        let diff_ba: Vec<HashSum> = b.chunks.difference(&a.chunks).cloned().collect();
-
-        println!();
-        info!(
-            "Total unique chunks: {}",
-            selection_string(&union_ab, &descriptors_ab)
-        );
-        info!(
-            "Chunks shared: {}",
-            selection_string(&intersection_ab, &descriptors_ab)
-        );
-
-        println!();
-        print_info(&self.input_a, &a, &diff_ab);
-        println!();
-        print_info(&self.input_b, &b, &diff_ba);
-        println!();
-
-        Ok(())
     }
+
+    let union_ab: Vec<HashSum> = a.chunks.union(&b.chunks).cloned().collect();
+    let intersection_ab: Vec<HashSum> = a.chunks.intersection(&b.chunks).cloned().collect();
+    let diff_ab: Vec<HashSum> = a.chunks.difference(&b.chunks).cloned().collect();
+    let diff_ba: Vec<HashSum> = b.chunks.difference(&a.chunks).cloned().collect();
+
+    println!();
+    info!(
+        "Total unique chunks: {}",
+        selection_string(&union_ab, &descriptors_ab)
+    );
+    info!(
+        "Chunks shared: {}",
+        selection_string(&intersection_ab, &descriptors_ab)
+    );
+
+    println!();
+    print_info(&opts.input_a, &a, &diff_ab);
+    println!();
+    print_info(&opts.input_b, &b, &diff_ba);
+    println!();
+
+    Ok(())
 }

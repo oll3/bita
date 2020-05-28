@@ -145,7 +145,7 @@ where
 }
 
 #[derive(Debug, Clone)]
-pub struct Command {
+pub struct Options {
     pub force_create: bool,
 
     // Use stdin if input not given
@@ -154,118 +154,115 @@ pub struct Command {
     pub temp_file: PathBuf,
     pub hash_length: usize,
     pub chunker_config: chunker::Config,
-    pub compression_level: u32,
     pub compression: Compression,
     pub num_chunk_buffers: usize,
 }
-impl Command {
-    pub async fn run(self) -> Result<()> {
-        let chunker_config = self.chunker_config.clone();
-        let compression = self.compression;
-        let mut output_file = std::fs::OpenOptions::new()
-            .write(true)
-            .read(true)
-            .create(self.force_create)
-            .truncate(self.force_create)
-            .create_new(!self.force_create)
-            .open(&self.output)
-            .context(format!(
-                "Failed to open output file {}",
-                self.output.display()
-            ))?;
+pub async fn compress_cmd(opts: Options) -> Result<()> {
+    let chunker_config = opts.chunker_config.clone();
+    let compression = opts.compression;
+    let mut output_file = std::fs::OpenOptions::new()
+        .write(true)
+        .read(true)
+        .create(opts.force_create)
+        .truncate(opts.force_create)
+        .create_new(!opts.force_create)
+        .open(&opts.output)
+        .context(format!(
+            "Failed to open output file {}",
+            opts.output.display()
+        ))?;
 
-        let (source_hash, archive_chunks, source_size, chunk_order) =
-            if let Some(input_path) = self.input {
-                chunk_input(
-                    File::open(&input_path).await.context(format!(
-                        "Failed to open input file {}",
-                        input_path.display()
-                    ))?,
-                    &chunker_config,
-                    compression,
-                    &self.temp_file,
-                    self.hash_length,
-                    self.num_chunk_buffers,
-                )
-                .await?
-            } else if !atty::is(atty::Stream::Stdin) {
-                // Read source from stdin
-                chunk_input(
-                    tokio::io::stdin(),
-                    &chunker_config,
-                    compression,
-                    &self.temp_file,
-                    self.hash_length,
-                    self.num_chunk_buffers,
-                )
-                .await?
-            } else {
-                return Err(anyhow!("Missing input"));
-            };
-
-        let chunker_params = match self.chunker_config {
-            chunker::Config::BuzHash(hash_config) => dict::ChunkerParameters {
-                chunk_filter_bits: hash_config.filter_bits.bits(),
-                min_chunk_size: hash_config.min_chunk_size as u32,
-                max_chunk_size: hash_config.max_chunk_size as u32,
-                rolling_hash_window_size: hash_config.window_size as u32,
-                chunk_hash_length: self.hash_length as u32,
-                chunking_algorithm: dict::chunker_parameters::ChunkingAlgorithm::Buzhash as i32,
-            },
-            chunker::Config::RollSum(hash_config) => dict::ChunkerParameters {
-                chunk_filter_bits: hash_config.filter_bits.bits(),
-                min_chunk_size: hash_config.min_chunk_size as u32,
-                max_chunk_size: hash_config.max_chunk_size as u32,
-                rolling_hash_window_size: hash_config.window_size as u32,
-                chunk_hash_length: self.hash_length as u32,
-                chunking_algorithm: dict::chunker_parameters::ChunkingAlgorithm::Rollsum as i32,
-            },
-            chunker::Config::FixedSize(chunk_size) => dict::ChunkerParameters {
-                min_chunk_size: 0,
-                chunk_filter_bits: 0,
-                rolling_hash_window_size: 0,
-                max_chunk_size: chunk_size as u32,
-                chunk_hash_length: self.hash_length as u32,
-                chunking_algorithm: dict::chunker_parameters::ChunkingAlgorithm::FixedSize as i32,
-            },
+    let (source_hash, archive_chunks, source_size, chunk_order) =
+        if let Some(input_path) = opts.input {
+            chunk_input(
+                File::open(&input_path).await.context(format!(
+                    "Failed to open input file {}",
+                    input_path.display()
+                ))?,
+                &chunker_config,
+                compression,
+                &opts.temp_file,
+                opts.hash_length,
+                opts.num_chunk_buffers,
+            )
+            .await?
+        } else if !atty::is(atty::Stream::Stdin) {
+            // Read source from stdin
+            chunk_input(
+                tokio::io::stdin(),
+                &chunker_config,
+                compression,
+                &opts.temp_file,
+                opts.hash_length,
+                opts.num_chunk_buffers,
+            )
+            .await?
+        } else {
+            return Err(anyhow!("Missing input"));
         };
 
-        // Build the final archive
-        let file_header = dict::ChunkDictionary {
-            rebuild_order: chunk_order.iter().map(|&index| index as u32).collect(),
-            application_version: PKG_VERSION.to_string(),
-            chunk_descriptors: archive_chunks,
-            source_checksum: source_hash,
-            chunk_compression: Some(self.compression.into()),
-            source_total_size: source_size,
-            chunker_params: Some(chunker_params),
-        };
-        let header_buf = bitar::header::build(&file_header, None)?;
-        output_file.write_all(&header_buf).context(format!(
-            "Failed to write header to output file {}",
-            self.output.display()
+    let chunker_params = match opts.chunker_config {
+        chunker::Config::BuzHash(hash_config) => dict::ChunkerParameters {
+            chunk_filter_bits: hash_config.filter_bits.bits(),
+            min_chunk_size: hash_config.min_chunk_size as u32,
+            max_chunk_size: hash_config.max_chunk_size as u32,
+            rolling_hash_window_size: hash_config.window_size as u32,
+            chunk_hash_length: opts.hash_length as u32,
+            chunking_algorithm: dict::chunker_parameters::ChunkingAlgorithm::Buzhash as i32,
+        },
+        chunker::Config::RollSum(hash_config) => dict::ChunkerParameters {
+            chunk_filter_bits: hash_config.filter_bits.bits(),
+            min_chunk_size: hash_config.min_chunk_size as u32,
+            max_chunk_size: hash_config.max_chunk_size as u32,
+            rolling_hash_window_size: hash_config.window_size as u32,
+            chunk_hash_length: opts.hash_length as u32,
+            chunking_algorithm: dict::chunker_parameters::ChunkingAlgorithm::Rollsum as i32,
+        },
+        chunker::Config::FixedSize(chunk_size) => dict::ChunkerParameters {
+            min_chunk_size: 0,
+            chunk_filter_bits: 0,
+            rolling_hash_window_size: 0,
+            max_chunk_size: chunk_size as u32,
+            chunk_hash_length: opts.hash_length as u32,
+            chunking_algorithm: dict::chunker_parameters::ChunkingAlgorithm::FixedSize as i32,
+        },
+    };
+
+    // Build the final archive
+    let file_header = dict::ChunkDictionary {
+        rebuild_order: chunk_order.iter().map(|&index| index as u32).collect(),
+        application_version: PKG_VERSION.to_string(),
+        chunk_descriptors: archive_chunks,
+        source_checksum: source_hash,
+        chunk_compression: Some(opts.compression.into()),
+        source_total_size: source_size,
+        chunker_params: Some(chunker_params),
+    };
+    let header_buf = bitar::header::build(&file_header, None)?;
+    output_file.write_all(&header_buf).context(format!(
+        "Failed to write header to output file {}",
+        opts.output.display()
+    ))?;
+    {
+        let mut temp_file = std::fs::File::open(&opts.temp_file).context(format!(
+            "Failed to open temp file {}",
+            opts.temp_file.display()
         ))?;
-        {
-            let mut temp_file = std::fs::File::open(&self.temp_file).context(format!(
-                "Failed to open temp file {}",
-                self.temp_file.display()
-            ))?;
-            std::io::copy(&mut temp_file, &mut output_file).context(format!(
-                "Failed to copy from temp file {} to output file {}",
-                self.temp_file.display(),
-                self.output.display()
-            ))?;
-        }
-        std::fs::remove_file(&self.temp_file).context(format!(
-            "Failed to remove temporary file {}",
-            self.temp_file.display()
+        std::io::copy(&mut temp_file, &mut output_file).context(format!(
+            "Failed to copy from temp file {} to output file {}",
+            opts.temp_file.display(),
+            opts.output.display()
         ))?;
-        drop(output_file);
-        {
-            // Print archive info
-            let mut reader = File::open(self.output).await?;
-            info_cmd::print_archive_reader(&mut reader).await?;
-        }
-        Ok(())
     }
+    std::fs::remove_file(&opts.temp_file).context(format!(
+        "Failed to remove temporary file {}",
+        opts.temp_file.display()
+    ))?;
+    drop(output_file);
+    {
+        // Print archive info
+        let mut reader = File::open(opts.output).await?;
+        info_cmd::print_archive_reader(&mut reader).await?;
+    }
+    Ok(())
 }
