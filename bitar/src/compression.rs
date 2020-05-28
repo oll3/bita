@@ -133,11 +133,8 @@ impl Compression {
             }
             Compression::Brotli(_) => {
                 let mut output = Vec::with_capacity(size_hint);
-                {
-                    let mut decompressor =
-                        brotli::DecompressorWriter::new(&mut output, 1024 * 1024);
-                    decompressor.write_all(&input[..])?;
-                }
+                let mut input_slice: &[u8] = &input;
+                brotli::BrotliDecompress(&mut input_slice, &mut output)?;
                 Ok(Bytes::from(output))
             }
             Compression::None => {
