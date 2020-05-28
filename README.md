@@ -6,10 +6,10 @@
 
 *bita* is a HTTP based file synchronization tool striving for low bandwidth usage through data reuse.
 
-* Reuse data from any local file or device 📁
-* Clone using any file or block device as output 💾
+* Clone from remote while reusing data from any local file or device 📁
+* Clone using a file or block device as output 💾
 * Host archives using any regular HTTP/HTTPS server or service 🔗
-* Include in your own project using [bitar](bitar/README.md) 💫
+* Include in your own project with the [bitar](bitar/README.md) library 💫
 * Written in [Rust](https://www.rust-lang.org) for fun, performance and quality 🚀♥
 
 
@@ -21,9 +21,6 @@ Software update is a typical case where *bita* may provide significant bandwidth
 
 No need to pre-build patch files for going to/from different release versions. No need to run any special file server.
 Just `bita compress` the release image, upload the archive to any HTTP file hosting site. And `bita clone` the archive using whatever local data is available on the system.
-
-
-## Operation overview
 
 ![concept](images/concept.png?raw=true)
 

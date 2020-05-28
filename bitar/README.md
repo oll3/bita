@@ -3,7 +3,7 @@
 
 ## bitar
 
-A library for low bandwidth file synchronization over HTTP.
+A library to use for low bandwidth file synchronization over HTTP.
 
 * [Documentation](https://docs.rs/bitar)
 * See [bita](https://github.com/oll3/bita) for a more detailed description of the synchronization process.
@@ -11,8 +11,9 @@ A library for low bandwidth file synchronization over HTTP.
 ### Usage
 
 Examples of how to use *bitar* is available under the ![examples](examples) directory.
+Also see [bita](https://github.com/oll3/bita) for more example usage.
 
 ```console
 # Run example using cargo
-cargo run --example local-cloner
+olle@home:~/bita/bitar$ cargo run --example local-cloner
 ```
