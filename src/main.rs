@@ -4,11 +4,9 @@ mod diff_cmd;
 mod info_cmd;
 mod string_utils;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use clap::{App, Arg, SubCommand};
-use log::*;
 use std::path::Path;
-use std::process;
 use std::time::Duration;
 use url::Url;
 
@@ -19,14 +17,6 @@ use bitar::HashSum;
 
 pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
-
-#[derive(Debug, Clone)]
-enum Command {
-    Compress(compress_cmd::Command),
-    Clone(Box<clone_cmd::Command>),
-    Info(info_cmd::Command),
-    Diff(diff_cmd::Command),
-}
 
 fn parse_hash_chunker_config(
     matches: &clap::ArgMatches<'_>,
@@ -297,7 +287,7 @@ fn add_input_archive_args<'a, 'b>(sub_cmd: clap::App<'a, 'b>) -> clap::App<'a, '
         )
 }
 
-fn parse_opts() -> Command {
+async fn parse_opts() -> Result<()> {
     let compression_desc = format!(
         "Set the chunk data compression type {}",
         compression_names()
@@ -432,7 +422,7 @@ fn parse_opts() -> Command {
         let hash_length = matches.value_of("hash-length").unwrap_or("64");
         let chunker_config = parse_chunker_config(&matches);
         let (compression, compression_level) = parse_compression(matches);
-        Command::Compress(compress_cmd::Command {
+        compress_cmd::Command {
             input,
             output: output.to_path_buf(),
             hash_length: hash_length.parse().expect("invalid hash length value"),
@@ -442,7 +432,9 @@ fn parse_opts() -> Command {
             compression,
             compression_level,
             num_chunk_buffers,
-        })
+        }
+        .run()
+        .await
     } else if let Some(matches) = matches.subcommand_matches("clone") {
         let output = matches.value_of("OUTPUT").unwrap_or("");
         let mut seed_stdin = false;
@@ -464,7 +456,7 @@ fn parse_opts() -> Command {
             .value_of("verify-header")
             .map(|c| HashSum::from_vec(hex_str_to_vec(c).expect("failed to parse checksum")));
         let input_archive = parse_input_config(&matches);
-        Command::Clone(Box::new(clone_cmd::Command {
+        clone_cmd::Command {
             input_archive,
             header_checksum,
             output: Path::new(output).to_path_buf(),
@@ -474,39 +466,37 @@ fn parse_opts() -> Command {
             verify_output: matches.is_present("verify-output"),
             seed_output,
             num_chunk_buffers,
-        }))
+        }
+        .run()
+        .await
     } else if let Some(matches) = matches.subcommand_matches("info") {
         let input = matches.value_of("INPUT").unwrap();
-        Command::Info(info_cmd::Command {
+        info_cmd::Command {
             input: input.to_string(),
-        })
+        }
+        .run()
+        .await
     } else if let Some(matches) = matches.subcommand_matches("diff") {
         let input_a = Path::new(matches.value_of("A").unwrap());
         let input_b = Path::new(matches.value_of("B").unwrap());
         let chunker_config = parse_chunker_config(&matches);
         let (compression, compression_level) = parse_compression(matches);
-        Command::Diff(diff_cmd::Command {
+        diff_cmd::Command {
             input_a: input_a.to_path_buf(),
             input_b: input_b.to_path_buf(),
             chunker_config,
             compression,
             compression_level,
             num_chunk_buffers,
-        })
+        }
+        .run()
+        .await
     } else {
-        error!("Unknown command");
-        process::exit(1);
+        Err(anyhow!("Unknown command"))
     }
 }
 
 fn main() -> Result<()> {
     let mut rt = tokio::runtime::Runtime::new()?;
-    rt.block_on(async {
-        match parse_opts() {
-            Command::Compress(cmd) => cmd.run().await,
-            Command::Clone(cmd) => cmd.run().await,
-            Command::Info(cmd) => cmd.run().await,
-            Command::Diff(cmd) => cmd.run().await,
-        }
-    })
+    rt.block_on(async { parse_opts().await })
 }
