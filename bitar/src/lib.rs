@@ -1,6 +1,5 @@
 mod archive;
 mod chunk_index;
-mod chunk_location;
 mod chunk_location_map;
 mod compression;
 mod hashsum;
@@ -14,8 +13,7 @@ pub mod clone;
 pub mod header;
 
 pub use archive::{Archive, ArchiveError};
-pub use chunk_index::{ChunkIndex, ReorderOp};
-pub use chunk_location::ChunkLocation;
+pub use chunk_index::{ChunkIndex, ChunkLocation, ReorderOp};
 pub use compression::{Compression, CompressionError};
 pub use hashsum::HashSum;
 pub use reader::Reader;

@@ -35,7 +35,7 @@ where
         .seek(SeekFrom::Start(0))
         .await
         .map_err(CloneInPlaceError::IO)?;
-    let target_index = ChunkIndex::from_readable(
+    let target_index = ChunkIndex::try_from_readable(
         &archive.chunker_config(),
         archive.chunk_hash_length(),
         opts.get_max_buffered_chunks(),
@@ -53,17 +53,22 @@ where
 
     let reorder_ops = target_index.reorder_ops(chunks);
     let mut temp_store: HashMap<&HashSum, Vec<u8>> = HashMap::new();
-    for op in &reorder_ops {
+    for op in reorder_ops {
         // Move chunks around internally in the output file
         match op {
-            ReorderOp::Copy { hash, source, dest } => {
+            ReorderOp::Copy {
+                hash,
+                size,
+                source,
+                dest,
+            } => {
                 let buf = if let Some(buf) = temp_store.remove(hash) {
                     buf
                 } else {
                     let mut buf: Vec<u8> = Vec::new();
-                    buf.resize(source.size, 0);
+                    buf.resize(size, 0);
                     target
-                        .seek(SeekFrom::Start(source.offset))
+                        .seek(SeekFrom::Start(source))
                         .await
                         .map_err(CloneInPlaceError::IO)?;
                     target
@@ -76,15 +81,15 @@ where
                     .write_chunk(hash, &dest[..], &buf[..])
                     .await
                     .map_err(CloneInPlaceError::IO)?;
-                total_moved += source.size as u64;
+                total_moved += size as u64;
                 chunks.remove(hash);
             }
-            ReorderOp::StoreInMem { hash, source } => {
+            ReorderOp::StoreInMem { hash, size, source } => {
                 if !temp_store.contains_key(hash) {
                     let mut buf: Vec<u8> = Vec::new();
-                    buf.resize(source.size, 0);
+                    buf.resize(size, 0);
                     target
-                        .seek(SeekFrom::Start(source.offset))
+                        .seek(SeekFrom::Start(source))
                         .await
                         .map_err(CloneInPlaceError::IO)?;
                     target
