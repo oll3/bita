@@ -244,20 +244,20 @@ impl ChunkIndex {
                         source_layout
                             .iter_overlapping(OffsetSize::new(target_offset, *size))
                             // filter overlapping chunks with same hash
-                            .filter(|(_, &overlapped_hash)| chunk.hash != overlapped_hash)
-                            .for_each(|(_location, &overlapped_hash)| {
-                                let first_offset = self.get_first_offset(overlapped_hash).unwrap();
-                                if visited.contains(overlapped_hash) {
+                            .filter(|(_, &ovhash)| chunk.hash != ovhash)
+                            .for_each(|(location, &ovhash)| {
+                                let first_offset = self.get_first_offset(ovhash).unwrap();
+                                if visited.contains(ovhash) {
                                     ops.push(ReorderOp::StoreInMem {
-                                        hash: overlapped_hash,
-                                        size: *size,
+                                        hash: ovhash,
+                                        size: location.size,
                                         source: first_offset,
                                     });
                                 } else {
                                     child_stack.push((
                                         MoveChunk {
-                                            hash: overlapped_hash,
-                                            size: *size,
+                                            hash: ovhash,
+                                            size: location.size,
                                             source: first_offset,
                                         },
                                         None,
