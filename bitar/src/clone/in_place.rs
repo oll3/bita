@@ -1,9 +1,10 @@
+use futures_util::stream::StreamExt;
 use log::*;
 use std::collections::HashMap;
 use std::io::SeekFrom;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, AsyncWrite};
 
-use crate::{clone, clone::CloneOutput, Archive, ChunkIndex, HashSum, ReorderOp};
+use crate::{chunker, clone, clone::CloneOutput, Archive, ChunkIndex, HashSum, ReorderOp};
 
 #[derive(Debug)]
 pub enum CloneInPlaceError {
@@ -35,7 +36,7 @@ where
         .seek(SeekFrom::Start(0))
         .await
         .map_err(CloneInPlaceError::IO)?;
-    let target_index = ChunkIndex::try_from_readable(
+    let target_index = chunk_index_from_readable(
         &archive.chunker_config(),
         archive.chunk_hash_length(),
         opts.get_max_buffered_chunks(),
@@ -102,4 +103,35 @@ where
         }
     }
     Ok(total_moved + in_place_total_size)
+}
+
+async fn chunk_index_from_readable<T>(
+    chunker_config: &chunker::Config,
+    hash_length: usize,
+    max_buffered_chunks: usize,
+    readable: &mut T,
+) -> Result<ChunkIndex, std::io::Error>
+where
+    T: AsyncRead + Unpin,
+{
+    let chunker = chunker::Chunker::new(chunker_config, readable);
+    let mut chunk_stream = chunker
+        .map(|result| {
+            tokio::task::spawn_blocking(move || {
+                result.map(|(offset, chunk)| {
+                    (
+                        HashSum::b2_digest(&chunk, hash_length as usize),
+                        chunk.len(),
+                        offset,
+                    )
+                })
+            })
+        })
+        .buffered(max_buffered_chunks);
+    let mut ci = ChunkIndex::new_empty();
+    while let Some(result) = chunk_stream.next().await {
+        let (chunk_hash, chunk_size, chunk_offset) = result.unwrap()?;
+        ci.add_chunk(chunk_hash, chunk_size, &[chunk_offset]);
+    }
+    Ok(ci)
 }

@@ -98,7 +98,7 @@ where
         "Failed to read archive at {}",
         opts.input_archive.source()
     ))?;
-    let mut chunks_left = archive.source_index().clone();
+    let mut chunks_left = archive.build_source_index();
     let mut total_read_from_seed = 0u64;
 
     info_cmd::print_archive(&archive);

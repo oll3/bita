@@ -75,11 +75,11 @@ impl From<dict::ChunkDescriptor> for ChunkDescriptor {
 
 /// A readable archive.
 pub struct Archive {
-    // Array representing the order of chunks in archive
-    chunk_order: Vec<ChunkDescriptor>,
-
-    // Chunk index describing the source file construct
-    source_index: ChunkIndex,
+    // Array with descriptor of all chunks in archive.
+    archive_chunks: Vec<ChunkDescriptor>,
+    // Array of indexes pointing into the archive_chunks.
+    // Represents the order of chunks in source.
+    source_order: Vec<usize>,
 
     total_chunks: usize,
     header_size: usize,
@@ -155,9 +155,7 @@ impl Archive {
             let offs = header::PRE_HEADER_SIZE + dictionary_size;
             u64_from_le_slice(&header[offs..(offs + 8)])
         };
-
-        let source_index = ChunkIndex::from_dictionary(&dictionary);
-        let chunk_order = dictionary
+        let archive_chunks = dictionary
             .chunk_descriptors
             .into_iter()
             .map(ChunkDescriptor::from)
@@ -166,8 +164,13 @@ impl Archive {
             .chunker_params
             .ok_or(ArchiveError::CorruptArchive)?;
         let chunk_hash_length = chunker_params.chunk_hash_length as usize;
+        let source_order: Vec<usize> = dictionary
+            .rebuild_order
+            .into_iter()
+            .map(|v| v as usize)
+            .collect();
         Ok(Self {
-            chunk_order,
+            archive_chunks,
             header_checksum,
             header_size: header.len(),
             source_total_size: dictionary.source_total_size,
@@ -178,11 +181,11 @@ impl Archive {
                     .chunk_compression
                     .ok_or(ArchiveError::CorruptArchive)?,
             )?,
-            total_chunks: dictionary.rebuild_order.iter().count(),
+            total_chunks: source_order.len(),
+            source_order,
             chunk_data_offset,
             chunk_hash_length,
             chunker_config: chunker_config_from_params(chunker_params)?,
-            source_index,
         })
     }
     /// Total number of chunks in archive (including duplicates).
@@ -191,11 +194,11 @@ impl Archive {
     }
     /// Total number of unique chunks in archive (no duplicates).
     pub fn unique_chunks(&self) -> usize {
-        self.chunk_order.len()
+        self.archive_chunks.len()
     }
     /// Total size of chunks in archive when compressed.
     pub fn compressed_size(&self) -> u64 {
-        self.chunk_order
+        self.archive_chunks
             .iter()
             .map(|c| u64::from(c.archive_size))
             .sum()
@@ -206,7 +209,7 @@ impl Archive {
     }
     /// Get archive chunk descriptors.
     pub fn chunk_descriptors(&self) -> &[ChunkDescriptor] {
-        &self.chunk_order
+        &self.archive_chunks
     }
     /// Total size of the original source file.
     pub fn total_source_size(&self) -> u64 {
@@ -240,14 +243,28 @@ impl Archive {
     pub fn built_with_version(&self) -> &str {
         &self.created_by_app_version
     }
-    /// Get the ChunkIndex of the archive.
-    pub fn source_index(&self) -> &ChunkIndex {
-        &self.source_index
+    /// Iterate chunks as ordered in source.
+    pub fn iter_source_chunks(&self) -> impl Iterator<Item = (u64, &ChunkDescriptor)> {
+        let mut chunk_offset = 0;
+        self.source_order.iter().copied().map(move |index| {
+            let offset = chunk_offset;
+            let cd = &self.archive_chunks[index as usize];
+            chunk_offset += cd.source_size as u64;
+            (offset, cd)
+        })
+    }
+    /// Build a ChunkIndex representing the source file.
+    pub fn build_source_index(&self) -> ChunkIndex {
+        let mut ci = ChunkIndex::new_empty();
+        self.iter_source_chunks().for_each(|(offset, cd)| {
+            ci.add_chunk(cd.checksum.clone(), cd.source_size as usize, &[offset]);
+        });
+        ci
     }
     /// Returns chunks at adjacent location in archive grouped together.
     pub fn grouped_chunks(&self, filter_chunks: &ChunkIndex) -> Vec<Vec<ChunkDescriptor>> {
         group_chunks(
-            self.chunk_order
+            self.archive_chunks
                 .iter()
                 .filter(|chunk| filter_chunks.contains(&chunk.checksum)),
         )

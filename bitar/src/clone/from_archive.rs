@@ -89,8 +89,7 @@ where
             // For each chunk read from archive
             let result = result?;
             let (hash, chunk) = result?;
-            let offsets: Vec<u64> = archive
-                .source_index()
+            let offsets: Vec<u64> = chunks
                 .offsets(&hash)
                 .unwrap_or_else(|| panic!("missing chunk ({}) in source", hash))
                 .collect();

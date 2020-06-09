@@ -1,12 +1,7 @@
-use futures_util::stream::StreamExt;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
-use tokio::io::AsyncRead;
 
-use crate::{
-    chunk_dictionary::ChunkDictionary, chunk_location_map::ChunkLocationMap,
-    chunk_location_map::OffsetSize, chunker, HashSum,
-};
+use crate::{chunk_location_map::ChunkLocationMap, chunk_location_map::OffsetSize, HashSum};
 
 /// Represents a single chunk re-ordering operation.
 #[derive(Debug, Clone, PartialEq)]
@@ -100,53 +95,9 @@ impl ChunkIndex {
             .iter()
             .for_each(|offset| location.add_offset_sorted(*offset));
     }
-    /// Build a ChunkIndex from a readable source.
-    pub async fn try_from_readable<T>(
-        chunker_config: &chunker::Config,
-        hash_length: usize,
-        max_buffered_chunks: usize,
-        readable: &mut T,
-    ) -> Result<Self, std::io::Error>
-    where
-        T: AsyncRead + Unpin,
-    {
-        let chunker = chunker::Chunker::new(chunker_config, readable);
-        let mut chunk_stream = chunker
-            .map(|result| {
-                tokio::task::spawn_blocking(move || {
-                    result.map(|(offset, chunk)| {
-                        (
-                            HashSum::b2_digest(&chunk, hash_length as usize),
-                            chunk.len(),
-                            offset,
-                        )
-                    })
-                })
-            })
-            .buffered(max_buffered_chunks);
-        let mut ci = ChunkIndex::new_empty();
-        while let Some(result) = chunk_stream.next().await {
-            let (chunk_hash, chunk_size, chunk_offset) = result.unwrap()?;
-            ci.add_chunk(chunk_hash, chunk_size, &[chunk_offset]);
-        }
-        Ok(ci)
-    }
-    /// Build a ChunkIndex from a ChunkDictionary.
-    pub fn from_dictionary(dict: &ChunkDictionary) -> Self {
-        let mut ci = ChunkIndex::new_empty();
-        let mut chunk_offset = 0;
-        dict.rebuild_order.iter().for_each(|&chunk_index| {
-            let chunk_index = chunk_index as usize;
-            let chunk_hash = HashSum::from_slice(&dict.chunk_descriptors[chunk_index].checksum[..]);
-            let chunk_size = dict.chunk_descriptors[chunk_index].source_size as usize;
-            ci.add_chunk(chunk_hash, chunk_size, &[chunk_offset]);
-            chunk_offset += chunk_size as u64;
-        });
-        ci
-    }
     /// Remove a chunk by hash.
-    pub fn remove(&mut self, hash: &HashSum) -> bool {
-        self.0.remove(hash).is_some()
+    pub fn remove(&mut self, hash: &HashSum) -> Option<ChunkLocation> {
+        self.0.remove(hash)
     }
     /// Test if a chunk is in the index.
     pub fn contains(&self, hash: &HashSum) -> bool {
@@ -293,19 +244,19 @@ impl ChunkIndex {
             let mut chunks = self
                 .0
                 .iter()
-                .filter_map(|cl| {
-                    if new_order.contains(cl.0) {
-                        let size = cl.1.size;
-                        let first_offset = self.get_first_offset(cl.0).unwrap();
+                .filter_map(|(hash, location)| {
+                    if new_order.contains(hash) {
+                        let size = location.size;
+                        let first_offset = self.get_first_offset(hash).unwrap();
                         source_layout.insert(
                             OffsetSize {
                                 size,
                                 offset: first_offset,
                             },
-                            cl.0,
+                            hash,
                         );
                         Some(MoveChunk {
-                            hash: cl.0,
+                            hash,
                             size,
                             source: first_offset,
                         })
@@ -385,6 +336,23 @@ mod tests {
         l.add_offset_sorted(5);
         l.add_offset_sorted(5);
         assert_eq!(&l.offsets[..], &[5]);
+    }
+    #[test]
+    fn add_chunk_multiple_offsets() {
+        let mut ci = ChunkIndex::new_empty();
+        ci.add_chunk(HashSum::from_slice(&[1]), 10, &[5]);
+        ci.add_chunk(HashSum::from_slice(&[1]), 10, &[15]);
+        let mut it = ci.iter_chunks();
+        assert_eq!(
+            it.next(),
+            Some((
+                &HashSum::from_slice(&[1]),
+                &ChunkLocation {
+                    size: 10,
+                    offsets: vec![5, 15]
+                }
+            ))
+        );
     }
     #[test]
     fn reorder_with_overlap_and_loop() {

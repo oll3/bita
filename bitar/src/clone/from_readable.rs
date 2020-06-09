@@ -63,17 +63,14 @@ where
             break;
         }
         let (hash, chunk) = result.map_err(CloneFromReadableError::SourceError)?;
-        if !chunks.remove(&hash) {
+        let location = if let Some(location) = chunks.remove(&hash) {
+            location
+        } else {
             continue;
-        }
+        };
         debug!("Chunk '{}', size {} used", hash, chunk.len());
-        let offsets: Vec<u64> = archive
-            .source_index()
-            .offsets(&hash)
-            .unwrap_or_else(|| panic!("missing chunk ({}) in source!?", hash))
-            .collect();
         output
-            .write_chunk(&hash, &offsets[..], &chunk)
+            .write_chunk(&hash, location.offsets(), &chunk)
             .await
             .map_err(CloneFromReadableError::TargetError)?;
         total_read += chunk.len() as u64;

@@ -20,7 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("open output");
 
     // Get a list of all chunks needed to create the clone of the archive source
-    let mut chunks_to_clone = archive.source_index().clone();
+    let mut chunks_to_clone = archive.build_source_index();
 
     // Use as much data as possible from the example seed
     let read_seed_bytes = clone::from_readable(
