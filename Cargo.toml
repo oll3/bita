@@ -27,11 +27,11 @@ tokio = { version = "0.2.21", features = ["fs", "io-std", "sync", "io-util", "ma
 bitar = { version = "0.6.4", path = "bitar" }
 url = "2.1.1"
 num_cpus = "1.13.0"
-async-trait = "0.1.31"
+async-trait = "0.1.35"
 anyhow = "1.0.31"
 
 [dependencies.reqwest]
-version = "0.10.4"
+version = "0.10.6"
 default-features = false
 features = ["stream"]
 
