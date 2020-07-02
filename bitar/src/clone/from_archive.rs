@@ -117,8 +117,8 @@ fn decompress_and_verify<T, S>(
         compression.decompress(compressed, source_size)?
     };
     // Verify data by hash
-    hasher.input(&chunk);
-    let checksum = HashSum::from_slice(&hasher.result()[..archive_checksum.len()]);
+    hasher.update(&chunk);
+    let checksum = HashSum::from_slice(&hasher.finalize()[..archive_checksum.len()]);
     if checksum != *archive_checksum {
         debug!(
             "chunk checksum mismatch (expected: {}, got: {})",

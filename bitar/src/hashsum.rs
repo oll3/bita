@@ -17,9 +17,9 @@ impl HashSum {
     /// Create new hash sum using blake2 to digest the given data.
     pub fn b2_digest(data: &[u8], hash_length: usize) -> Self {
         let mut b2 = Blake2b::new();
-        b2.input(data);
+        b2.update(data);
         Self {
-            0: SmallVec::from_slice(&b2.result()[0..hash_length]),
+            0: SmallVec::from_slice(&b2.finalize()[0..hash_length]),
         }
     }
     /// Create new hash sum from vec.

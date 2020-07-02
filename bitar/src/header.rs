@@ -47,8 +47,8 @@ pub fn build(
     header.extend(&(offset as u64).to_le_bytes());
 
     // Create and store hash of full header
-    hasher.input(&header);
-    header.extend(&hasher.result());
+    hasher.update(&header);
+    header.extend(&hasher.finalize());
 
     Ok(header)
 }

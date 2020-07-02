@@ -56,7 +56,7 @@ where
             .map(|result| {
                 let (offset, chunk) = result.expect("error while chunking");
                 // Build hash of full source
-                source_hasher.input(&chunk);
+                source_hasher.update(&chunk);
                 source_size += chunk.len() as u64;
                 tokio::task::spawn_blocking(move || {
                     (
@@ -137,7 +137,7 @@ where
         }
     }
     Ok((
-        source_hasher.result().to_vec(),
+        source_hasher.finalize().to_vec(),
         archive_chunks,
         source_size,
         chunk_order,

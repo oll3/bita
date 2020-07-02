@@ -17,17 +17,17 @@ members = [
 
 [dependencies]
 clap = "2.33.1"
-blake2 = "0.8.1"
+blake2 = "0.9.0"
 atty = "0.2.14"
 log = "0.4.8"
 fern = "0.6.0"
-chrono = "0.4.11"
+chrono = "0.4.12"
 futures-util = "0.3.5"
 tokio = { version = "0.2.21", features = ["fs", "io-std", "sync", "io-util", "macros", "time", "rt-threaded"] }
 bitar = { version = "0.7.0", path = "bitar" }
 url = "2.1.1"
 num_cpus = "1.13.0"
-async-trait = "0.1.35"
+async-trait = "0.1.36"
 anyhow = "1.0.31"
 
 [dependencies.reqwest]

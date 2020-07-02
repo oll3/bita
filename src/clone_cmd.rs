@@ -49,9 +49,9 @@ impl OutputFile {
             if rc == 0 {
                 break;
             }
-            output_hasher.input(&buffer[0..rc]);
+            output_hasher.update(&buffer[0..rc]);
         }
-        Ok(HashSum::from_slice(&output_hasher.result()[..]))
+        Ok(HashSum::from_slice(&output_hasher.finalize()[..]))
     }
 }
 
