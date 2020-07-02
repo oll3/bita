@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.com/oll3/bita.svg?branch=master)](https://travis-ci.com/oll3/bita)
+[![CI](https://github.com/oll3/bita/workflows/CI/badge.svg)](https://github.com/oll3/bita/actions?query=workflow%3ACI)
 [![](http://meritbadge.herokuapp.com/bita)](https://crates.io/crates/bita)
 [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
