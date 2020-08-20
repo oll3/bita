@@ -60,9 +60,14 @@ where
     C::Error: Sync + Send + 'static,
 {
     let mut total_fetched = 0u64;
-    let grouped_chunks = archive.grouped_chunks(&chunks);
+    let mut adjacent_chunks = crate::archive::AdjacentChunks::new(
+        archive
+            .chunk_descriptors()
+            .iter()
+            .filter(|chunk| chunks.contains(&chunk.checksum)),
+    );
     let mut chunk_sizes = Vec::new();
-    for group in grouped_chunks {
+    while let Some(group) = adjacent_chunks.next() {
         // For each group of chunks
         let start_offset = archive.chunk_data_offset() + group[0].archive_offset;
         let compression = archive.chunk_compression();

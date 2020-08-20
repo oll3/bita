@@ -261,39 +261,44 @@ impl Archive {
         });
         ci
     }
-    /// Returns chunks at adjacent location in archive grouped together.
-    pub fn grouped_chunks(&self, filter_chunks: &ChunkIndex) -> Vec<Vec<ChunkDescriptor>> {
-        group_chunks(
-            self.archive_chunks
-                .iter()
-                .filter(|chunk| filter_chunks.contains(&chunk.checksum)),
-        )
-    }
 }
 
-fn group_chunks<'a>(
-    chunk_order: impl Iterator<Item = &'a ChunkDescriptor>,
-) -> Vec<Vec<ChunkDescriptor>> {
-    let mut group_list = Vec::new();
-    let mut group: Vec<ChunkDescriptor> = Vec::new();
-    for descriptor in chunk_order.cloned() {
-        if let Some(prev) = group.last() {
-            let prev_chunk_end = prev.archive_offset + u64::from(prev.archive_size);
-            if prev_chunk_end == descriptor.archive_offset {
-                // Chunk is placed right next to the previous chunk
-                group.push(descriptor);
-            } else {
-                group_list.push(group);
-                group = vec![descriptor];
-            }
-        } else {
-            group.push(descriptor);
+pub(crate) struct AdjacentChunks<'a, I>
+where
+    I: Iterator<Item = &'a ChunkDescriptor>,
+{
+    iter: std::iter::Peekable<I>,
+    group: Vec<&'a ChunkDescriptor>,
+}
+
+impl<'a, I> AdjacentChunks<'a, I>
+where
+    I: Iterator<Item = &'a ChunkDescriptor>,
+{
+    pub fn new(iter: I) -> Self {
+        Self {
+            group: Vec::with_capacity(iter.size_hint().0),
+            iter: iter.peekable(),
         }
     }
-    if !group.is_empty() {
-        group_list.push(group);
+    pub fn next(&mut self) -> Option<&'_ [&'a ChunkDescriptor]> {
+        self.group.clear();
+        let mut prev_end: Option<u64> = None;
+        while let Some(desc) = self.iter.peek() {
+            if prev_end.is_none() || Some(desc.archive_offset) == prev_end {
+                prev_end = Some(desc.archive_offset + u64::from(desc.archive_size));
+                self.group.push(desc);
+                self.iter.next();
+            } else {
+                break;
+            }
+        }
+        if self.group.is_empty() {
+            None
+        } else {
+            Some(&self.group[..])
+        }
     }
-    group_list
 }
 
 fn chunker_config_from_params<R>(p: ChunkerParameters) -> Result<chunker::Config, ArchiveError<R>> {
@@ -344,6 +349,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn grouped_chunks_empty() {
+        let chunk_order = [];
+        let mut adjacent = AdjacentChunks::new(chunk_order.iter());
+        assert_eq!(adjacent.next(), None);
+    }
+
+    #[test]
     fn grouped_chunks_all_adjacent() {
         let chunk_order = [
             ChunkDescriptor {
@@ -359,23 +371,27 @@ mod tests {
                 source_size: 10,
             },
         ];
+        let mut adjacent = AdjacentChunks::new(chunk_order.iter());
         assert_eq!(
-            group_chunks(chunk_order.iter()),
-            vec![vec![
-                ChunkDescriptor {
-                    checksum: vec![0].into(),
-                    archive_offset: 0,
-                    archive_size: 10,
-                    source_size: 10,
-                },
-                ChunkDescriptor {
-                    checksum: vec![1].into(),
-                    archive_offset: 10,
-                    archive_size: 10,
-                    source_size: 10,
-                },
-            ]]
+            adjacent.next(),
+            Some(
+                &[
+                    &ChunkDescriptor {
+                        checksum: vec![0].into(),
+                        archive_offset: 0,
+                        archive_size: 10,
+                        source_size: 10,
+                    },
+                    &ChunkDescriptor {
+                        checksum: vec![1].into(),
+                        archive_offset: 10,
+                        archive_size: 10,
+                        source_size: 10,
+                    },
+                ][..]
+            )
         );
+        assert_eq!(adjacent.next(), None);
     }
     #[test]
     fn grouped_chunks_no_adjacent() {
@@ -393,23 +409,30 @@ mod tests {
                 source_size: 10,
             },
         ];
+        let mut adjacent = AdjacentChunks::new(chunk_order.iter());
         assert_eq!(
-            group_chunks(chunk_order.iter()),
-            vec![
-                vec![ChunkDescriptor {
+            adjacent.next(),
+            Some(
+                &[&ChunkDescriptor {
                     checksum: vec![0].into(),
                     archive_offset: 0,
                     archive_size: 10,
                     source_size: 10,
-                }],
-                vec![ChunkDescriptor {
+                }][..]
+            )
+        );
+        assert_eq!(
+            adjacent.next(),
+            Some(
+                &[&ChunkDescriptor {
                     checksum: vec![1].into(),
                     archive_offset: 11,
                     archive_size: 10,
                     source_size: 10,
-                },]
-            ]
+                }][..]
+            )
         );
+        assert_eq!(adjacent.next(), None);
     }
     #[test]
     fn grouped_chunks_first_adjacent() {
@@ -433,31 +456,38 @@ mod tests {
                 source_size: 10,
             },
         ];
+        let mut adjacent = AdjacentChunks::new(chunk_order.iter());
         assert_eq!(
-            group_chunks(chunk_order.iter()),
-            vec![
-                vec![
-                    ChunkDescriptor {
+            adjacent.next(),
+            Some(
+                &[
+                    &ChunkDescriptor {
                         checksum: vec![0].into(),
                         archive_offset: 0,
                         archive_size: 10,
                         source_size: 10,
                     },
-                    ChunkDescriptor {
+                    &ChunkDescriptor {
                         checksum: vec![1].into(),
                         archive_offset: 10,
                         archive_size: 10,
                         source_size: 10,
-                    }
-                ],
-                vec![ChunkDescriptor {
+                    },
+                ][..]
+            )
+        );
+        assert_eq!(
+            adjacent.next(),
+            Some(
+                &[&ChunkDescriptor {
                     checksum: vec![2].into(),
                     archive_offset: 21,
                     archive_size: 10,
                     source_size: 10,
-                },]
-            ]
+                }][..]
+            )
         );
+        assert_eq!(adjacent.next(), None);
     }
     #[test]
     fn grouped_chunks_last_adjacent() {
@@ -481,30 +511,37 @@ mod tests {
                 source_size: 10,
             },
         ];
+        let mut adjacent = AdjacentChunks::new(chunk_order.iter());
         assert_eq!(
-            group_chunks(chunk_order.iter()),
-            vec![
-                vec![ChunkDescriptor {
+            adjacent.next(),
+            Some(
+                &[&ChunkDescriptor {
                     checksum: vec![0].into(),
                     archive_offset: 0,
                     archive_size: 10,
                     source_size: 10,
-                },],
-                vec![
-                    ChunkDescriptor {
+                }][..]
+            )
+        );
+        assert_eq!(
+            adjacent.next(),
+            Some(
+                &[
+                    &ChunkDescriptor {
                         checksum: vec![1].into(),
                         archive_offset: 11,
                         archive_size: 10,
                         source_size: 10,
                     },
-                    ChunkDescriptor {
+                    &ChunkDescriptor {
                         checksum: vec![2].into(),
                         archive_offset: 21,
                         archive_size: 10,
                         source_size: 10,
-                    },
-                ]
-            ]
+                    }
+                ][..]
+            )
         );
+        assert_eq!(adjacent.next(), None);
     }
 }
