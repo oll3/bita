@@ -85,14 +85,17 @@ where
             })
             .buffered(opts.get_max_buffered_chunks());
 
+        let mut offsets: Vec<u64> = Vec::with_capacity(32);
         while let Some(result) = chunk_stream.next().await {
             // For each chunk read from archive
             let result = result?;
             let (hash, chunk) = result?;
-            let offsets: Vec<u64> = chunks
-                .offsets(&hash)
-                .unwrap_or_else(|| panic!("missing chunk ({}) in source", hash))
-                .collect();
+            offsets.clear();
+            offsets.extend(
+                chunks
+                    .offsets(&hash)
+                    .unwrap_or_else(|| panic!("missing chunk ({}) in source", hash)),
+            );
             debug!("Chunk '{}', size {} used from archive", hash, chunk.len());
             output
                 .write_chunk(&hash, &offsets[..], &chunk)

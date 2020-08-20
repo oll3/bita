@@ -54,6 +54,7 @@ where
 
     let reorder_ops = target_index.reorder_ops(chunks);
     let mut temp_store: HashMap<&HashSum, Vec<u8>> = HashMap::new();
+    let mut temp_buf = Vec::new();
     for op in reorder_ops {
         // Move chunks around internally in the output file
         match op {
@@ -63,32 +64,32 @@ where
                 source,
                 dest,
             } => {
-                let buf = if let Some(buf) = temp_store.remove(hash) {
-                    buf
+                if let Some(buf) = temp_store.remove(hash) {
+                    target
+                        .write_chunk(hash, &dest[..], &buf[..])
+                        .await
+                        .map_err(CloneInPlaceError::IO)?;
                 } else {
-                    let mut buf: Vec<u8> = Vec::new();
-                    buf.resize(size, 0);
+                    temp_buf.resize(size, 0);
                     target
                         .seek(SeekFrom::Start(source))
                         .await
                         .map_err(CloneInPlaceError::IO)?;
                     target
-                        .read_exact(&mut buf[..])
+                        .read_exact(&mut temp_buf[..])
                         .await
                         .map_err(CloneInPlaceError::IO)?;
-                    buf
+                    target
+                        .write_chunk(hash, &dest[..], &temp_buf[..])
+                        .await
+                        .map_err(CloneInPlaceError::IO)?;
                 };
-                target
-                    .write_chunk(hash, &dest[..], &buf[..])
-                    .await
-                    .map_err(CloneInPlaceError::IO)?;
                 total_moved += size as u64;
                 chunks.remove(hash);
             }
             ReorderOp::StoreInMem { hash, size, source } => {
                 if !temp_store.contains_key(hash) {
-                    let mut buf: Vec<u8> = Vec::new();
-                    buf.resize(size, 0);
+                    let mut buf: Vec<u8> = vec![0; size];
                     target
                         .seek(SeekFrom::Start(source))
                         .await
