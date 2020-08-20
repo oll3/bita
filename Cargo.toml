@@ -16,22 +16,22 @@ members = [
 ]
 
 [dependencies]
-clap = "2.33.1"
+clap = "2.33.3"
 blake2 = "0.9.0"
 atty = "0.2.14"
-log = "0.4.8"
+log = "0.4.11"
 fern = "0.6.0"
-chrono = "0.4.13"
+chrono = "0.4.15"
 futures-util = "0.3.5"
-tokio = { version = "0.2.21", features = ["fs", "io-std", "sync", "io-util", "macros", "time", "rt-threaded"] }
+tokio = { version = "0.2.22", features = ["fs", "io-std", "sync", "io-util", "macros", "time", "rt-threaded"] }
 bitar = { version = "0.7.1", path = "bitar" }
 url = "2.1.1"
 num_cpus = "1.13.0"
-async-trait = "0.1.36"
-anyhow = "1.0.31"
+async-trait = "0.1.38"
+anyhow = "1.0.32"
 
 [dependencies.reqwest]
-version = "0.10.6"
+version = "0.10.7"
 default-features = false
 features = ["stream"]
 
