@@ -72,6 +72,12 @@ where
                         match Pin::new(&mut self.reader)
                             .poll_read(cx, &mut self.buf[self.buf_offset..])
                         {
+                            Poll::Ready(Ok(0)) => {
+                                return Poll::Ready(Some(Err(std::io::Error::new(
+                                    std::io::ErrorKind::UnexpectedEof,
+                                    "archive ended unexpectedly",
+                                ))));
+                            }
                             Poll::Ready(Ok(rc)) => self.buf_offset += rc,
                             Poll::Ready(Err(err)) => return Poll::Ready(Some(Err(err))),
                             Poll::Pending => return Poll::Pending,
