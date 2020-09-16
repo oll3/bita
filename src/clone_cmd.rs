@@ -135,9 +135,9 @@ where
     // writing. If a regular file then resize that file to target size.
     if output.is_block_dev() {
         let size = output.size().await?;
-        if size != archive.total_source_size() {
+        if size < archive.total_source_size() {
             return Err(anyhow!(
-                "Size of output device ({}) differ from size of archive target file ({})",
+                "Size of output device ({}) is less than archive target file ({})",
                 size_to_str(size),
                 size_to_str(archive.total_source_size())
             ));
