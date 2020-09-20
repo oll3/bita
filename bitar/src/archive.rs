@@ -137,7 +137,7 @@ impl Archive {
             let mut hasher = Blake2b::new();
             let offs = header::PRE_HEADER_SIZE + dictionary_size + 8;
             hasher.update(&header[..offs]);
-            let header_checksum = HashSum::from_slice(&header[offs..(offs + 64)]);
+            let header_checksum = HashSum::from(&header[offs..(offs + 64)]);
             if header_checksum != &hasher.finalize()[..] {
                 return Err(ArchiveError::InvalidHeaderChecksum);
             }

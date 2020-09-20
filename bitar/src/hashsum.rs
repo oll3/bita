@@ -1,94 +1,102 @@
 use blake2::{Blake2b, Digest};
-use smallvec::SmallVec;
 use std::fmt;
 use std::hash::{Hash, Hasher};
+
+const MAX_SUM_LENGHT: usize = 64;
 
 /// Holds a hash sum.
 ///
 /// Typically used for representing the hash of a chunk or the hash of file.
-#[derive(Clone, Debug, Default, Eq)]
-pub struct HashSum(SmallVec<[u8; 64]>);
+/// Sum can be a maximum of 512 bits/64 bytes.
+#[derive(Clone)]
+pub struct HashSum {
+    sum: [u8; MAX_SUM_LENGHT],
+    length: usize,
+}
 
 impl HashSum {
-    /// Create new empty hash sum.
-    pub fn new() -> Self {
-        Self::default()
-    }
     /// Create new hash sum using blake2 to digest the given data.
     pub fn b2_digest(data: &[u8], hash_length: usize) -> Self {
         let mut b2 = Blake2b::new();
         b2.update(data);
+        let mut sum: [u8; MAX_SUM_LENGHT] = [0; MAX_SUM_LENGHT];
+        sum.copy_from_slice(&b2.finalize()[..MAX_SUM_LENGHT]);
         Self {
-            0: SmallVec::from_slice(&b2.finalize()[0..hash_length]),
-        }
-    }
-    /// Create new hash sum from vec.
-    pub fn from_vec(v: Vec<u8>) -> Self {
-        Self { 0: v.into() }
-    }
-    /// Create new hash sum from slice.
-    pub fn from_slice(s: &[u8]) -> Self {
-        Self {
-            0: SmallVec::from_slice(s),
+            sum,
+            length: hash_length,
         }
     }
     /// Returns a new vec containing the hash sum.
     pub fn to_vec(&self) -> Vec<u8> {
-        self.0.to_vec()
+        self.slice().to_vec()
     }
     /// Returns the hash sum as a slice.
     pub fn slice(&self) -> &[u8] {
-        &self.0[..]
+        &self.sum[..self.length]
     }
     /// Returns the length of the hash sum in bytes.
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.length
     }
     /// Returns true if the hash sum is empty.
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.length == 0
     }
 }
 
-impl From<Vec<u8>> for HashSum {
-    fn from(v: Vec<u8>) -> Self {
-        Self::from_vec(v)
-    }
-}
-
-impl From<&[u8]> for HashSum {
-    fn from(v: &[u8]) -> Self {
-        Self::from_slice(v)
+impl<T> From<T> for HashSum
+where
+    T: AsRef<[u8]>,
+{
+    fn from(v: T) -> Self {
+        let min_len = std::cmp::min(v.as_ref().len(), MAX_SUM_LENGHT);
+        let mut sum: [u8; MAX_SUM_LENGHT] = [0; MAX_SUM_LENGHT];
+        sum[0..min_len].copy_from_slice(&v.as_ref()[0..min_len]);
+        Self {
+            sum,
+            length: min_len,
+        }
     }
 }
 
 impl Hash for HashSum {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
+        self.slice().hash(state);
     }
 }
 
+impl Eq for HashSum {}
+
 impl PartialEq<Vec<u8>> for HashSum {
     fn eq(&self, other: &Vec<u8>) -> bool {
-        self.0[..] == other[..]
+        self.slice() == &other[..]
     }
 }
 
 impl PartialEq<&[u8]> for HashSum {
     fn eq(&self, other: &&[u8]) -> bool {
-        self.0[..] == other[..]
+        self.slice() == &other[..]
     }
 }
 
 impl PartialEq<HashSum> for HashSum {
     fn eq(&self, other: &Self) -> bool {
-        self.0[..] == other.0[..]
+        self.slice() == other.slice()
     }
 }
 
 impl fmt::Display for HashSum {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for byte in &self.0[..] {
+        for byte in self.slice() {
+            write!(f, "{:02x}", byte)?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Debug for HashSum {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for byte in self.slice() {
             write!(f, "{:02x}", byte)?;
         }
         Ok(())
@@ -101,29 +109,29 @@ mod tests {
 
     #[test]
     fn zero_length() {
-        let zero_length_hash = HashSum::from_slice(&[]);
-        let hash_with_length = HashSum::from_slice(&[0, 1, 2, 3, 4]);
+        let zero_length_hash = HashSum::from(&[]);
+        let hash_with_length = HashSum::from(&[0, 1, 2, 3, 4]);
         assert_ne!(zero_length_hash, hash_with_length);
     }
 
     #[test]
     fn same_sum() {
-        let hash1 = HashSum::from_slice(&[0, 1, 2, 3, 4]);
-        let hash2 = HashSum::from_slice(&[0, 1, 2, 3, 4]);
+        let hash1 = HashSum::from(&[0, 1, 2, 3, 4]);
+        let hash2 = HashSum::from(&[0, 1, 2, 3, 4]);
         assert_eq!(hash1, hash2);
     }
 
     #[test]
     fn compare_different_sum_diferent_lengths() {
-        let hash1 = HashSum::from_slice(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
-        let hash2 = HashSum::from_slice(&[0, 1, 2, 3, 4, 0]);
+        let hash1 = HashSum::from(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+        let hash2 = HashSum::from(&[0, 1, 2, 3, 4, 0]);
         assert_ne!(hash1, hash2);
     }
 
     #[test]
     fn compare_different_sum_same_lengths() {
-        let hash1 = HashSum::from_slice(&[0, 1, 2, 3, 4, 5]);
-        let hash2 = HashSum::from_slice(&[0, 1, 2, 3, 4, 0]);
+        let hash1 = HashSum::from(&[0, 1, 2, 3, 4, 5]);
+        let hash2 = HashSum::from(&[0, 1, 2, 3, 4, 0]);
         assert_ne!(hash1, hash2);
     }
 }

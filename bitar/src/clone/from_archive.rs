@@ -126,7 +126,7 @@ fn decompress_and_verify<T, S>(
     };
     // Verify data by hash
     hasher.update(&chunk);
-    let checksum = HashSum::from_slice(&hasher.finalize()[..archive_checksum.len()]);
+    let checksum = HashSum::from(&hasher.finalize()[..archive_checksum.len()]);
     if checksum != *archive_checksum {
         debug!(
             "chunk checksum mismatch (expected: {}, got: {})",

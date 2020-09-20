@@ -340,13 +340,13 @@ mod tests {
     #[test]
     fn add_chunk_multiple_offsets() {
         let mut ci = ChunkIndex::new_empty();
-        ci.add_chunk(HashSum::from_slice(&[1]), 10, &[5]);
-        ci.add_chunk(HashSum::from_slice(&[1]), 10, &[15]);
+        ci.add_chunk(HashSum::from(&[1]), 10, &[5]);
+        ci.add_chunk(HashSum::from(&[1]), 10, &[15]);
         let mut it = ci.iter_chunks();
         assert_eq!(
             it.next(),
             Some((
-                &HashSum::from_slice(&[1]),
+                &HashSum::from(&[1]),
                 &ChunkLocation {
                     size: 10,
                     offsets: vec![5, 15]
@@ -357,19 +357,19 @@ mod tests {
     #[test]
     fn reorder_with_overlap_and_loop() {
         let mut current_index = ChunkIndex::new_empty();
-        current_index.add_chunk(HashSum::from_slice(&[1]), 10, &[0][..]);
-        current_index.add_chunk(HashSum::from_slice(&[2]), 20, &[10][..]);
-        current_index.add_chunk(HashSum::from_slice(&[3]), 20, &[30, 50]);
+        current_index.add_chunk(HashSum::from(&[1]), 10, &[0]);
+        current_index.add_chunk(HashSum::from(&[2]), 20, &[10]);
+        current_index.add_chunk(HashSum::from(&[3]), 20, &[30, 50]);
         let mut target_index = ChunkIndex::new_empty();
-        target_index.add_chunk(HashSum::from_slice(&[1]), 10, &[60]);
-        target_index.add_chunk(HashSum::from_slice(&[2]), 20, &[50]);
-        target_index.add_chunk(HashSum::from_slice(&[3]), 20, &[10, 30]);
-        target_index.add_chunk(HashSum::from_slice(&[4]), 5, &[0, 5]);
+        target_index.add_chunk(HashSum::from(&[1]), 10, &[60]);
+        target_index.add_chunk(HashSum::from(&[2]), 20, &[50]);
+        target_index.add_chunk(HashSum::from(&[3]), 20, &[10, 30]);
+        target_index.add_chunk(HashSum::from(&[4]), 5, &[0, 5]);
         let ops = current_index.reorder_ops(&target_index);
         assert_eq!(
             ops[0],
             ReorderOp::Copy {
-                hash: &HashSum::from_slice(&[1]),
+                hash: &HashSum::from(&[1]),
                 size: 10,
                 source: 0,
                 dest: vec![60],
@@ -378,7 +378,7 @@ mod tests {
         assert_eq!(
             ops[1],
             ReorderOp::Copy {
-                hash: &HashSum::from_slice(&[2]),
+                hash: &HashSum::from(&[2]),
                 size: 20,
                 source: 10,
                 dest: vec![50],
@@ -387,7 +387,7 @@ mod tests {
         assert_eq!(
             ops[2],
             ReorderOp::Copy {
-                hash: &HashSum::from_slice(&[3]),
+                hash: &HashSum::from(&[3]),
                 size: 20,
                 source: 30,
                 dest: vec![10, 30],
@@ -397,15 +397,15 @@ mod tests {
     #[test]
     fn reorder_but_do_not_copy_to_self() {
         let mut current_index = ChunkIndex::new_empty();
-        current_index.add_chunk(HashSum::from_slice(&[1]), 10, &[0, 20]);
+        current_index.add_chunk(HashSum::from(&[1]), 10, &[0, 20]);
         let mut target_index = ChunkIndex::new_empty();
-        target_index.add_chunk(HashSum::from_slice(&[1]), 10, &[20, 40]);
+        target_index.add_chunk(HashSum::from(&[1]), 10, &[20, 40]);
         current_index.strip_chunks_already_in_place(&mut target_index);
         let ops = current_index.reorder_ops(&target_index);
         assert_eq!(
             ops[0],
             ReorderOp::Copy {
-                hash: &HashSum::from_slice(&[1]),
+                hash: &HashSum::from(&[1]),
                 size: 10,
                 source: 0,
                 dest: vec![40],
@@ -415,61 +415,57 @@ mod tests {
     #[test]
     fn filter_one_chunk_in_place() {
         let mut current_index = ChunkIndex::new_empty();
-        current_index.add_chunk(HashSum::from_slice(&[1]), 10, &[0]);
+        current_index.add_chunk(HashSum::from(&[1]), 10, &[0]);
         let mut target_index = ChunkIndex::new_empty();
-        target_index.add_chunk(HashSum::from_slice(&[1]), 10, &[0]);
+        target_index.add_chunk(HashSum::from(&[1]), 10, &[0]);
         current_index.strip_chunks_already_in_place(&mut target_index);
         assert_eq!(target_index.len(), 0);
     }
     #[test]
     fn filter_one_chunk_multiple_offsets_in_place() {
         let mut current_index = ChunkIndex::new_empty();
-        current_index.add_chunk(HashSum::from_slice(&[1]), 10, &[20, 0]);
+        current_index.add_chunk(HashSum::from(&[1]), 10, &[20, 0]);
         let mut target_index = ChunkIndex::new_empty();
-        target_index.add_chunk(HashSum::from_slice(&[1]), 10, &[0, 20]);
+        target_index.add_chunk(HashSum::from(&[1]), 10, &[0, 20]);
         current_index.strip_chunks_already_in_place(&mut target_index);
         assert_eq!(target_index.len(), 0);
     }
     #[test]
     fn filter_one_chunk_multiple_offsets_not_in_place() {
         let mut current_index = ChunkIndex::new_empty();
-        current_index.add_chunk(HashSum::from_slice(&[1]), 10, &[0, 20]);
+        current_index.add_chunk(HashSum::from(&[1]), 10, &[0, 20]);
         let mut target_index = ChunkIndex::new_empty();
-        target_index.add_chunk(HashSum::from_slice(&[1]), 10, &[20, 30]);
+        target_index.add_chunk(HashSum::from(&[1]), 10, &[20, 30]);
         current_index.strip_chunks_already_in_place(&mut target_index);
         assert_eq!(target_index.len(), 1);
         assert_eq!(
-            target_index
-                .0
-                .get(&HashSum::from_slice(&[1]))
-                .unwrap()
-                .offsets,
+            target_index.0.get(&HashSum::from(&[1])).unwrap().offsets,
             &[30]
         );
     }
     #[test]
     fn filter_multiple_chunks_in_place() {
         let mut current_index = ChunkIndex::new_empty();
-        current_index.add_chunk(HashSum::from_slice(&[1]), 10, &[0]);
-        current_index.add_chunk(HashSum::from_slice(&[2]), 20, &[20]);
-        current_index.add_chunk(HashSum::from_slice(&[3]), 20, &[30, 50]);
-        current_index.add_chunk(HashSum::from_slice(&[4]), 5, &[70, 80]);
+        current_index.add_chunk(HashSum::from(&[1]), 10, &[0]);
+        current_index.add_chunk(HashSum::from(&[2]), 20, &[20]);
+        current_index.add_chunk(HashSum::from(&[3]), 20, &[30, 50]);
+        current_index.add_chunk(HashSum::from(&[4]), 5, &[70, 80]);
         let mut target_index = ChunkIndex::new_empty();
-        target_index.add_chunk(HashSum::from_slice(&[1]), 10, &[10]);
-        target_index.add_chunk(HashSum::from_slice(&[2]), 20, &[20]);
-        target_index.add_chunk(HashSum::from_slice(&[3]), 20, &[30, 50]);
-        target_index.add_chunk(HashSum::from_slice(&[4]), 5, &[80, 90]);
+        target_index.add_chunk(HashSum::from(&[1]), 10, &[10]);
+        target_index.add_chunk(HashSum::from(&[2]), 20, &[20]);
+        target_index.add_chunk(HashSum::from(&[3]), 20, &[30, 50]);
+        target_index.add_chunk(HashSum::from(&[4]), 5, &[80, 90]);
         current_index.strip_chunks_already_in_place(&mut target_index);
         assert_eq!(target_index.len(), 2);
         assert_eq!(
-            target_index.get(&HashSum::from_slice(&[1])).unwrap(),
+            target_index.get(&HashSum::from(&[1])).unwrap(),
             &ChunkLocation {
                 size: 10,
                 offsets: vec![10],
             }
         );
         assert_eq!(
-            target_index.get(&HashSum::from_slice(&[4])).unwrap(),
+            target_index.get(&HashSum::from(&[4])).unwrap(),
             &ChunkLocation {
                 size: 5,
                 offsets: vec![90],

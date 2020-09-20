@@ -51,7 +51,7 @@ impl OutputFile {
             }
             output_hasher.update(&buffer[0..rc]);
         }
-        Ok(HashSum::from_slice(&output_hasher.finalize()[..]))
+        Ok(HashSum::from(&output_hasher.finalize()[..]))
     }
 }
 

@@ -465,7 +465,7 @@ async fn parse_opts() -> Result<()> {
             .collect();
         let seed_output = matches.is_present("seed-output");
         let header_checksum = if let Some(c) = matches.value_of("verify-header") {
-            Some(HashSum::from_vec(
+            Some(HashSum::from(
                 hex_str_to_vec(c).context("Failed to parse checksum")?,
             ))
         } else {
