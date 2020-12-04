@@ -11,9 +11,9 @@ use std::io;
 use tokio::io::AsyncRead;
 
 use crate::{
-    chunk::Chunk,
     chunker,
     rolling_hash::{BuzHash, RollSum, RollingHash},
+    Chunk,
 };
 
 const CHUNKER_BUF_SIZE: usize = 1024 * 1024;

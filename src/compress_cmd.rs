@@ -127,7 +127,7 @@ where
 
             // Write the compressed chunk to temp file
             temp_file
-                .write_all(&use_data)
+                .write_all(use_data)
                 .await
                 .context("Failed to write to temp file")?;
         }

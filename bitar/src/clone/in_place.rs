@@ -96,7 +96,8 @@ where
             }
             ReorderOp::StoreInMem { hash, size, source } => {
                 if !temp_store.contains_key(hash) {
-                    let mut buf: Vec<u8> = vec![0; size];
+                    let mut buf = BytesMut::new();
+                    buf.resize(size, 0);
                     target
                         .seek(SeekFrom::Start(source))
                         .await

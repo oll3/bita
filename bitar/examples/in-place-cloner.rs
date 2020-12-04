@@ -1,4 +1,5 @@
-use bitar::{clone, Archive};
+use bitar::{clone, clone::CloneOutput, Archive};
+use futures_util::StreamExt;
 use tokio::fs::{File, OpenOptions};
 
 #[tokio::main]
@@ -29,15 +30,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("clone in place");
 
     // Fetch the rest of the chunks from the archive
-    let read_archive_bytes = clone::from_archive(
-        &clone_opts,
-        &mut archive_file,
-        &archive,
-        &mut chunks_to_clone,
-        &mut output,
-    )
-    .await
-    .expect("fetch from archive");
+    let mut chunk_stream = archive.chunk_stream(&chunks_to_clone, &mut archive_file);
+    let mut read_archive_bytes = 0;
+    while let Some(result) = chunk_stream.next().await {
+        let compressed = result?;
+        read_archive_bytes += compressed.len();
+        let unverified = compressed.decompress()?;
+        let verified = unverified.verify()?;
+        let location = chunks_to_clone.remove(verified.hash()).unwrap();
+        output.write_chunk(location.offsets(), &verified).await?;
+    }
 
     println!(
         "Cloned {} to {} using {} bytes from {} and {} bytes from archive",

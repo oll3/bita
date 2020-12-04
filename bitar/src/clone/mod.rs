@@ -1,10 +1,8 @@
 //! Clone functions and types.
-mod from_archive;
 mod from_readable;
 mod in_place;
 mod output;
 
-pub use from_archive::{from_archive, CloneFromArchiveError};
 pub use from_readable::{from_readable, CloneFromReadableError};
 pub use in_place::{in_place, CloneInPlaceError};
 pub use output::CloneOutput;

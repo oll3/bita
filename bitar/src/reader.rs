@@ -3,11 +3,37 @@ use bytes::{Bytes, BytesMut};
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use futures_core::stream::Stream;
-use std::io::SeekFrom;
+use std::io;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReadAt {
+    pub offset: u64,
+    pub size: usize,
+}
+
+impl ReadAt {
+    pub fn new(offset: u64, size: usize) -> Self {
+        Self { offset, size }
+    }
+    pub fn end_offset(&self) -> u64 {
+        self.offset + self.size as u64
+    }
+}
+
+/// Read bytes at offset.
+#[async_trait]
+pub trait Reader {
+    type Error;
+    async fn read_at<'a>(&'a mut self, offset: u64, size: usize) -> Result<Bytes, Self::Error>;
+    fn read_chunks<'a>(
+        &'a mut self,
+        chunks: Vec<ReadAt>,
+    ) -> Pin<Box<dyn Stream<Item = Result<Bytes, Self::Error>> + Send + 'a>>;
+}
+
 enum State {
-    Seek(u64),
+    Seek,
     PollSeek,
     Read,
 }
@@ -17,7 +43,7 @@ where
     R: AsyncRead + AsyncSeek + Unpin + Send + ?Sized,
 {
     state: State,
-    chunk_sizes: &'a [usize],
+    chunks: Vec<ReadAt>,
     chunk_index: usize,
     buf: BytesMut,
     buf_offset: usize,
@@ -28,25 +54,39 @@ impl<'a, R> ChunkReader<'a, R>
 where
     R: AsyncRead + AsyncSeekExt + Unpin + Send + ?Sized,
 {
-    fn new(reader: &'a mut R, start_offset: u64, chunk_sizes: &'a [usize]) -> Self {
+    fn new(reader: &'a mut R, chunks: Vec<ReadAt>) -> Self {
+        let first = chunks
+            .get(0)
+            .cloned()
+            .unwrap_or(ReadAt { offset: 0, size: 0 });
         ChunkReader {
             reader,
-            state: State::Seek(start_offset),
+            state: State::Seek,
             chunk_index: 0,
-            buf: BytesMut::with_capacity(*chunk_sizes.get(0).unwrap_or(&0)),
-            chunk_sizes,
+            buf: BytesMut::with_capacity(first.size),
+            chunks,
             buf_offset: 0,
         }
     }
-    fn poll_chunk<'b>(&'b mut self, cx: &mut Context) -> Poll<Option<Result<Bytes, std::io::Error>>>
+    fn poll_chunk<'b>(&'b mut self, cx: &mut Context) -> Poll<Option<Result<Bytes, io::Error>>>
     where
         R: AsyncSeek + AsyncRead + Send + Unpin,
         Self: Unpin + Send,
     {
-        loop {
+        while self.chunk_index < self.chunks.len() {
+            let read_at = &self.chunks[self.chunk_index];
+            if self.buf_offset >= read_at.size {
+                self.buf_offset = 0;
+                self.chunk_index += 1;
+                self.state = State::Seek;
+                let chunk = self.buf.clone();
+                return Poll::Ready(Some(Ok(chunk.freeze())));
+            }
             match self.state {
-                State::Seek(offset) => {
-                    match Pin::new(&mut self.reader).start_seek(cx, SeekFrom::Start(offset)) {
+                State::Seek => {
+                    match Pin::new(&mut self.reader)
+                        .start_seek(cx, io::SeekFrom::Start(read_at.offset))
+                    {
                         Poll::Ready(Ok(())) => self.state = State::PollSeek,
                         Poll::Ready(Err(err)) => return Poll::Ready(Some(Err(err))),
                         Poll::Pending => return Poll::Pending,
@@ -58,35 +98,25 @@ where
                     Poll::Pending => return Poll::Pending,
                 },
                 State::Read => {
-                    while self.chunk_index < self.chunk_sizes.len() {
-                        let chunk_size = self.chunk_sizes[self.chunk_index];
-                        if self.buf_offset >= chunk_size {
-                            let chunk = self.buf.split_to(chunk_size).freeze();
-                            self.buf_offset -= chunk_size;
-                            self.chunk_index += 1;
-                            return Poll::Ready(Some(Ok(chunk)));
-                        }
-                        if self.buf.len() < chunk_size {
-                            self.buf.resize(chunk_size, 0);
-                        }
-                        match Pin::new(&mut self.reader)
-                            .poll_read(cx, &mut self.buf[self.buf_offset..])
-                        {
-                            Poll::Ready(Ok(0)) => {
-                                return Poll::Ready(Some(Err(std::io::Error::new(
-                                    std::io::ErrorKind::UnexpectedEof,
-                                    "archive ended unexpectedly",
-                                ))));
-                            }
-                            Poll::Ready(Ok(rc)) => self.buf_offset += rc,
-                            Poll::Ready(Err(err)) => return Poll::Ready(Some(Err(err))),
-                            Poll::Pending => return Poll::Pending,
-                        }
+                    if self.buf.len() < read_at.size {
+                        self.buf.resize(read_at.size, 0);
                     }
-                    return Poll::Ready(None);
+                    match Pin::new(&mut self.reader).poll_read(cx, &mut self.buf[self.buf_offset..])
+                    {
+                        Poll::Ready(Ok(0)) => {
+                            return Poll::Ready(Some(Err(io::Error::new(
+                                io::ErrorKind::UnexpectedEof,
+                                "archive ended unexpectedly",
+                            ))));
+                        }
+                        Poll::Ready(Ok(rc)) => self.buf_offset += rc,
+                        Poll::Ready(Err(err)) => return Poll::Ready(Some(Err(err))),
+                        Poll::Pending => return Poll::Pending,
+                    }
                 }
             }
         }
+        Poll::Ready(None)
     }
 }
 
@@ -94,26 +124,14 @@ impl<'a, R> Stream for ChunkReader<'a, R>
 where
     R: AsyncRead + AsyncSeek + Unpin + Send,
 {
-    type Item = Result<Bytes, std::io::Error>;
+    type Item = Result<Bytes, io::Error>;
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         self.poll_chunk(cx)
     }
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let chunks_left = self.chunk_sizes.len() - self.chunk_index;
+        let chunks_left = self.chunks.len() - self.chunk_index;
         (chunks_left, Some(chunks_left))
     }
-}
-
-/// Read bytes at offset.
-#[async_trait]
-pub trait Reader {
-    type Error;
-    async fn read_at<'a>(&'a mut self, offset: u64, size: usize) -> Result<Bytes, Self::Error>;
-    fn read_chunks<'a>(
-        &'a mut self,
-        start_offset: u64,
-        chunk_sizes: &'a [usize],
-    ) -> Pin<Box<dyn Stream<Item = Result<Bytes, Self::Error>> + Send + 'a>>;
 }
 
 #[async_trait]
@@ -121,9 +139,9 @@ impl<T> Reader for T
 where
     T: AsyncRead + AsyncSeekExt + Unpin + Send,
 {
-    type Error = std::io::Error;
-    async fn read_at(&mut self, offset: u64, size: usize) -> Result<Bytes, std::io::Error> {
-        self.seek(SeekFrom::Start(offset)).await?;
+    type Error = io::Error;
+    async fn read_at(&mut self, offset: u64, size: usize) -> Result<Bytes, io::Error> {
+        self.seek(io::SeekFrom::Start(offset)).await?;
         let mut buf = Vec::with_capacity(size);
         unsafe {
             buf.set_len(size);
@@ -133,10 +151,9 @@ where
     }
     fn read_chunks<'a>(
         &'a mut self,
-        start_offset: u64,
-        chunk_sizes: &'a [usize],
-    ) -> Pin<Box<dyn Stream<Item = Result<Bytes, std::io::Error>> + Send + 'a>> {
-        Box::pin(ChunkReader::new(self, start_offset, chunk_sizes))
+        chunks: Vec<ReadAt>,
+    ) -> Pin<Box<dyn Stream<Item = Result<Bytes, io::Error>> + Send + 'a>> {
+        Box::pin(ChunkReader::new(self, chunks))
     }
 }
 
@@ -172,22 +189,30 @@ mod tests {
     async fn local_read_chunks() {
         let mut file = NamedTempFile::new().unwrap();
         let expected: Vec<u8> = (0..10 * 1024 * 1024).map(|v| v as u8).collect();
-        let chunk_sizes = vec![10, 20, 30, 100, 200, 400, 8 * 1024 * 1024];
+        let chunks = vec![
+            ReadAt::new(0, 10),
+            ReadAt::new(10, 20),
+            ReadAt::new(30, 30),
+            ReadAt::new(60, 100),
+            ReadAt::new(160, 200),
+            ReadAt::new(360, 400),
+            ReadAt::new(760, 8 * 1024 * 1024),
+        ];
         file.write_all(&expected).unwrap();
         let mut reader = File::open(&file.path()).await.unwrap();
-        let stream = reader.read_chunks(0, &chunk_sizes[..]);
+        let stream = reader.read_chunks(chunks.clone());
         {
             pin_mut!(stream);
             let mut chunk_offset = 0;
             let mut chunk_count = 0;
             while let Some(chunk) = stream.next().await {
                 let chunk = chunk.unwrap();
-                let chunk_size = chunk_sizes[chunk_count];
+                let chunk_size = chunks[chunk_count].size;
                 assert_eq!(chunk, &expected[chunk_offset..chunk_offset + chunk_size]);
                 chunk_offset += chunk_size;
                 chunk_count += 1;
             }
-            assert_eq!(chunk_count, chunk_sizes.len());
+            assert_eq!(chunk_count, chunks.len());
         }
     }
 }

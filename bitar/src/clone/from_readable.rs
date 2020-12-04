@@ -44,21 +44,16 @@ where
         })
         .buffered(opts.get_max_buffered_chunks())
         .map(|result| match result {
-            Ok(Ok(verified)) => Ok(verified),
-            Ok(Err(err)) => Err(err),
+            Ok(inner) => inner,
             Err(err) => Err(err.into()),
         });
-    if chunks.is_empty() {
-        // Nothing to do
-        return Ok(0);
-    }
     while let Some(result) = found_chunks.next().await {
         if chunks.is_empty() {
             // Nothing more to do
             break;
         }
         let verified = result.map_err(CloneFromReadableError::SourceError)?;
-        let location = if let Some(location) = chunks.remove(&verified.hash()) {
+        let location = if let Some(location) = chunks.remove(verified.hash()) {
             location
         } else {
             continue;

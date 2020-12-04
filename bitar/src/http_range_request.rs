@@ -11,8 +11,8 @@ use tokio::time::delay_for;
 
 use crate::reader_remote::ReaderRemoteError;
 
-pub(crate) struct Builder<'a> {
-    request: &'a RequestBuilder,
+pub(crate) struct Builder {
+    request: RequestBuilder,
     state: RequestState,
     size: u64,
     offset: u64,
@@ -20,8 +20,8 @@ pub(crate) struct Builder<'a> {
     retry_count: u32,
 }
 
-impl<'a> Builder<'a> {
-    pub fn new(request: &'a RequestBuilder, offset: u64, size: u64) -> Self {
+impl Builder {
+    pub fn new(request: RequestBuilder, offset: u64, size: u64) -> Self {
         Self {
             request,
             offset,
@@ -148,7 +148,7 @@ enum RequestState {
     Delay(tokio::time::Delay),
 }
 
-impl<'a> Stream for Builder<'a> {
+impl<'a> Stream for Builder {
     type Item = Result<Bytes, ReaderRemoteError>;
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         self.poll_read(cx)

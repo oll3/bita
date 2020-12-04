@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use blake2::{Blake2b, Digest};
+use futures_util::StreamExt;
 use log::*;
 use reqwest::header::HeaderMap;
 use std::io::SeekFrom;
@@ -12,7 +13,9 @@ use url::Url;
 
 use crate::info_cmd;
 use crate::string_utils::*;
-use bitar::{clone, clone::CloneOutput, Archive, HashSum, Reader, ReaderRemote, VerifiedChunk};
+use bitar::{
+    clone, clone::CloneOutput, Archive, ChunkIndex, HashSum, Reader, ReaderRemote, VerifiedChunk,
+};
 
 struct OutputFile {
     file: File,
@@ -86,6 +89,59 @@ async fn is_block_dev(file: &mut File) -> Result<bool, std::io::Error> {
 #[cfg(not(unix))]
 async fn is_block_dev(_file: &mut File) -> Result<bool, std::io::Error> {
     Ok(false)
+}
+
+async fn clone_from_archive<R, C>(
+    max_buffered_chunks: usize,
+    reader: &mut R,
+    archive: &Archive,
+    chunks: &mut ChunkIndex,
+    output: &mut C,
+) -> Result<u64>
+where
+    R: Reader,
+    R::Error: std::error::Error + Sync + Send + 'static,
+    C: clone::CloneOutput,
+    C::Error: std::error::Error + Sync + Send + 'static,
+{
+    let mut total_fetched = 0u64;
+    let mut total_written = 0u64;
+    let mut chunk_stream = archive
+        .chunk_stream(chunks, reader)
+        .map(|read_result| {
+            if let Ok(compressed) = &read_result {
+                total_fetched += compressed.len() as u64;
+            }
+            tokio::task::spawn_blocking(move || -> Result<VerifiedChunk> {
+                let compressed = read_result.context("Error reading from archive")?;
+                let verified = compressed
+                    .decompress()
+                    .context("Error decompressing chunk")?
+                    .verify()
+                    .context("Error verifying chunk")?;
+                Ok(verified)
+            })
+        })
+        .buffered(max_buffered_chunks)
+        .map(|result| match result {
+            Ok(inner) => Ok(inner?),
+            Err(err) => Err(anyhow!(err)),
+        });
+    while let Some(result) = chunk_stream.next().await {
+        let verified = result?;
+        if let Some(location) = chunks.remove(&verified.hash()) {
+            debug!("Chunk '{}', size {} used", verified.hash(), verified.len());
+            output.write_chunk(location.offsets(), &verified).await?;
+            total_written += verified.len() as u64;
+        }
+    }
+    drop(chunk_stream);
+    info!(
+        "Fetched {} from archive and decompressed to {}.",
+        size_to_str(total_fetched),
+        size_to_str(total_written)
+    );
+    Ok(total_fetched)
 }
 
 async fn clone_archive<R>(opts: Options, mut reader: R) -> Result<()>
@@ -215,8 +271,9 @@ where
         chunks_left.len(),
         opts.input_archive.source()
     );
-    let total_read_from_remote = clone::from_archive(
-        &clone_opts,
+
+    let total_read_from_remote = clone_from_archive(
+        clone_opts.max_buffered_chunks,
         &mut reader,
         &archive,
         &mut chunks_left,
@@ -227,11 +284,6 @@ where
         "Failed to clone from archive at {}",
         opts.input_archive.source()
     ))?;
-    info!(
-        "Used {} bytes from {}",
-        size_to_str(total_read_from_remote),
-        opts.input_archive.source()
-    );
 
     if opts.verify_output {
         info!("Verifying checksum of {}...", opts.output.display());

@@ -1,5 +1,6 @@
 #![allow(clippy::len_without_is_empty)]
 use bytes::Bytes;
+use std::fmt;
 
 use crate::{Compression, CompressionError, HashSum};
 
@@ -131,5 +132,74 @@ impl CompressedChunk {
     #[inline]
     pub fn into_inner(self) -> (Compression, Bytes) {
         (self.compression, self.data)
+    }
+}
+
+/// A possibly compressed chunk fetched from archive.
+///
+/// Chunk might be compressed and needs to be decompressed before being verified.
+#[derive(Debug, Clone)]
+pub struct CompressedArchiveChunk {
+    pub(crate) chunk: CompressedChunk,
+    pub(crate) expected_hash: HashSum,
+}
+
+impl CompressedArchiveChunk {
+    /// Size of chunk.
+    pub fn len(&self) -> usize {
+        self.chunk.len()
+    }
+    /// Decompress the chunk.
+    pub fn decompress(self) -> Result<ArchiveChunk, CompressionError> {
+        Ok(ArchiveChunk {
+            chunk: self.chunk.decompress()?,
+            expected_hash: self.expected_hash,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct HashSumMismatchError {
+    expected: HashSum,
+    got: HashSum,
+    pub invalid_chunk: Chunk,
+}
+impl std::error::Error for HashSumMismatchError {}
+impl fmt::Display for HashSumMismatchError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "expected hash {} but got {}", self.expected, self.got)
+    }
+}
+
+/// An unverified chunk fetched from archive.
+#[derive(Debug, Clone)]
+pub struct ArchiveChunk {
+    pub(crate) chunk: Chunk,
+    pub(crate) expected_hash: HashSum,
+}
+
+impl ArchiveChunk {
+    /// Size of chunk.
+    pub fn len(&self) -> usize {
+        self.chunk.len()
+    }
+    /// Verify an unverified chunk.
+    ///
+    /// Results in a verified chunk or an error if the chunk hash sum doesn't
+    /// match with the expected one.
+    pub fn verify(self) -> Result<VerifiedChunk, HashSumMismatchError> {
+        let hash_sum = HashSum::b2_digest(self.chunk.data());
+        if hash_sum != self.expected_hash {
+            Err(HashSumMismatchError {
+                expected: self.expected_hash,
+                got: hash_sum,
+                invalid_chunk: self.chunk,
+            })
+        } else {
+            Ok(VerifiedChunk {
+                chunk: self.chunk,
+                hash_sum,
+            })
+        }
     }
 }
