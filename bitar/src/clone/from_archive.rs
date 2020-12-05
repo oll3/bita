@@ -69,7 +69,7 @@ where
     let mut chunk_sizes = Vec::new();
     while let Some(group) = adjacent_chunks.next() {
         // For each group of chunks
-        let start_offset = archive.chunk_data_offset() + group[0].archive_offset;
+        let start_offset = group[0].archive_offset;
         let compression = archive.chunk_compression();
         chunk_sizes.clear();
         chunk_sizes.extend(group.iter().map(|c| c.archive_size as usize));

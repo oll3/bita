@@ -55,21 +55,19 @@ pub struct ChunkDescriptor {
     /// Chunk checksum.
     pub checksum: HashSum,
     /// Actual size of chunk data in the archive (may be compressed).
-    pub archive_size: u32,
-    /// Byte offset of chunk in the archive.
+    pub archive_size: usize,
+    /// Absolute byte offset of chunk in the archive.
     pub archive_offset: u64,
     /// Size of the chunk data in source (uncompressed).
     pub source_size: u32,
 }
 
-impl From<dict::ChunkDescriptor> for ChunkDescriptor {
-    fn from(dict: dict::ChunkDescriptor) -> Self {
-        ChunkDescriptor {
-            checksum: dict.checksum.into(),
-            archive_size: dict.archive_size,
-            archive_offset: dict.archive_offset,
-            source_size: dict.source_size,
-        }
+impl ChunkDescriptor {
+    pub fn archive_end_offset(&self) -> u64 {
+        self.archive_offset + self.archive_size as u64
+    }
+    pub fn compressed(&self) -> bool {
+        self.archive_size != self.source_size as usize
     }
 }
 
@@ -158,7 +156,12 @@ impl Archive {
         let archive_chunks = dictionary
             .chunk_descriptors
             .into_iter()
-            .map(ChunkDescriptor::from)
+            .map(|dict| ChunkDescriptor {
+                checksum: dict.checksum.into(),
+                archive_size: dict.archive_size as usize,
+                archive_offset: chunk_data_offset + dict.archive_offset,
+                source_size: dict.source_size,
+            })
             .collect();
         let chunker_params = dictionary
             .chunker_params
@@ -200,7 +203,7 @@ impl Archive {
     pub fn compressed_size(&self) -> u64 {
         self.archive_chunks
             .iter()
-            .map(|c| u64::from(c.archive_size))
+            .map(|c| c.archive_size as u64)
             .sum()
     }
     /// On which offset in the archive the chunk data starts at.
@@ -286,7 +289,7 @@ where
         let mut prev_end: Option<u64> = None;
         while let Some(desc) = self.iter.peek() {
             if prev_end.is_none() || Some(desc.archive_offset) == prev_end {
-                prev_end = Some(desc.archive_offset + u64::from(desc.archive_size));
+                prev_end = Some(desc.archive_offset + desc.archive_size as u64);
                 self.group.push(desc);
                 self.iter.next();
             } else {
