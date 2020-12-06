@@ -1,4 +1,5 @@
 use blake2::{Blake2b, Digest};
+use std::fmt;
 
 use crate::{chunk_dictionary as dict, chunker, header, ChunkIndex, Compression, HashSum, Reader};
 
@@ -13,11 +14,11 @@ impl<R> ArchiveError<R> {
     }
 }
 impl<R> std::error::Error for ArchiveError<R> where R: std::error::Error {}
-impl<R> std::fmt::Display for ArchiveError<R>
+impl<R> fmt::Display for ArchiveError<R>
 where
     R: std::error::Error,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidArchive(err) => write!(f, "invalid archive: {}", err),
             Self::ReaderError(err) => write!(f, "reader error: {}", err),
@@ -317,13 +318,17 @@ fn compression_from_dictionary<R>(
 ) -> Result<Compression, ArchiveError<R>> {
     match dict::chunk_compression::CompressionType::from_i32(c.compression) {
         #[cfg(feature = "lzma-compression")]
-        Some(CompressionType::Lzma) => Ok(Compression::LZMA(c.compression_level)),
+        Some(dict::chunk_compression::CompressionType::Lzma) => {
+            Ok(Compression::LZMA(c.compression_level))
+        }
         #[cfg(not(feature = "lzma-compression"))]
         Some(dict::chunk_compression::CompressionType::Lzma) => Err(ArchiveError::invalid_archive(
             "LZMA compression not enabled",
         )),
         #[cfg(feature = "zstd-compression")]
-        Some(CompressionType::Zstd) => Ok(Compression::ZSTD(c.compression_level)),
+        Some(dict::chunk_compression::CompressionType::Zstd) => {
+            Ok(Compression::ZSTD(c.compression_level))
+        }
         #[cfg(not(feature = "zstd-compression"))]
         Some(dict::chunk_compression::CompressionType::Zstd) => Err(ArchiveError::invalid_archive(
             "ZSTD compression not enabled",
