@@ -1,6 +1,8 @@
 use blake2::{Blake2b, Digest};
-use std::fmt;
-use std::hash::{Hash, Hasher};
+use std::{
+    cmp, fmt,
+    hash::{Hash, Hasher},
+};
 
 const MAX_SUM_LENGHT: usize = 64;
 
@@ -16,14 +18,14 @@ pub struct HashSum {
 
 impl HashSum {
     /// Create new hash sum using blake2 to digest the given data.
-    pub fn b2_digest(data: &[u8], hash_length: usize) -> Self {
+    pub fn b2_digest(data: &[u8]) -> Self {
         let mut b2 = Blake2b::new();
         b2.update(data);
         let mut sum: [u8; MAX_SUM_LENGHT] = [0; MAX_SUM_LENGHT];
-        sum.copy_from_slice(&b2.finalize()[..MAX_SUM_LENGHT]);
+        sum.copy_from_slice(&b2.finalize());
         Self {
             sum,
-            length: hash_length,
+            length: MAX_SUM_LENGHT,
         }
     }
     /// Returns a new vec containing the hash sum.
@@ -49,7 +51,7 @@ where
     T: AsRef<[u8]>,
 {
     fn from(v: T) -> Self {
-        let min_len = std::cmp::min(v.as_ref().len(), MAX_SUM_LENGHT);
+        let min_len = cmp::min(v.as_ref().len(), MAX_SUM_LENGHT);
         let mut sum: [u8; MAX_SUM_LENGHT] = [0; MAX_SUM_LENGHT];
         sum[0..min_len].copy_from_slice(&v.as_ref()[0..min_len]);
         Self {
@@ -69,19 +71,22 @@ impl Eq for HashSum {}
 
 impl PartialEq<Vec<u8>> for HashSum {
     fn eq(&self, other: &Vec<u8>) -> bool {
-        self.slice() == &other[..]
+        let min_len = cmp::min(self.len(), other.len());
+        &self.sum[0..min_len] == &other[0..min_len]
     }
 }
 
 impl PartialEq<&[u8]> for HashSum {
     fn eq(&self, other: &&[u8]) -> bool {
-        self.slice() == &other[..]
+        let min_len = cmp::min(self.len(), other.len());
+        &self.sum[0..min_len] == &other[0..min_len]
     }
 }
 
 impl PartialEq<HashSum> for HashSum {
     fn eq(&self, other: &Self) -> bool {
-        self.slice() == other.slice()
+        let min_len = cmp::min(self.len(), other.len());
+        &self.sum[0..min_len] == &other.sum[0..min_len]
     }
 }
 
@@ -111,7 +116,7 @@ mod tests {
     fn zero_length() {
         let zero_length_hash = HashSum::from(&[]);
         let hash_with_length = HashSum::from(&[0, 1, 2, 3, 4]);
-        assert_ne!(zero_length_hash, hash_with_length);
+        assert_eq!(zero_length_hash, hash_with_length);
     }
 
     #[test]
@@ -126,6 +131,13 @@ mod tests {
         let hash1 = HashSum::from(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
         let hash2 = HashSum::from(&[0, 1, 2, 3, 4, 0]);
         assert_ne!(hash1, hash2);
+    }
+
+    #[test]
+    fn compare_same_sum_diferent_lengths() {
+        let hash1 = HashSum::from(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+        let hash2 = HashSum::from(&[0, 1, 2, 3, 4]);
+        assert_eq!(hash1, hash2);
     }
 
     #[test]

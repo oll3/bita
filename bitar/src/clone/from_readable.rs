@@ -37,14 +37,11 @@ where
     C: clone::CloneOutput,
 {
     let mut total_read = 0;
-    let hash_length = archive.chunk_hash_length();
     let seed_chunker = Chunker::new(archive.chunker_config(), input);
     let mut found_chunks = seed_chunker
         .map(|result| {
             tokio::task::spawn_blocking(move || {
-                result.map(|(_offset, chunk)| {
-                    (HashSum::b2_digest(&chunk, hash_length as usize), chunk)
-                })
+                result.map(|(_offset, chunk)| (HashSum::b2_digest(&chunk), chunk))
             })
         })
         .buffered(opts.get_max_buffered_chunks())

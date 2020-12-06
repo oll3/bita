@@ -58,13 +58,7 @@ where
                 // Build hash of full source
                 source_hasher.update(&chunk);
                 source_size += chunk.len() as u64;
-                tokio::task::spawn_blocking(move || {
-                    (
-                        HashSum::b2_digest(&chunk, hash_length as usize),
-                        offset,
-                        chunk,
-                    )
-                })
+                tokio::task::spawn_blocking(move || (HashSum::b2_digest(&chunk), offset, chunk))
             })
             .buffered(num_chunk_buffers)
             .filter_map(|result| {
@@ -122,7 +116,7 @@ where
 
             // Store a chunk descriptor which refres to the compressed data
             archive_chunks.push(dict::ChunkDescriptor {
-                checksum: hash.to_vec(),
+                checksum: hash.slice()[0..hash_length].to_vec(),
                 source_size: chunk_len as u32,
                 archive_offset,
                 archive_size: use_data.len() as u32,

@@ -43,7 +43,7 @@ async fn chunk_file(
         let mut chunk_stream = chunker
             .map(|result| {
                 let (offset, chunk) = result.expect("error while chunking");
-                tokio::task::spawn_blocking(move || (HashSum::b2_digest(&chunk, 64), offset, chunk))
+                tokio::task::spawn_blocking(move || (HashSum::b2_digest(&chunk), offset, chunk))
             })
             .buffered(num_chunk_buffers)
             .map(|result| {

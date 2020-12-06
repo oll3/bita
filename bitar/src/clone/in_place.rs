@@ -38,7 +38,6 @@ where
         .map_err(CloneInPlaceError::IO)?;
     let target_index = chunk_index_from_readable(
         &archive.chunker_config(),
-        archive.chunk_hash_length(),
         opts.get_max_buffered_chunks(),
         target,
     )
@@ -108,7 +107,6 @@ where
 
 async fn chunk_index_from_readable<T>(
     chunker_config: &chunker::Config,
-    hash_length: usize,
     max_buffered_chunks: usize,
     readable: &mut T,
 ) -> Result<ChunkIndex, std::io::Error>
@@ -119,13 +117,7 @@ where
     let mut chunk_stream = chunker
         .map(|result| {
             tokio::task::spawn_blocking(move || {
-                result.map(|(offset, chunk)| {
-                    (
-                        HashSum::b2_digest(&chunk, hash_length as usize),
-                        chunk.len(),
-                        offset,
-                    )
-                })
+                result.map(|(offset, chunk)| (HashSum::b2_digest(&chunk), chunk.len(), offset))
             })
         })
         .buffered(max_buffered_chunks);

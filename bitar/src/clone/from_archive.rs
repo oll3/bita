@@ -1,4 +1,3 @@
-use blake2::{Blake2b, Digest};
 use bytes::Bytes;
 use futures_util::stream::StreamExt;
 use log::*;
@@ -117,7 +116,6 @@ fn decompress_and_verify<T, S>(
     source_size: usize,
     compressed: Bytes,
 ) -> Result<Bytes, CloneFromArchiveError<T, S>> {
-    let mut hasher = Blake2b::new();
     let chunk = if compressed.len() == source_size {
         // Archive data is not compressed
         compressed
@@ -125,8 +123,7 @@ fn decompress_and_verify<T, S>(
         compression.decompress(compressed, source_size)?
     };
     // Verify data by hash
-    hasher.update(&chunk);
-    let checksum = HashSum::from(&hasher.finalize()[..archive_checksum.len()]);
+    let checksum = HashSum::b2_digest(&chunk);
     if checksum != *archive_checksum {
         debug!(
             "chunk checksum mismatch (expected: {}, got: {})",
