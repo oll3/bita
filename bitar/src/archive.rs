@@ -1,24 +1,16 @@
 use blake2::{Blake2b, Digest};
 
-use crate::{
-    chunk_dictionary as dict,
-    chunk_dictionary::{
-        chunk_compression::CompressionType, chunker_parameters::ChunkingAlgorithm,
-        ChunkCompression, ChunkerParameters,
-    },
-    chunker, header, ChunkIndex, Compression, CompressionError, HashSum, Reader,
-};
+use crate::{chunk_dictionary as dict, chunker, header, ChunkIndex, Compression, HashSum, Reader};
 
 #[derive(Debug)]
 pub enum ArchiveError<R> {
-    NotAnArchive,
-    InvalidHeaderChecksum,
-    CorruptArchive,
+    InvalidArchive(Box<dyn std::error::Error + Send + Sync>),
     ReaderError(R),
-    UnknownChunkingAlgorithm,
-    DictionaryDecode(prost::DecodeError),
-    UnknownCompression,
-    CompressionError(CompressionError),
+}
+impl<R> ArchiveError<R> {
+    fn invalid_archive<T: Into<Box<dyn std::error::Error + Send + Sync>>>(err: T) -> Self {
+        Self::InvalidArchive(err.into())
+    }
 }
 impl<R> std::error::Error for ArchiveError<R> where R: std::error::Error {}
 impl<R> std::fmt::Display for ArchiveError<R>
@@ -27,25 +19,14 @@ where
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NotAnArchive => write!(f, "not an archive"),
-            Self::InvalidHeaderChecksum => write!(f, "invalid archive header"),
-            Self::CorruptArchive => write!(f, "corrupt archive"),
+            Self::InvalidArchive(err) => write!(f, "invalid archive: {}", err),
             Self::ReaderError(err) => write!(f, "reader error: {}", err),
-            Self::UnknownChunkingAlgorithm => write!(f, "unknown chunking algorithm"),
-            Self::DictionaryDecode(err) => write!(f, "dictionary decode error: {}", err),
-            Self::UnknownCompression => write!(f, "unknown chunk compression"),
-            Self::CompressionError(err) => write!(f, "compression error: {}", err),
         }
     }
 }
-impl<E> From<prost::DecodeError> for ArchiveError<E> {
+impl<R> From<prost::DecodeError> for ArchiveError<R> {
     fn from(err: prost::DecodeError) -> Self {
-        Self::DictionaryDecode(err)
-    }
-}
-impl<E> From<CompressionError> for ArchiveError<E> {
-    fn from(err: CompressionError) -> Self {
-        Self::CompressionError(err)
+        ArchiveError::InvalidArchive(Box::new(err))
     }
 }
 
@@ -94,14 +75,14 @@ pub struct Archive {
 impl Archive {
     fn verify_pre_header<E>(pre_header: &[u8]) -> Result<(), ArchiveError<E>> {
         if pre_header.len() < header::ARCHIVE_MAGIC.len() {
-            return Err(ArchiveError::NotAnArchive);
+            return Err(ArchiveError::invalid_archive("not an archive"));
         }
         // Allow both legacy type file magic (prefixed with \0 but no null
         // termination) and 'BITA\0'.
         if &pre_header[0..header::ARCHIVE_MAGIC.len()] != header::ARCHIVE_MAGIC
             && &pre_header[0..header::ARCHIVE_MAGIC.len()] != b"\0BITA1"
         {
-            return Err(ArchiveError::NotAnArchive);
+            return Err(ArchiveError::invalid_archive("not an archive"));
         }
         Ok(())
     }
@@ -137,7 +118,7 @@ impl Archive {
             hasher.update(&header[..offs]);
             let header_checksum = HashSum::from(&header[offs..(offs + 64)]);
             if header_checksum != &hasher.finalize()[..] {
-                return Err(ArchiveError::InvalidHeaderChecksum);
+                return Err(ArchiveError::invalid_archive("invalid header checksum"));
             }
             header_checksum
         };
@@ -165,7 +146,7 @@ impl Archive {
             .collect();
         let chunker_params = dictionary
             .chunker_params
-            .ok_or(ArchiveError::CorruptArchive)?;
+            .ok_or(ArchiveError::invalid_archive("invalid chunker parameters"))?;
         let chunk_hash_length = chunker_params.chunk_hash_length as usize;
         let source_order: Vec<usize> = dictionary
             .rebuild_order
@@ -182,7 +163,7 @@ impl Archive {
             chunk_compression: compression_from_dictionary(
                 dictionary
                     .chunk_compression
-                    .ok_or(ArchiveError::CorruptArchive)?,
+                    .ok_or(ArchiveError::invalid_archive("invalid compression"))?,
             )?,
             total_chunks: source_order.len(),
             source_order,
@@ -304,40 +285,54 @@ where
     }
 }
 
-fn chunker_config_from_params<R>(p: ChunkerParameters) -> Result<chunker::Config, ArchiveError<R>> {
-    match ChunkingAlgorithm::from_i32(p.chunking_algorithm) {
-        Some(ChunkingAlgorithm::Buzhash) => Ok(chunker::Config::BuzHash(chunker::FilterConfig {
-            filter_bits: chunker::FilterBits::from_bits(p.chunk_filter_bits),
-            min_chunk_size: p.min_chunk_size as usize,
-            max_chunk_size: p.max_chunk_size as usize,
-            window_size: p.rolling_hash_window_size as usize,
-        })),
-        Some(ChunkingAlgorithm::Rollsum) => Ok(chunker::Config::RollSum(chunker::FilterConfig {
-            filter_bits: chunker::FilterBits::from_bits(p.chunk_filter_bits),
-            min_chunk_size: p.min_chunk_size as usize,
-            max_chunk_size: p.max_chunk_size as usize,
-            window_size: p.rolling_hash_window_size as usize,
-        })),
-        Some(ChunkingAlgorithm::FixedSize) => {
+fn chunker_config_from_params<R>(
+    p: dict::ChunkerParameters,
+) -> Result<chunker::Config, ArchiveError<R>> {
+    match dict::chunker_parameters::ChunkingAlgorithm::from_i32(p.chunking_algorithm) {
+        Some(dict::chunker_parameters::ChunkingAlgorithm::Buzhash) => {
+            Ok(chunker::Config::BuzHash(chunker::FilterConfig {
+                filter_bits: chunker::FilterBits::from_bits(p.chunk_filter_bits),
+                min_chunk_size: p.min_chunk_size as usize,
+                max_chunk_size: p.max_chunk_size as usize,
+                window_size: p.rolling_hash_window_size as usize,
+            }))
+        }
+        Some(dict::chunker_parameters::ChunkingAlgorithm::Rollsum) => {
+            Ok(chunker::Config::RollSum(chunker::FilterConfig {
+                filter_bits: chunker::FilterBits::from_bits(p.chunk_filter_bits),
+                min_chunk_size: p.min_chunk_size as usize,
+                max_chunk_size: p.max_chunk_size as usize,
+                window_size: p.rolling_hash_window_size as usize,
+            }))
+        }
+        Some(dict::chunker_parameters::ChunkingAlgorithm::FixedSize) => {
             Ok(chunker::Config::FixedSize(p.max_chunk_size as usize))
         }
-        _ => Err(ArchiveError::UnknownChunkingAlgorithm),
+        _ => Err(ArchiveError::invalid_archive("unknown chunking algorithm")),
     }
 }
 
-fn compression_from_dictionary<R>(c: ChunkCompression) -> Result<Compression, ArchiveError<R>> {
-    match CompressionType::from_i32(c.compression) {
+fn compression_from_dictionary<R>(
+    c: dict::ChunkCompression,
+) -> Result<Compression, ArchiveError<R>> {
+    match dict::chunk_compression::CompressionType::from_i32(c.compression) {
         #[cfg(feature = "lzma-compression")]
         Some(CompressionType::Lzma) => Ok(Compression::LZMA(c.compression_level)),
         #[cfg(not(feature = "lzma-compression"))]
-        Some(CompressionType::Lzma) => panic!("LZMA compression not enabled"),
+        Some(dict::chunk_compression::CompressionType::Lzma) => Err(ArchiveError::invalid_archive(
+            "LZMA compression not enabled",
+        )),
         #[cfg(feature = "zstd-compression")]
         Some(CompressionType::Zstd) => Ok(Compression::ZSTD(c.compression_level)),
         #[cfg(not(feature = "zstd-compression"))]
-        Some(CompressionType::Zstd) => panic!("ZSTD compression not enabled"),
-        Some(CompressionType::Brotli) => Ok(Compression::Brotli(c.compression_level)),
-        Some(CompressionType::None) => Ok(Compression::None),
-        None => Err(ArchiveError::UnknownCompression),
+        Some(dict::chunk_compression::CompressionType::Zstd) => Err(ArchiveError::invalid_archive(
+            "ZSTD compression not enabled",
+        )),
+        Some(dict::chunk_compression::CompressionType::Brotli) => {
+            Ok(Compression::Brotli(c.compression_level))
+        }
+        Some(dict::chunk_compression::CompressionType::None) => Ok(Compression::None),
+        None => Err(ArchiveError::invalid_archive("unknown compression")),
     }
 }
 
