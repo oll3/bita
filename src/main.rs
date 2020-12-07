@@ -88,7 +88,7 @@ fn parse_compression(matches: &clap::ArgMatches<'_>) -> Result<Compression> {
         .unwrap_or("6")
         .parse()
         .context("Failed to parse compression level")?;
-    if compression_level < 1 || compression_level > 19 {
+    if !(1..=19).contains(&compression_level) {
         return Err(anyhow!(
             "Compression level ({}) not within range (1 - 19)",
             compression_level

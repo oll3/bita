@@ -72,21 +72,21 @@ impl Eq for HashSum {}
 impl PartialEq<Vec<u8>> for HashSum {
     fn eq(&self, other: &Vec<u8>) -> bool {
         let min_len = cmp::min(self.len(), other.len());
-        &self.sum[0..min_len] == &other[0..min_len]
+        self.sum[0..min_len] == other[0..min_len]
     }
 }
 
 impl PartialEq<&[u8]> for HashSum {
     fn eq(&self, other: &&[u8]) -> bool {
         let min_len = cmp::min(self.len(), other.len());
-        &self.sum[0..min_len] == &other[0..min_len]
+        self.sum[0..min_len] == other[0..min_len]
     }
 }
 
 impl PartialEq<HashSum> for HashSum {
     fn eq(&self, other: &Self) -> bool {
         let min_len = cmp::min(self.len(), other.len());
-        &self.sum[0..min_len] == &other.sum[0..min_len]
+        self.sum[0..min_len] == other.sum[0..min_len]
     }
 }
 

@@ -147,7 +147,7 @@ impl Archive {
             .collect();
         let chunker_params = dictionary
             .chunker_params
-            .ok_or(ArchiveError::invalid_archive("invalid chunker parameters"))?;
+            .ok_or_else(|| ArchiveError::invalid_archive("invalid chunker parameters"))?;
         let chunk_hash_length = chunker_params.chunk_hash_length as usize;
         let source_order: Vec<usize> = dictionary
             .rebuild_order
@@ -164,7 +164,7 @@ impl Archive {
             chunk_compression: compression_from_dictionary(
                 dictionary
                     .chunk_compression
-                    .ok_or(ArchiveError::invalid_archive("invalid compression"))?,
+                    .ok_or_else(|| ArchiveError::invalid_archive("invalid compression"))?,
             )?,
             total_chunks: source_order.len(),
             source_order,
