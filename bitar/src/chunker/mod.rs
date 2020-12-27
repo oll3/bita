@@ -507,7 +507,7 @@ mod tests {
         ];
         let mut seed = 0xa3;
         static mut SRC: Vec<u8> = Vec::new();
-        for v in 0..10000 as u64 {
+        for v in 0..10000 {
             seed ^= v;
             unsafe {
                 SRC.push((seed & 0xff) as u8);
@@ -603,7 +603,7 @@ mod tests {
 
         let mut seed = 0x1f23_ab13;
         static mut SRC: Vec<u8> = Vec::new();
-        for v in 0..100_000 as u64 {
+        for v in 0..100_000 {
             seed ^= v;
             unsafe {
                 SRC.push((seed & 0xff) as u8);

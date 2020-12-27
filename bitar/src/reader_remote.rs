@@ -69,10 +69,10 @@ impl ReaderRemote {
         self.retry_delay = retry_delay;
         self
     }
-    fn read_chunk_stream<'a>(
-        &'a mut self,
+    fn read_chunk_stream(
+        &mut self,
         chunks: Vec<ReadAt>,
-    ) -> impl Stream<Item = Result<Bytes, ReaderRemoteError>> + 'a {
+    ) -> impl Stream<Item = Result<Bytes, ReaderRemoteError>> + '_ {
         ChunkReader {
             request_builder: &self.request_builder,
             chunk_buf: BytesMut::new(),

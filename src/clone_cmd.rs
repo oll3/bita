@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Context, Result};
-use async_trait::async_trait;
 use blake2::{Blake2b, Digest};
 use futures_util::StreamExt;
 use log::*;
@@ -8,70 +7,36 @@ use std::io::SeekFrom;
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::fs::File;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::{
+    io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncWrite},
+    task::spawn_blocking,
+};
 use url::Url;
 
 use crate::info_cmd;
 use crate::string_utils::*;
 use bitar::{
-    clone, clone::CloneOutput, Archive, ChunkIndex, HashSum, Reader, ReaderRemote, VerifiedChunk,
+    chunker, chunker::Chunker, Archive, ChunkIndex, CloneOutput, HashSum, Reader, ReaderRemote,
+    VerifiedChunk,
 };
 
-struct OutputFile {
-    file: File,
-    block_dev: bool,
+async fn file_size(file: &mut File) -> Result<u64, std::io::Error> {
+    file.seek(SeekFrom::Start(0)).await?;
+    file.seek(SeekFrom::End(0)).await
 }
 
-impl OutputFile {
-    async fn new_from(mut file: File) -> Result<Self, std::io::Error> {
-        let block_dev = is_block_dev(&mut file).await?;
-        Ok(Self { file, block_dev })
-    }
-
-    fn is_block_dev(&self) -> bool {
-        self.block_dev
-    }
-
-    async fn size(&mut self) -> Result<u64, std::io::Error> {
-        self.file.seek(SeekFrom::Start(0)).await?;
-        let size = self.file.seek(SeekFrom::End(0)).await?;
-        Ok(size)
-    }
-
-    async fn resize(&mut self, source_file_size: u64) -> Result<(), std::io::Error> {
-        self.file.set_len(source_file_size).await?;
-        Ok(())
-    }
-
-    async fn checksum(&mut self) -> Result<HashSum, std::io::Error> {
-        self.file.seek(SeekFrom::Start(0)).await?;
-        let mut output_hasher = Blake2b::new();
-        let mut buffer: Vec<u8> = vec![0; 4 * 1024 * 1024];
-        loop {
-            let rc = self.file.read(&mut buffer).await?;
-            if rc == 0 {
-                break;
-            }
-            output_hasher.update(&buffer[0..rc]);
+async fn file_checksum(file: &mut File) -> Result<HashSum, std::io::Error> {
+    file.seek(SeekFrom::Start(0)).await?;
+    let mut output_hasher = Blake2b::new();
+    let mut buffer: Vec<u8> = vec![0; 4 * 1024 * 1024];
+    loop {
+        let rc = file.read(&mut buffer).await?;
+        if rc == 0 {
+            break;
         }
-        Ok(HashSum::from(&output_hasher.finalize()[..]))
+        output_hasher.update(&buffer[0..rc]);
     }
-}
-
-#[async_trait]
-impl CloneOutput for OutputFile {
-    type Error = std::io::Error;
-    async fn write_chunk(
-        &mut self,
-        offsets: &[u64],
-        verified: &VerifiedChunk,
-    ) -> Result<(), Self::Error> {
-        for &offset in offsets {
-            self.file.seek(SeekFrom::Start(offset)).await?;
-            self.file.write_all(verified.data()).await?;
-        }
-        Ok(())
-    }
+    Ok(HashSum::from(&output_hasher.finalize()[..]))
 }
 
 // Check if file is a regular file or block device
@@ -91,57 +56,104 @@ async fn is_block_dev(_file: &mut File) -> Result<bool, std::io::Error> {
     Ok(false)
 }
 
+async fn feed_output<S, C>(output: &mut CloneOutput<C>, mut chunk_stream: S) -> Result<u64>
+where
+    S: StreamExt<Item = Result<VerifiedChunk>> + Unpin,
+    C: AsyncWrite + AsyncSeek + Unpin + Send,
+{
+    let mut output_bytes = 0;
+    while let Some(result) = chunk_stream.next().await {
+        let verified = result?;
+        let wc = output.feed(&verified).await?;
+        if wc > 0 {
+            debug!("Chunk '{}', size {} used", verified.hash(), verified.len());
+        }
+        output_bytes += wc as u64;
+    }
+    Ok(output_bytes)
+}
+
+async fn clone_from_readable<I, C>(
+    max_buffered_chunks: usize,
+    config: &chunker::Config,
+    input: &mut I,
+    output: &mut CloneOutput<C>,
+) -> Result<u64>
+where
+    I: AsyncRead + Unpin,
+    C: AsyncWrite + AsyncSeek + Unpin + Send,
+{
+    let chunk_stream = Chunker::new(config, input)
+        .map(|r| spawn_blocking(|| r.map(|(_, chunk)| chunk.verify())))
+        .buffered(max_buffered_chunks)
+        .map(|r| match r {
+            Ok(inner) => Ok(inner?),
+            Err(err) => Err(anyhow!(err)),
+        });
+    feed_output(output, chunk_stream).await
+}
+
 async fn clone_from_archive<R, C>(
     max_buffered_chunks: usize,
-    reader: &mut R,
     archive: &Archive,
-    chunks: &mut ChunkIndex,
-    output: &mut C,
+    reader: &mut R,
+    output: &mut CloneOutput<C>,
 ) -> Result<u64>
 where
     R: Reader,
     R::Error: std::error::Error + Sync + Send + 'static,
-    C: clone::CloneOutput,
-    C::Error: std::error::Error + Sync + Send + 'static,
+    C: AsyncWrite + AsyncSeek + Unpin + Send,
 {
     let mut total_fetched = 0u64;
-    let mut total_written = 0u64;
-    let mut chunk_stream = archive
-        .chunk_stream(chunks, reader)
-        .map(|read_result| {
-            if let Ok(compressed) = &read_result {
+    let chunk_stream = archive
+        .chunk_stream(output.chunks(), reader)
+        .map(|r| {
+            if let Ok(compressed) = &r {
                 total_fetched += compressed.len() as u64;
             }
-            tokio::task::spawn_blocking(move || -> Result<VerifiedChunk> {
-                let compressed = read_result.context("Error reading from archive")?;
+            spawn_blocking(move || -> Result<VerifiedChunk> {
+                let compressed = r.context("read archive")?;
                 let verified = compressed
                     .decompress()
-                    .context("Error decompressing chunk")?
+                    .context("decompress chunk")?
                     .verify()
-                    .context("Error verifying chunk")?;
+                    .context("verify chunk")?;
                 Ok(verified)
             })
         })
         .buffered(max_buffered_chunks)
-        .map(|result| match result {
-            Ok(inner) => Ok(inner?),
+        .map(|r| match r {
+            Ok(inner) => inner,
             Err(err) => Err(anyhow!(err)),
         });
-    while let Some(result) = chunk_stream.next().await {
-        let verified = result?;
-        if let Some(location) = chunks.remove(&verified.hash()) {
-            debug!("Chunk '{}', size {} used", verified.hash(), verified.len());
-            output.write_chunk(location.offsets(), &verified).await?;
-            total_written += verified.len() as u64;
-        }
-    }
-    drop(chunk_stream);
+    let total_written = feed_output(output, chunk_stream).await?;
     info!(
         "Fetched {} from archive and decompressed to {}.",
         size_to_str(total_fetched),
         size_to_str(total_written)
     );
     Ok(total_fetched)
+}
+
+async fn chunk_index_from_readable<R>(
+    config: &chunker::Config,
+    max_buffered_chunks: usize,
+    readable: &mut R,
+) -> Result<ChunkIndex>
+where
+    R: AsyncRead + Unpin,
+{
+    let chunker = Chunker::new(config, readable);
+    let mut chunk_stream = chunker
+        .map(|r| spawn_blocking(|| r.map(|(offset, chunk)| (offset, chunk.verify()))))
+        .buffered(max_buffered_chunks);
+    let mut index = ChunkIndex::new_empty();
+    while let Some(r) = chunk_stream.next().await {
+        let (chunk_offset, verified) = r??;
+        let (hash, chunk) = verified.into_parts();
+        index.add_chunk(hash, chunk.len(), &[chunk_offset]);
+    }
+    Ok(index)
 }
 
 async fn clone_archive<R>(opts: Options, mut reader: R) -> Result<()>
@@ -153,7 +165,7 @@ where
         "Failed to read archive at {}",
         opts.input_archive.source()
     ))?;
-    let mut chunks_left = archive.build_source_index();
+    let clone_index = archive.build_source_index();
     let mut total_read_from_seed = 0u64;
 
     info_cmd::print_archive(&archive);
@@ -174,7 +186,7 @@ where
     );
 
     // Create or open output file
-    let output_file = tokio::fs::OpenOptions::new()
+    let mut output_file = tokio::fs::OpenOptions::new()
         .write(true)
         .read(opts.verify_output || opts.seed_output)
         .create(opts.force_create || opts.seed_output)
@@ -183,13 +195,12 @@ where
         .await
         .context(format!("Failed to open {}", opts.output.display()))?;
 
-    let mut output = OutputFile::new_from(output_file).await?;
-
     // Check if the given output file is a regular file or block device.
     // If it is a block device we should check its size against the target size before
     // writing. If a regular file then resize that file to target size.
-    if output.is_block_dev() {
-        let size = output.size().await?;
+    let output_is_block_dev = is_block_dev(&mut output_file).await?;
+    if output_is_block_dev {
+        let size = file_size(&mut output_file).await?;
         if size < archive.total_source_size() {
             return Err(anyhow!(
                 "Size of output device ({}) is less than archive target file ({})",
@@ -200,13 +211,27 @@ where
     }
 
     // Build an index of the output file's chunks
-    let clone_opts = clone::Options::default().max_buffered_chunks(opts.num_chunk_buffers);
-    if opts.seed_output {
-        info!("Updating chunks of {} in-place...", opts.output.display());
-        let used_from_self =
-            clone::in_place(&clone_opts, &mut chunks_left, &archive, &mut output.file)
-                .await
-                .context("Failed to clone in place")?;
+    let output_index = if opts.seed_output {
+        info!("Building chunk index of {}...", opts.output.display());
+        Some(
+            chunk_index_from_readable(
+                &archive.chunker_config(),
+                opts.num_chunk_buffers,
+                &mut output_file,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
+
+    let mut output = CloneOutput::new(output_file, clone_index);
+    if let Some(output_index) = output_index {
+        info!("Re-ordering chunks of {}...", opts.output.display());
+        let used_from_self = output
+            .reorder_in_place(output_index)
+            .await
+            .context("Failed to clone in place")?;
         info!(
             "Used {} from {}",
             size_to_str(used_from_self),
@@ -215,30 +240,22 @@ where
         total_read_from_seed += used_from_self;
     }
 
-    if !output.is_block_dev() {
-        // Resize output file to same size as the archive source
-        output
-            .resize(archive.total_source_size())
-            .await
-            .context(format!("Failed to resize {}", opts.output.display()))?;
-    }
-
     // Read chunks from seed files
     if opts.seed_stdin && !atty::is(atty::Stream::Stdin) {
         info!(
             "Scanning stdin for chunks ({} left to find)...",
-            chunks_left.len()
+            output.len()
         );
-        let bytes_to_output = clone::from_readable(
-            &clone_opts,
+        let bytes_to_output = clone_from_readable(
+            opts.num_chunk_buffers,
+            archive.chunker_config(),
             &mut tokio::io::stdin(),
-            &archive,
-            &mut chunks_left,
             &mut output,
         )
         .await
         .context("Failed to clone from stdin")?;
         info!("Used {} bytes from stdin", size_to_str(bytes_to_output));
+        total_read_from_seed += bytes_to_output;
     }
     for seed_path in &opts.seed_files {
         let mut file = File::open(seed_path)
@@ -247,13 +264,12 @@ where
         info!(
             "Scanning {} for chunks ({} left to find)...",
             seed_path.display(),
-            chunks_left.len()
+            output.len()
         );
-        let bytes_to_output = clone::from_readable(
-            &clone_opts,
+        let bytes_to_output = clone_from_readable(
+            opts.num_chunk_buffers,
+            archive.chunker_config(),
             &mut file,
-            &archive,
-            &mut chunks_left,
             &mut output,
         )
         .await
@@ -263,31 +279,36 @@ where
             size_to_str(bytes_to_output),
             seed_path.display()
         );
+        total_read_from_seed += bytes_to_output;
     }
 
     // Read the rest from archive
     info!(
         "Fetching {} chunks from {}...",
-        chunks_left.len(),
+        output.len(),
         opts.input_archive.source()
     );
 
-    let total_read_from_remote = clone_from_archive(
-        clone_opts.max_buffered_chunks,
-        &mut reader,
-        &archive,
-        &mut chunks_left,
-        &mut output,
-    )
-    .await
-    .context(format!(
-        "Failed to clone from archive at {}",
-        opts.input_archive.source()
-    ))?;
+    let total_read_from_remote =
+        clone_from_archive(opts.num_chunk_buffers, &archive, &mut reader, &mut output)
+            .await
+            .context(format!(
+                "Failed to clone from archive at {}",
+                opts.input_archive.source()
+            ))?;
+
+    let mut output_file = output.into_inner();
+    if !output_is_block_dev {
+        // Resize output file to same size as the archive source
+        output_file
+            .set_len(archive.total_source_size())
+            .await
+            .context(format!("Failed to resize {}", opts.output.display()))?;
+    }
 
     if opts.verify_output {
         info!("Verifying checksum of {}...", opts.output.display());
-        let sum = output.checksum().await.context(format!(
+        let sum = file_checksum(&mut output_file).await.context(format!(
             "Failed to create checksum of {}",
             opts.output.display()
         ))?;

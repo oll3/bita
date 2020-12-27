@@ -1,7 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use blake2::{Blake2b, Digest};
-use futures_util::future;
-use futures_util::stream::StreamExt;
+use futures_util::{future, StreamExt};
 use log::*;
 use std::collections::HashMap;
 use std::io::Write;

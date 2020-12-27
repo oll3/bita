@@ -1,5 +1,5 @@
 use anyhow::Result;
-use futures_util::stream::StreamExt;
+use futures_util::StreamExt;
 use log::*;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
