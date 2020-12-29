@@ -2,7 +2,10 @@ use brotli::enc::backward_references::BrotliEncoderParams;
 use bytes::Bytes;
 use std::io::Write;
 
-use crate::chunk_dictionary::{chunk_compression::CompressionType, ChunkCompression};
+use crate::{
+    chunk_dictionary::{chunk_compression::CompressionType, ChunkCompression},
+    Chunk, CompressedChunk,
+};
 
 #[derive(Debug)]
 pub enum CompressionError {
@@ -75,28 +78,29 @@ impl From<Compression> for ChunkCompression {
 
 impl Compression {
     /// Compress a block of data with set compression.
-    pub fn compress(self, input: Bytes) -> Result<Bytes, CompressionError> {
-        match self {
+    pub(crate) fn compress(self, chunk: Chunk) -> Result<CompressedChunk, CompressionError> {
+        let source_size = chunk.len();
+        let result = match self {
             #[cfg(feature = "lzma-compression")]
             Compression::LZMA(ref level) => {
                 use lzma::LzmaWriter;
                 use std::io::prelude::*;
-                let mut result = Vec::with_capacity(input.len());
+                let mut result = Vec::with_capacity(chunk.len());
                 {
                     let mut f = LzmaWriter::new_compressor(&mut result, *level)?;
-                    f.write_all(&input[..])?;
+                    f.write_all(chunk.data())?;
                     f.finish()?;
                 }
-                Ok(Bytes::from(result))
+                Bytes::from(result)
             }
             #[cfg(feature = "zstd-compression")]
             Compression::ZSTD(ref level) => {
-                let mut result = Vec::with_capacity(input.len());
-                zstd::stream::copy_encode(&input[..], &mut result, *level as i32)?;
-                Ok(Bytes::from(result))
+                let mut result = Vec::with_capacity(chunk.len());
+                zstd::stream::copy_encode(chunk.data(), &mut result, *level as i32)?;
+                Bytes::from(result)
             }
             Compression::Brotli(ref level) => {
-                let mut result = Vec::with_capacity(input.len());
+                let mut result = Vec::with_capacity(chunk.len());
                 let params = BrotliEncoderParams {
                     quality: *level as i32,
                     magic_number: false,
@@ -105,41 +109,46 @@ impl Compression {
                 {
                     let mut writer =
                         brotli::CompressorWriter::with_params(&mut result, 1024 * 1024, &params);
-                    writer.write_all(&input)?;
+                    writer.write_all(&chunk.data())?;
                 }
-                Ok(Bytes::from(result))
+                Bytes::from(result)
             }
-            Compression::None => Ok(input),
-        }
+            Compression::None => chunk.into_inner(),
+        };
+        Ok(CompressedChunk {
+            data: result,
+            source_size,
+            compression: self,
+        })
     }
     /// Decompress a block of data using the set compression.
-    pub fn decompress(self, input: Bytes, size_hint: usize) -> Result<Bytes, CompressionError> {
-        match self {
+    pub(crate) fn decompress(compressed: CompressedChunk) -> Result<Chunk, CompressionError> {
+        match compressed.compression() {
             #[cfg(feature = "lzma-compression")]
             Compression::LZMA(_) => {
                 use lzma::LzmaWriter;
                 use std::io::prelude::*;
-                let mut output = Vec::with_capacity(size_hint);
+                let mut output = Vec::with_capacity(compressed.source_size);
                 let mut f = LzmaWriter::new_decompressor(&mut output)?;
-                f.write_all(&input)?;
+                f.write_all(compressed.data())?;
                 f.finish()?;
-                Ok(Bytes::from(output))
+                Ok(Chunk::from(output))
             }
             #[cfg(feature = "zstd-compression")]
             Compression::ZSTD(_) => {
-                let mut output = Vec::with_capacity(size_hint);
-                zstd::stream::copy_decode(&input[..], &mut output)?;
-                Ok(Bytes::from(output))
+                let mut output = Vec::with_capacity(compressed.source_size);
+                zstd::stream::copy_decode(compressed.data(), &mut output)?;
+                Ok(Chunk::from(output))
             }
             Compression::Brotli(_) => {
-                let mut output = Vec::with_capacity(size_hint);
-                let mut input_slice: &[u8] = &input;
+                let mut output = Vec::with_capacity(compressed.source_size);
+                let mut input_slice: &[u8] = compressed.data();
                 brotli::BrotliDecompress(&mut input_slice, &mut output)?;
-                Ok(Bytes::from(output))
+                Ok(Chunk::from(output))
             }
             Compression::None => {
                 // Archived chunk is NOT compressed
-                Ok(input)
+                Ok(Chunk::from(compressed.into_inner().1))
             }
         }
     }

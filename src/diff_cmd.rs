@@ -42,41 +42,42 @@ async fn chunk_file(
         let chunker = chunker::Chunker::new(chunker_config, &mut file);
         let mut chunk_stream = chunker
             .map(|result| {
-                let (offset, chunk) = result.expect("error while chunking");
-                tokio::task::spawn_blocking(move || (HashSum::b2_digest(&chunk), offset, chunk))
+                let (offset, chunk) = result.expect("error chunking");
+                tokio::task::spawn_blocking(move || (offset, chunk.verify()))
             })
             .buffered(num_chunk_buffers)
             .map(|result| {
-                let (hash, offset, chunk) = result.expect("error while hashing chunk");
-                if unique_chunk.contains(&hash) {
-                    (hash, offset, chunk, false)
+                let (offset, verified) = result.expect("error hashing chunk");
+                if unique_chunk.contains(verified.hash()) {
+                    (offset, verified, false)
                 } else {
-                    unique_chunk.insert(hash.clone());
-                    (hash, offset, chunk, true)
+                    unique_chunk.insert(verified.hash().clone());
+                    (offset, verified, true)
                 }
             })
-            .map(|(hash, offset, chunk, do_compress)| {
+            .map(|(offset, verified, do_compress)| {
                 tokio::task::spawn_blocking(move || {
                     if do_compress {
                         // Compress unique chunks
-                        let compressed_chunk = compression
-                            .compress(chunk.clone())
-                            .expect("failed to compress chunk");
-                        (hash, offset, chunk.len(), Some(compressed_chunk.len()))
+                        let compressed = verified
+                            .chunk()
+                            .clone()
+                            .compress(compression)
+                            .expect("compress chunk");
+                        (offset, verified, Some(compressed.len()))
                     } else {
-                        (hash, offset, chunk.len(), None)
+                        (offset, verified, None)
                     }
                 })
             })
             .buffered(num_chunk_buffers);
 
         while let Some(result) = chunk_stream.next().await {
-            let (hash, offset, chunk_size, compressed_size) =
-                result.expect("error while compressing chunk");
+            let (offset, verified, compressed_size) = result.expect("error compressing chunk");
             total_chunks += 1;
-            total_size += chunk_size as u64;
-            chunks.insert(hash.clone());
-            if let Some(descriptor) = descriptors.get_mut(&hash) {
+            total_size += verified.len() as u64;
+            chunks.insert(verified.hash().clone());
+            if let Some(descriptor) = descriptors.get_mut(verified.hash()) {
                 descriptor.occurrences.push(offset);
                 if let Some(compressed_size) = compressed_size {
                     descriptor.compressed_size = Some(compressed_size);
@@ -85,9 +86,9 @@ async fn chunk_file(
             } else {
                 total_compressed_size += compressed_size.unwrap_or(0) as u64;
                 descriptors.insert(
-                    hash,
+                    verified.hash().clone(),
                     ChunkDescriptor {
-                        source_size: chunk_size,
+                        source_size: verified.len(),
                         compressed_size,
                         occurrences: vec![offset],
                     },

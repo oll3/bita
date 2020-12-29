@@ -3,7 +3,7 @@ mod config;
 
 pub use config::{Config, FilterBits, FilterConfig};
 
-use bytes::{Bytes, BytesMut};
+use bytes::BytesMut;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use futures_core::stream::Stream;
@@ -11,6 +11,7 @@ use std::io;
 use tokio::io::AsyncRead;
 
 use crate::{
+    chunk::Chunk,
     chunker,
     rolling_hash::{BuzHash, RollSum, RollingHash},
 };
@@ -96,7 +97,7 @@ impl<T> Stream for Chunker<'_, T>
 where
     T: AsyncRead + Unpin,
 {
-    type Item = Result<(u64, Bytes), io::Error>;
+    type Item = Result<(u64, Chunk), io::Error>;
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         match *self {
             Chunker::BuzHash(ref mut c) => c.poll_chunk(cx),
@@ -129,15 +130,13 @@ where
         }
     }
     #[allow(clippy::type_complexity)]
-    fn poll_chunk(&mut self, cx: &mut Context) -> Poll<Option<Result<(u64, Bytes), io::Error>>> {
+    fn poll_chunk(&mut self, cx: &mut Context) -> Poll<Option<Result<(u64, Chunk), io::Error>>> {
         loop {
             if self.read_buf.len() >= self.chunk_size {
-                let offset_and_chunk = (
-                    self.chunk_start,
-                    self.read_buf.split_to(self.chunk_size).freeze(),
-                );
+                let chunk_start = self.chunk_start;
+                let chunk = Chunk(self.read_buf.split_to(self.chunk_size).freeze());
                 self.chunk_start = self.source_index;
-                return Poll::Ready(Some(Ok(offset_and_chunk)));
+                return Poll::Ready(Some(Ok((chunk_start, chunk))));
             } else {
                 // Fill buffer from source
                 let rc = match refill_read_buf(
@@ -153,9 +152,10 @@ where
                 if rc == 0 {
                     // EOF
                     if !self.read_buf.is_empty() {
-                        let offset_and_chunk = (self.chunk_start, self.read_buf.split().freeze());
+                        let chunk_start = self.chunk_start;
+                        let chunk = Chunk(self.read_buf.split().freeze());
                         self.chunk_start = self.source_index;
-                        return Poll::Ready(Some(Ok(offset_and_chunk)));
+                        return Poll::Ready(Some(Ok((chunk_start, chunk))));
                     } else {
                         return Poll::Ready(None);
                     }
@@ -205,7 +205,7 @@ where
     }
 
     #[allow(clippy::type_complexity)]
-    fn poll_chunk(&mut self, cx: &mut Context) -> Poll<Option<Result<(u64, Bytes), io::Error>>> {
+    fn poll_chunk(&mut self, cx: &mut Context) -> Poll<Option<Result<(u64, Chunk), io::Error>>> {
         loop {
             if self.buf_index >= self.read_buf.len() {
                 // Fill buffer from source
@@ -213,7 +213,7 @@ where
                     Poll::Ready(Ok(n)) if n == 0 => {
                         // EOF
                         if !self.read_buf.is_empty() {
-                            let chunk = self.read_buf.split().freeze();
+                            let chunk = Chunk(self.read_buf.split().freeze());
                             self.read_buf.resize(0, 0);
                             self.buf_index = 0;
                             return Poll::Ready(Some(Ok((self.chunk_start, chunk))));
@@ -271,11 +271,11 @@ where
 
             self.source_index += (self.buf_index - start_buf_index) as u64;
             if got_chunk {
-                let chunk = self.read_buf.split_to(self.buf_index).freeze();
-                let offset_and_chunk = (self.chunk_start, chunk);
+                let chunk = Chunk(self.read_buf.split_to(self.buf_index).freeze());
+                let chunk_start = self.chunk_start;
                 self.buf_index = 0;
                 self.chunk_start = self.source_index;
-                return Poll::Ready(Some(Ok(offset_and_chunk)));
+                return Poll::Ready(Some(Ok((chunk_start, chunk))));
             }
         }
     }
@@ -286,7 +286,7 @@ where
     T: AsyncRead + Unpin,
     H: RollingHash + Unpin,
 {
-    type Item = Result<(u64, Bytes), io::Error>;
+    type Item = Result<(u64, Chunk), io::Error>;
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         self.poll_chunk(cx)
     }
@@ -441,7 +441,7 @@ mod tests {
                 Chunker::new(chunker_config, &mut Box::new(&SRC[..]))
                     .map(|result| {
                         let (offset, chunk) = result.unwrap();
-                        assert_eq!(chunk, Bytes::from(vec![0x1f, 0x55, 0x39, 0x5e, 0xfa]));
+                        assert_eq!(chunk, Chunk::from(vec![0x1f, 0x55, 0x39, 0x5e, 0xfa]));
                         offset
                     })
                     .collect::<Vec<u64>>()
@@ -472,7 +472,7 @@ mod tests {
                 Chunker::new(chunker_config, &mut Box::new(&SRC[..]),)
                     .map(|result| {
                         let (offset, chunk) = result.unwrap();
-                        assert_eq!(chunk, Bytes::from(vec![0x1f, 0x55, 0x39, 0x5e, 0xfa]));
+                        assert_eq!(chunk, Chunk::from(vec![0x1f, 0x55, 0x39, 0x5e, 0xfa]));
                         offset
                     })
                     .collect::<Vec<u64>>()

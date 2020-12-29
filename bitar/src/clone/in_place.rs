@@ -1,10 +1,14 @@
+use bytes::BytesMut;
 use futures_util::stream::StreamExt;
 use log::*;
 use std::collections::HashMap;
 use std::io::SeekFrom;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, AsyncWrite};
 
-use crate::{chunker, clone, clone::CloneOutput, Archive, ChunkIndex, HashSum, ReorderOp};
+use crate::{
+    chunker, clone, clone::CloneOutput, Archive, Chunk, ChunkIndex, HashSum, ReorderOp,
+    VerifiedChunk,
+};
 
 #[derive(Debug)]
 pub enum CloneInPlaceError {
@@ -52,8 +56,8 @@ where
     );
 
     let reorder_ops = target_index.reorder_ops(chunks);
-    let mut temp_store: HashMap<&HashSum, Vec<u8>> = HashMap::new();
-    let mut temp_buf = Vec::new();
+    let mut temp_store: HashMap<&HashSum, VerifiedChunk> = HashMap::new();
+    let mut temp_buf = BytesMut::new();
     for op in reorder_ops {
         // Move chunks around internally in the output file
         match op {
@@ -63,9 +67,9 @@ where
                 source,
                 dest,
             } => {
-                if let Some(buf) = temp_store.remove(hash) {
+                if let Some(verified) = temp_store.remove(hash) {
                     target
-                        .write_chunk(hash, &dest[..], &buf[..])
+                        .write_chunk(&dest[..], &verified)
                         .await
                         .map_err(CloneInPlaceError::IO)?;
                 } else {
@@ -78,8 +82,12 @@ where
                         .read_exact(&mut temp_buf[..])
                         .await
                         .map_err(CloneInPlaceError::IO)?;
+                    let verified = VerifiedChunk {
+                        chunk: Chunk::from(temp_buf.clone().freeze()),
+                        hash_sum: hash.clone(),
+                    };
                     target
-                        .write_chunk(hash, &dest[..], &temp_buf[..])
+                        .write_chunk(&dest[..], &verified)
                         .await
                         .map_err(CloneInPlaceError::IO)?;
                 };
@@ -97,7 +105,13 @@ where
                         .read_exact(&mut buf[..])
                         .await
                         .map_err(CloneInPlaceError::IO)?;
-                    temp_store.insert(hash, buf);
+                    temp_store.insert(
+                        hash,
+                        VerifiedChunk {
+                            chunk: Chunk::from(buf),
+                            hash_sum: hash.clone(),
+                        },
+                    );
                 }
             }
         }
@@ -117,14 +131,14 @@ where
     let mut chunk_stream = chunker
         .map(|result| {
             tokio::task::spawn_blocking(move || {
-                result.map(|(offset, chunk)| (HashSum::b2_digest(&chunk), chunk.len(), offset))
+                result.map(|(offset, chunk)| (offset, chunk.verify()))
             })
         })
         .buffered(max_buffered_chunks);
     let mut ci = ChunkIndex::new_empty();
     while let Some(result) = chunk_stream.next().await {
-        let (chunk_hash, chunk_size, chunk_offset) = result.unwrap()?;
-        ci.add_chunk(chunk_hash, chunk_size, &[chunk_offset]);
+        let (chunk_offset, verified) = result.unwrap()?;
+        ci.add_chunk(verified.hash().clone(), verified.len(), &[chunk_offset]);
     }
     Ok(ci)
 }

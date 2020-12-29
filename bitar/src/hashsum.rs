@@ -18,7 +18,7 @@ pub struct HashSum {
 
 impl HashSum {
     /// Create new hash sum using blake2 to digest the given data.
-    pub fn b2_digest(data: &[u8]) -> Self {
+    pub(crate) fn b2_digest(data: &[u8]) -> Self {
         let mut b2 = Blake2b::new();
         b2.update(data);
         let mut sum: [u8; MAX_SUM_LENGHT] = [0; MAX_SUM_LENGHT];

@@ -1,8 +1,9 @@
-use bytes::Bytes;
 use futures_util::stream::StreamExt;
 use log::*;
 
-use crate::{clone, Archive, ChunkIndex, HashSum, Reader};
+use crate::{
+    clone, Archive, ChunkIndex, CompressedChunk, Compression, HashSum, Reader, VerifiedChunk,
+};
 
 #[derive(Debug)]
 pub enum CloneFromArchiveError<T, S> {
@@ -83,8 +84,17 @@ where
                 }
                 tokio::task::spawn_blocking(move || {
                     let chunk = read_result.map_err(CloneFromArchiveError::SourceError)?;
-                    let chunk = decompress_and_verify(compression, &checksum, source_size, chunk)?;
-                    Ok::<_, CloneFromArchiveError<C::Error, R::Error>>((checksum, chunk))
+                    let compressed = CompressedChunk {
+                        source_size,
+                        compression: if chunk.len() == source_size {
+                            Compression::None
+                        } else {
+                            compression
+                        },
+                        data: chunk,
+                    };
+                    let verified = decompress_and_verify(&checksum, compressed)?;
+                    Ok::<_, CloneFromArchiveError<C::Error, R::Error>>(verified)
                 })
             })
             .buffered(opts.get_max_buffered_chunks());
@@ -93,16 +103,20 @@ where
         while let Some(result) = chunk_stream.next().await {
             // For each chunk read from archive
             let result = result?;
-            let (hash, chunk) = result?;
+            let verified = result?;
             offsets.clear();
             offsets.extend(
                 chunks
-                    .offsets(&hash)
-                    .unwrap_or_else(|| panic!("missing chunk ({}) in source", hash)),
+                    .offsets(&verified.hash())
+                    .unwrap_or_else(|| panic!("missing chunk ({}) in source", verified.hash())),
             );
-            debug!("Chunk '{}', size {} used from archive", hash, chunk.len());
+            debug!(
+                "Chunk '{}', size {} used from archive",
+                verified.hash(),
+                verified.len()
+            );
             output
-                .write_chunk(&hash, &offsets[..], &chunk)
+                .write_chunk(&offsets[..], &verified)
                 .await
                 .map_err(CloneFromArchiveError::TargetError)?;
         }
@@ -111,26 +125,19 @@ where
 }
 
 fn decompress_and_verify<T, S>(
-    compression: crate::Compression,
     archive_checksum: &HashSum,
-    source_size: usize,
-    compressed: Bytes,
-) -> Result<Bytes, CloneFromArchiveError<T, S>> {
-    let chunk = if compressed.len() == source_size {
-        // Archive data is not compressed
-        compressed
-    } else {
-        compression.decompress(compressed, source_size)?
-    };
+    compressed: CompressedChunk,
+) -> Result<VerifiedChunk, CloneFromArchiveError<T, S>> {
     // Verify data by hash
-    let checksum = HashSum::b2_digest(&chunk);
-    if checksum != *archive_checksum {
+    let verified = compressed.decompress()?.verify();
+    if verified.hash() != archive_checksum {
         debug!(
             "chunk checksum mismatch (expected: {}, got: {})",
-            checksum, archive_checksum,
+            verified.hash(),
+            archive_checksum,
         );
         Err(CloneFromArchiveError::ChecksumMismatch)
     } else {
-        Ok(chunk)
+        Ok(verified)
     }
 }

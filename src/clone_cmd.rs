@@ -12,7 +12,7 @@ use url::Url;
 
 use crate::info_cmd;
 use crate::string_utils::*;
-use bitar::{clone, clone::CloneOutput, Archive, HashSum, Reader, ReaderRemote};
+use bitar::{clone, clone::CloneOutput, Archive, HashSum, Reader, ReaderRemote, VerifiedChunk};
 
 struct OutputFile {
     file: File,
@@ -60,13 +60,12 @@ impl CloneOutput for OutputFile {
     type Error = std::io::Error;
     async fn write_chunk(
         &mut self,
-        _hash: &HashSum,
         offsets: &[u64],
-        buf: &[u8],
+        verified: &VerifiedChunk,
     ) -> Result<(), Self::Error> {
         for &offset in offsets {
             self.file.seek(SeekFrom::Start(offset)).await?;
-            self.file.write_all(buf).await?;
+            self.file.write_all(verified.data()).await?;
         }
         Ok(())
     }

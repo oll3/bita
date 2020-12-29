@@ -2,7 +2,7 @@ use futures_util::stream::StreamExt;
 use log::*;
 use tokio::io::AsyncRead;
 
-use crate::{chunker::Chunker, clone, Archive, ChunkIndex, HashSum};
+use crate::{chunker::Chunker, clone, Archive, ChunkIndex};
 
 #[derive(Debug)]
 pub enum CloneFromReadableError<T> {
@@ -40,13 +40,11 @@ where
     let seed_chunker = Chunker::new(archive.chunker_config(), input);
     let mut found_chunks = seed_chunker
         .map(|result| {
-            tokio::task::spawn_blocking(move || {
-                result.map(|(_offset, chunk)| (HashSum::b2_digest(&chunk), chunk))
-            })
+            tokio::task::spawn_blocking(move || result.map(|(_offset, chunk)| chunk.verify()))
         })
         .buffered(opts.get_max_buffered_chunks())
         .map(|result| match result {
-            Ok(Ok((hash, chunk))) => Ok((hash, chunk)),
+            Ok(Ok(verified)) => Ok(verified),
             Ok(Err(err)) => Err(err),
             Err(err) => Err(err.into()),
         });
@@ -59,18 +57,18 @@ where
             // Nothing more to do
             break;
         }
-        let (hash, chunk) = result.map_err(CloneFromReadableError::SourceError)?;
-        let location = if let Some(location) = chunks.remove(&hash) {
+        let verified = result.map_err(CloneFromReadableError::SourceError)?;
+        let location = if let Some(location) = chunks.remove(&verified.hash()) {
             location
         } else {
             continue;
         };
-        debug!("Chunk '{}', size {} used", hash, chunk.len());
+        debug!("Chunk '{}', size {} used", verified.hash(), verified.len());
         output
-            .write_chunk(&hash, location.offsets(), &chunk)
+            .write_chunk(location.offsets(), &verified)
             .await
             .map_err(CloneFromReadableError::TargetError)?;
-        total_read += chunk.len() as u64;
+        total_read += verified.len() as u64;
     }
     Ok(total_read)
 }

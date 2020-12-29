@@ -12,7 +12,7 @@ use tokio::prelude::*;
 use crate::info_cmd;
 use crate::string_utils::*;
 use bitar::chunk_dictionary as dict;
-use bitar::{chunker, Compression, HashSum};
+use bitar::{chunker, Compression};
 
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -56,65 +56,67 @@ where
             .map(|result| {
                 let (offset, chunk) = result.expect("error while chunking");
                 // Build hash of full source
-                source_hasher.update(&chunk);
+                source_hasher.update(chunk.data());
                 source_size += chunk.len() as u64;
-                tokio::task::spawn_blocking(move || (HashSum::b2_digest(&chunk), offset, chunk))
+                tokio::task::spawn_blocking(move || (offset, chunk.verify()))
             })
             .buffered(num_chunk_buffers)
             .filter_map(|result| {
                 // Filter unique chunks to be compressed
-                let (hash, offset, chunk) = result.expect("error while hashing chunk");
-                let (unique, chunk_index) = if unique_chunks.contains_key(&hash) {
-                    (false, *unique_chunks.get(&hash).unwrap())
+                let (offset, verified) = result.expect("error while hashing chunk");
+                let (unique, chunk_index) = if unique_chunks.contains_key(verified.hash()) {
+                    (false, *unique_chunks.get(verified.hash()).unwrap())
                 } else {
                     let chunk_index = unique_chunk_index;
-                    unique_chunks.insert(hash.clone(), chunk_index);
+                    unique_chunks.insert(verified.hash().clone(), chunk_index);
                     unique_chunk_index += 1;
                     (true, chunk_index)
                 };
                 // Store a pointer (as index) to unique chunk index for each chunk
                 chunk_order.push(chunk_index);
                 future::ready(if unique {
-                    Some((chunk_index, hash, offset, chunk))
+                    Some((chunk_index, offset, verified))
                 } else {
                     None
                 })
             })
-            .map(|(chunk_index, hash, offset, chunk)| {
+            .map(|(chunk_index, offset, verified)| {
                 tokio::task::spawn_blocking(move || {
                     // Compress each chunk
-                    let compressed_chunk = compression
-                        .compress(chunk.clone())
-                        .expect("failed to compress chunk");
-                    (chunk_index, hash, offset, chunk, compressed_chunk)
+                    let compressed = verified
+                        .chunk()
+                        .clone()
+                        .compress(compression)
+                        .expect("compress chunk");
+                    (chunk_index, offset, verified, compressed)
                 })
             })
             .buffered(num_chunk_buffers);
 
         while let Some(result) = chunk_stream.next().await {
-            let (index, hash, offset, chunk, compressed_chunk) =
-                result.context("Error while compressing")?;
-            let chunk_len = chunk.len();
-            let use_uncompressed_chunk = compressed_chunk.len() >= chunk_len;
+            let (index, offset, verified, compressed) = result.context("Error compressing")?;
+            let chunk_len = verified.len();
+            let use_uncompressed = compressed.len() >= chunk_len;
             debug!(
                 "Chunk {}, '{}', offset: {}, size: {}, {}",
                 index,
-                hash,
+                verified.hash(),
                 offset,
                 size_to_str(chunk_len),
-                if use_uncompressed_chunk {
+                if use_uncompressed {
                     "left uncompressed".to_owned()
                 } else {
-                    format!("compressed to: {}", size_to_str(compressed_chunk.len()))
+                    format!("compressed to: {}", size_to_str(compressed.len()))
                 },
             );
-            let use_data = if use_uncompressed_chunk {
-                chunk
+            let (hash, chunk) = verified.into_parts();
+            let use_data = if use_uncompressed {
+                chunk.data()
             } else {
-                compressed_chunk
+                compressed.data()
             };
 
-            // Store a chunk descriptor which refres to the compressed data
+            // Store a descriptor which refers to the compressed data
             archive_chunks.push(dict::ChunkDescriptor {
                 checksum: hash.slice()[0..hash_length].to_vec(),
                 source_size: chunk_len as u32,

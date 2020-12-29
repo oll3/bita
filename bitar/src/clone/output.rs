@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use std::io::SeekFrom;
 use tokio::io::{AsyncSeek, AsyncSeekExt, AsyncWrite, AsyncWriteExt};
 
-use crate::HashSum;
+use crate::VerifiedChunk;
 
 /// Output while cloning.
 #[async_trait]
@@ -11,9 +11,8 @@ pub trait CloneOutput {
     /// Write a single chunk to output at the given offsets.
     async fn write_chunk(
         &mut self,
-        hash: &HashSum,
         offsets: &[u64],
-        buf: &[u8],
+        verified: &VerifiedChunk,
     ) -> Result<(), Self::Error>;
 }
 
@@ -25,13 +24,12 @@ where
     type Error = std::io::Error;
     async fn write_chunk(
         &mut self,
-        _: &HashSum,
         offsets: &[u64],
-        buf: &[u8],
+        verified: &VerifiedChunk,
     ) -> Result<(), std::io::Error> {
         for &offset in offsets {
             self.seek(SeekFrom::Start(offset)).await?;
-            self.write_all(buf).await?;
+            self.write_all(verified.data()).await?;
         }
         Ok(())
     }
