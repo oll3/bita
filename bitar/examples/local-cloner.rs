@@ -1,5 +1,5 @@
-use bitar::{clone, clone::CloneOutput, Archive};
-use futures_util::StreamExt;
+use bitar::{chunker::Chunker, Archive, CloneOutput};
+use futures_util::{StreamExt, TryStreamExt};
 use tokio::fs::{File, OpenOptions};
 
 #[tokio::main]
@@ -9,41 +9,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let example_seed = "examples/resources/example.seed";
 
     // Open archive which source we want to clone
-    let mut archive_file = File::open(input_path).await?;
-    let archive = Archive::try_init(&mut archive_file).await?;
+    let mut archive = Archive::try_init(File::open(input_path).await?).await?;
 
-    // Create output to contain the clone oof the archive source
-    let mut output = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .open(output_name)
-        .await
-        .expect("open output");
-
-    // Get a list of all chunks needed to create the clone of the archive source
-    let mut chunks_to_clone = archive.build_source_index();
+    // Create output to contain the clone of the archive's source
+    let mut output = CloneOutput::new(
+        OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(output_name)
+            .await
+            .expect("open output"),
+        // Get a list of all chunks needed to create the clone
+        archive.build_source_index(),
+    );
 
     // Use as much data as possible from the example seed
-    let read_seed_bytes = clone::from_readable(
-        &clone::Options::default(),
-        &mut OpenOptions::new().read(true).open(example_seed).await?,
-        &archive,
-        &mut chunks_to_clone,
-        &mut output,
+    let mut read_seed_bytes = 0;
+    let mut chunk_stream = Chunker::new(
+        archive.chunker_config(),
+        OpenOptions::new().read(true).open(example_seed).await?,
     )
-    .await
-    .expect("clone from seed");
+    .map_ok(|(_offset, chunk)| chunk.verify());
+    while let Some(result) = chunk_stream.next().await {
+        let verified = result?;
+        read_seed_bytes += output.feed(&verified).await?;
+    }
 
     // Fetch the rest of the chunks from the archive
-    let mut chunk_stream = archive.chunk_stream(&chunks_to_clone, &mut archive_file);
+    let mut chunk_stream = archive.chunk_stream(output.chunks());
     let mut read_archive_bytes = 0;
     while let Some(result) = chunk_stream.next().await {
         let compressed = result?;
         read_archive_bytes += compressed.len();
         let unverified = compressed.decompress()?;
         let verified = unverified.verify()?;
-        let location = chunks_to_clone.remove(verified.hash()).unwrap();
-        output.write_chunk(location.offsets(), &verified).await?;
+        output.feed(&verified).await?;
     }
 
     println!(
