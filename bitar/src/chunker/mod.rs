@@ -65,20 +65,20 @@ where
 
 /// The chunker takes a readable source and scans it for chunk boundaries.
 /// The chunks found are emitted as a stream.
-pub enum Chunker<'a, T>
+pub enum Chunker<T>
 where
     T: AsyncRead + Unpin,
 {
-    BuzHash(InternalChunker<'a, T, BuzHash>),
-    RollSum(InternalChunker<'a, T, RollSum>),
-    FixedSize(FixedSizeChunker<'a, T>),
+    BuzHash(InternalChunker<T, BuzHash>),
+    RollSum(InternalChunker<T, RollSum>),
+    FixedSize(FixedSizeChunker<T>),
 }
 
-impl<'a, T> Chunker<'a, T>
+impl<T> Chunker<T>
 where
     T: AsyncRead + Unpin,
 {
-    pub fn new(config: &chunker::Config, source: &'a mut T) -> Self {
+    pub fn new(config: &chunker::Config, source: T) -> Self {
         match config {
             chunker::Config::BuzHash(hash_config) => {
                 Chunker::BuzHash(InternalChunker::<T, BuzHash>::new(hash_config, source))
@@ -93,7 +93,7 @@ where
     }
 }
 
-impl<T> Stream for Chunker<'_, T>
+impl<T> Stream for Chunker<T>
 where
     T: AsyncRead + Unpin,
 {
@@ -107,19 +107,19 @@ where
     }
 }
 
-pub struct FixedSizeChunker<'a, T> {
-    source: &'a mut T,
+pub struct FixedSizeChunker<T> {
+    source: T,
     chunk_size: usize,
     source_index: u64,
     chunk_start: u64,
     read_buf: BytesMut,
 }
 
-impl<'a, T> FixedSizeChunker<'a, T>
+impl<'a, T> FixedSizeChunker<T>
 where
     T: AsyncRead + Unpin,
 {
-    fn new(fixed_size: usize, source: &'a mut T) -> Self {
+    fn new(fixed_size: usize, source: T) -> Self {
         // Allow for chunk size less than buzhash window
         Self {
             chunk_size: fixed_size,
@@ -165,25 +165,25 @@ where
     }
 }
 
-pub struct InternalChunker<'a, T, H> {
+pub struct InternalChunker<T, H> {
     hasher: H,
     filter_mask: u32,
     min_chunk_size: usize,
     max_chunk_size: usize,
     read_buf: BytesMut,
-    source: &'a mut T,
+    source: T,
     buzhash_input_limit: usize,
     source_index: u64,
     buf_index: usize,
     chunk_start: u64,
 }
 
-impl<'a, T, H> InternalChunker<'a, T, H>
+impl<T, H> InternalChunker<T, H>
 where
     T: AsyncRead + Unpin,
     H: RollingHash,
 {
-    fn new(config: &chunker::FilterConfig, source: &'a mut T) -> Self {
+    fn new(config: &chunker::FilterConfig, source: T) -> Self {
         // Allow for chunk size less than buzhash window
         let buzhash_input_limit = if config.min_chunk_size >= config.window_size {
             config.min_chunk_size - config.window_size
@@ -281,7 +281,7 @@ where
     }
 }
 
-impl<'a, T, H> Stream for InternalChunker<'a, T, H>
+impl<T, H> Stream for InternalChunker<T, H>
 where
     T: AsyncRead + Unpin,
     H: RollingHash + Unpin,

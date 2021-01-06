@@ -76,7 +76,7 @@ where
 async fn clone_from_readable<I, C>(
     max_buffered_chunks: usize,
     config: &chunker::Config,
-    input: &mut I,
+    input: I,
     output: &mut CloneOutput<C>,
 ) -> Result<u64>
 where
@@ -257,7 +257,7 @@ where
         total_read_from_seed += bytes_to_output;
     }
     for seed_path in &opts.seed_files {
-        let mut file = File::open(seed_path)
+        let file = File::open(seed_path)
             .await
             .context(format!("Failed to open seed file {}", seed_path.display()))?;
         info!(
@@ -268,7 +268,7 @@ where
         let bytes_to_output = clone_from_readable(
             opts.num_chunk_buffers,
             archive.chunker_config(),
-            &mut file,
+            file,
             &mut output,
         )
         .await
