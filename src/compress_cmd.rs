@@ -5,8 +5,10 @@ use log::*;
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::PathBuf;
-use tokio::fs::{File, OpenOptions};
-use tokio::prelude::*;
+use tokio::{
+    fs::{File, OpenOptions},
+    io::{AsyncRead, AsyncWriteExt},
+};
 
 use crate::info_cmd;
 use crate::string_utils::*;

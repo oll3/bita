@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tokio::fs::File;
 use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncWrite},
+    io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, AsyncWrite},
     task::spawn_blocking,
 };
 use url::Url;

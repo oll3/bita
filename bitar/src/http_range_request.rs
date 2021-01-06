@@ -2,12 +2,12 @@ use bytes::Bytes;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use futures_core::stream::Stream;
-use futures_util::StreamExt;
+use futures_util::{ready, StreamExt};
 use reqwest::RequestBuilder;
 use std::future::Future;
 use std::time::Duration;
 
-use tokio::time::delay_for;
+use tokio::time::sleep;
 
 use crate::reader_remote::ReaderRemoteError;
 
@@ -70,7 +70,7 @@ impl Builder {
                     }
                 }
             }
-            delay_for(self.retry_delay).await;
+            sleep(self.retry_delay).await;
         }
     }
     fn poll_read_fail(
@@ -95,31 +95,25 @@ impl Builder {
                         .send();
                     self.state = RequestState::Request(Box::new(request));
                 }
-                RequestState::Request(request) => match Pin::new(&mut *request).poll(cx) {
-                    Poll::Ready(Ok(response)) => {
-                        self.state = RequestState::Stream(Box::new(response.bytes_stream()));
+                RequestState::Request(request) => match ready!(Pin::new(&mut *request).poll(cx)) {
+                    Ok(response) => {
+                        self.state = RequestState::Stream(Box::new(response.bytes_stream()))
                     }
-                    Poll::Ready(Err(err)) => {
-                        return Poll::Ready(Some(Err(ReaderRemoteError::from(err))))
-                    }
-                    Poll::Pending => return Poll::Pending,
+                    Err(err) => return Poll::Ready(Some(Err(ReaderRemoteError::from(err)))),
                 },
-                RequestState::Stream(stream) => match stream.poll_next_unpin(cx) {
-                    Poll::Ready(Some(Ok(item))) => {
+                RequestState::Stream(stream) => match ready!(stream.poll_next_unpin(cx)) {
+                    Some(Ok(item)) => {
                         self.offset += item.len() as u64;
                         self.size -= item.len() as u64;
                         return Poll::Ready(Some(Ok(item)));
                     }
-                    Poll::Ready(Some(Err(err))) => {
-                        return Poll::Ready(Some(Err(ReaderRemoteError::from(err))))
-                    }
-                    Poll::Ready(None) => return Poll::Ready(None),
-                    Poll::Pending => return Poll::Pending,
+                    Some(Err(err)) => return Poll::Ready(Some(Err(ReaderRemoteError::from(err)))),
+                    None => return Poll::Ready(None),
                 },
-                RequestState::Delay(delay) => match Pin::new(delay).poll(cx) {
-                    Poll::Ready(()) => self.state = RequestState::Init,
-                    Poll::Pending => return Poll::Pending,
-                },
+                RequestState::Delay(sleep) => {
+                    ready!(Pin::new(sleep).poll(cx));
+                    self.state = RequestState::Init;
+                }
             }
         }
     }
@@ -132,7 +126,7 @@ impl Builder {
                     } else {
                         log::warn!("request failed (retrying soon): {}", err);
                         self.retry_count -= 1;
-                        self.state = RequestState::Delay(delay_for(self.retry_delay));
+                        self.state = RequestState::Delay(Box::pin(sleep(self.retry_delay)));
                     }
                 }
                 result => return result,
@@ -145,7 +139,7 @@ enum RequestState {
     Init,
     Request(Box<dyn Future<Output = Result<reqwest::Response, reqwest::Error>> + Send + Unpin>),
     Stream(Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send + Unpin>),
-    Delay(tokio::time::Delay),
+    Delay(Pin<Box<tokio::time::Sleep>>),
 }
 
 impl<'a> Stream for Builder {

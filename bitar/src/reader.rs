@@ -2,9 +2,9 @@ use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
 use core::pin::Pin;
 use core::task::{Context, Poll};
-use futures_core::stream::Stream;
+use futures_core::{ready, stream::Stream};
 use std::io;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, ReadBuf};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReadAt {
@@ -84,34 +84,30 @@ where
             }
             match self.state {
                 State::Seek => {
-                    match Pin::new(&mut self.reader)
-                        .start_seek(cx, io::SeekFrom::Start(read_at.offset))
+                    match Pin::new(&mut self.reader).start_seek(io::SeekFrom::Start(read_at.offset))
                     {
-                        Poll::Ready(Ok(())) => self.state = State::PollSeek,
-                        Poll::Ready(Err(err)) => return Poll::Ready(Some(Err(err))),
-                        Poll::Pending => return Poll::Pending,
+                        Ok(()) => self.state = State::PollSeek,
+                        Err(err) => return Poll::Ready(Some(Err(err))),
                     }
                 }
-                State::PollSeek => match Pin::new(&mut self.reader).poll_complete(cx) {
-                    Poll::Ready(Ok(_rc)) => self.state = State::Read,
-                    Poll::Ready(Err(err)) => return Poll::Ready(Some(Err(err))),
-                    Poll::Pending => return Poll::Pending,
+                State::PollSeek => match ready!(Pin::new(&mut self.reader).poll_complete(cx)) {
+                    Ok(_rc) => self.state = State::Read,
+                    Err(err) => return Poll::Ready(Some(Err(err))),
                 },
                 State::Read => {
                     if self.buf.len() < read_at.size {
                         self.buf.resize(read_at.size, 0);
                     }
-                    match Pin::new(&mut self.reader).poll_read(cx, &mut self.buf[self.buf_offset..])
-                    {
-                        Poll::Ready(Ok(0)) => {
+                    let mut buf = ReadBuf::new(&mut self.buf[self.buf_offset..]);
+                    match ready!(Pin::new(&mut self.reader).poll_read(cx, &mut buf)) {
+                        Ok(()) if buf.filled().is_empty() => {
                             return Poll::Ready(Some(Err(io::Error::new(
                                 io::ErrorKind::UnexpectedEof,
                                 "archive ended unexpectedly",
                             ))));
                         }
-                        Poll::Ready(Ok(rc)) => self.buf_offset += rc,
-                        Poll::Ready(Err(err)) => return Poll::Ready(Some(Err(err))),
-                        Poll::Pending => return Poll::Pending,
+                        Ok(()) => self.buf_offset += buf.filled().len(),
+                        Err(err) => return Poll::Ready(Some(Err(err))),
                     }
                 }
             }

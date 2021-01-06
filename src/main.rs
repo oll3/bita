@@ -506,6 +506,6 @@ async fn parse_opts() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    let mut rt = tokio::runtime::Runtime::new()?;
+    let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async { parse_opts().await })
 }

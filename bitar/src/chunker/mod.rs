@@ -6,9 +6,9 @@ pub use config::{Config, FilterBits, FilterConfig};
 use bytes::BytesMut;
 use core::pin::Pin;
 use core::task::{Context, Poll};
-use futures_core::stream::Stream;
+use futures_core::{ready, stream::Stream};
 use std::io;
-use tokio::io::AsyncRead;
+use tokio::io::{AsyncRead, ReadBuf};
 
 use crate::{
     chunker,
@@ -41,13 +41,13 @@ where
     }
     while read_count < want {
         let offset = before_size + read_count;
-
-        let rc = match Pin::new(&mut source).poll_read(cx, &mut read_buf[offset..]) {
-            Poll::Ready(Ok(0)) => break, // EOF
-            Poll::Ready(Ok(rc)) => rc,
-            Poll::Ready(err) => {
+        let mut buf = ReadBuf::new(&mut read_buf[offset..]);
+        let rc = match Pin::new(&mut source).poll_read(cx, &mut buf) {
+            Poll::Ready(Ok(())) if buf.filled().is_empty() => break, // EOF
+            Poll::Ready(Ok(())) => buf.filled().len(),
+            Poll::Ready(Err(err)) => {
                 read_buf.resize(before_size + read_count, 0);
-                return Poll::Ready(err);
+                return Poll::Ready(Err(err));
             }
             Poll::Pending => {
                 read_buf.resize(before_size + read_count, 0);
@@ -139,15 +139,14 @@ where
                 return Poll::Ready(Some(Ok((chunk_start, chunk))));
             } else {
                 // Fill buffer from source
-                let rc = match refill_read_buf(
+                let rc = match ready!(refill_read_buf(
                     cx,
                     CHUNKER_BUF_SIZE,
                     &mut self.read_buf,
                     &mut self.source,
-                ) {
-                    Poll::Ready(Ok(n)) => n,
-                    Poll::Ready(Err(e)) => return Poll::Ready(Some(Err(e))),
-                    Poll::Pending => return Poll::Pending,
+                )) {
+                    Ok(n) => n,
+                    Err(e) => return Poll::Ready(Some(Err(e))),
                 };
                 if rc == 0 {
                     // EOF
@@ -209,8 +208,13 @@ where
         loop {
             if self.buf_index >= self.read_buf.len() {
                 // Fill buffer from source
-                match refill_read_buf(cx, CHUNKER_BUF_SIZE, &mut self.read_buf, &mut self.source) {
-                    Poll::Ready(Ok(n)) if n == 0 => {
+                match ready!(refill_read_buf(
+                    cx,
+                    CHUNKER_BUF_SIZE,
+                    &mut self.read_buf,
+                    &mut self.source
+                )) {
+                    Ok(n) if n == 0 => {
                         // EOF
                         if !self.read_buf.is_empty() {
                             let chunk = Chunk(self.read_buf.split().freeze());
@@ -221,8 +225,7 @@ where
                             return Poll::Ready(None);
                         }
                     }
-                    Poll::Ready(Err(e)) => return Poll::Ready(Some(Err(e))),
-                    Poll::Pending => return Poll::Pending,
+                    Err(e) => return Poll::Ready(Some(Err(e))),
                     _ => {}
                 };
                 while self.source_index < self.hasher.window_size() as u64
@@ -323,20 +326,23 @@ mod tests {
         fn poll_read(
             mut self: Pin<&mut Self>,
             _cx: &mut Context,
-            buf: &mut [u8],
-        ) -> Poll<Result<usize, std::io::Error>> {
+            buf: &mut ReadBuf,
+        ) -> Poll<Result<(), std::io::Error>> {
             let data_available = self.data.len() - self.offset;
             if data_available == 0 {
-                Poll::Ready(Ok(0))
+                Poll::Ready(Ok(()))
             } else if self.pending {
                 self.pending = false;
                 Poll::Pending
             } else {
-                let read = cmp::min(data_available, cmp::min(buf.len(), self.bytes_per_read));
-                buf[0..read].clone_from_slice(&self.data[self.offset..self.offset + read]);
+                let read = cmp::min(
+                    data_available,
+                    cmp::min(buf.initialized().len(), self.bytes_per_read),
+                );
+                buf.put_slice(&self.data[self.offset..self.offset + read]);
                 self.offset += read;
                 self.pending = true;
-                Poll::Ready(Ok(read))
+                Poll::Ready(Ok(()))
             }
         }
     }

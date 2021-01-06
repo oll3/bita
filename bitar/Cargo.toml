@@ -12,28 +12,28 @@ categories = ["compression", "filesystem"]
 
 
 [build-dependencies]
-prost-build = "0.6"
+prost-build = "0.7"
 
 [dependencies]
 blake2 = "0.9"
-prost = "0.6"
+prost = "0.7"
 log = "0.4"
 brotli = "3.3"
 futures-core = "0.3"
 futures-util = "0.3"
-tokio = "0.2"
-bytes = "0.5"
+tokio = "1.0"
+bytes = "1.0"
 rust-lzma = { version = "0.5", optional = true }
-zstd = { version = "0.5", optional = true }
+zstd = { version = "0.6", optional = true }
 async-trait = "0.1"
 
 [dev-dependencies]
 tempfile = "3.1"
-tokio = {version = "0.2", features = ["fs", "macros"] }
-hyper = "0.13"
+tokio = { version = "1.0", features = ["fs", "macros", "rt-multi-thread"] }
+hyper = { version = "0.14", features = ["server"] }
 
 [dependencies.reqwest]
-version = "0.10"
+version = "0.11"
 default-features = false
 features = ["stream"]
 
