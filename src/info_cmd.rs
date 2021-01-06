@@ -5,7 +5,7 @@ use tokio::fs::File;
 use crate::string_utils::*;
 use bitar::{chunker, Archive, Reader, ReaderRemote};
 
-pub async fn print_archive_reader<R>(reader: &mut R) -> Result<()>
+pub async fn print_archive_reader<R>(reader: R) -> Result<()>
 where
     R: Reader,
     R::Error: std::error::Error + Send + Sync + 'static,
@@ -47,7 +47,7 @@ pub fn print_chunker_config(config: &chunker::Config) {
     }
 }
 
-pub fn print_archive(archive: &Archive) {
+pub fn print_archive<R>(archive: &Archive<R>) {
     info!("Archive: ");
     info!("  Built with version: {}", archive.built_with_version());
     info!(
@@ -84,9 +84,8 @@ pub fn print_archive(archive: &Archive) {
 
 pub async fn info_cmd(input: String) -> Result<()> {
     if let Ok(url) = input.parse::<reqwest::Url>() {
-        print_archive_reader(&mut ReaderRemote::from_url(url)).await
+        print_archive_reader(ReaderRemote::from_url(url)).await
     } else {
-        let mut file = File::open(&input).await?;
-        print_archive_reader(&mut file).await
+        print_archive_reader(File::open(&input).await?).await
     }
 }

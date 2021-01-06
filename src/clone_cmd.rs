@@ -95,8 +95,7 @@ where
 
 async fn clone_from_archive<R, C>(
     max_buffered_chunks: usize,
-    archive: &Archive,
-    reader: &mut R,
+    archive: &mut Archive<R>,
     output: &mut CloneOutput<C>,
 ) -> Result<u64>
 where
@@ -106,7 +105,7 @@ where
 {
     let mut total_fetched = 0u64;
     let chunk_stream = archive
-        .chunk_stream(output.chunks(), reader)
+        .chunk_stream(output.chunks())
         .map(|r| {
             if let Ok(compressed) = &r {
                 total_fetched += compressed.len() as u64;
@@ -156,12 +155,12 @@ where
     Ok(index)
 }
 
-async fn clone_archive<R>(opts: Options, mut reader: R) -> Result<()>
+async fn clone_archive<R>(opts: Options, reader: R) -> Result<()>
 where
     R: Reader,
     R::Error: std::error::Error + Send + Sync + 'static,
 {
-    let archive = Archive::try_init(&mut reader).await.context(format!(
+    let mut archive = Archive::try_init(reader).await.context(format!(
         "Failed to read archive at {}",
         opts.input_archive.source()
     ))?;
@@ -290,7 +289,7 @@ where
     );
 
     let total_read_from_remote =
-        clone_from_archive(opts.num_chunk_buffers, &archive, &mut reader, &mut output)
+        clone_from_archive(opts.num_chunk_buffers, &mut archive, &mut output)
             .await
             .context(format!(
                 "Failed to clone from archive at {}",

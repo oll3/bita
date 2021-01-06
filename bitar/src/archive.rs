@@ -58,7 +58,8 @@ impl ChunkDescriptor {
 }
 
 /// A readable archive.
-pub struct Archive {
+pub struct Archive<R> {
+    reader: R,
     // Array with descriptor of all chunks in archive.
     archive_chunks: Vec<ChunkDescriptor>,
     // Array of indexes pointing into the archive_chunks.
@@ -76,7 +77,7 @@ pub struct Archive {
     chunk_hash_length: usize,
 }
 
-impl Archive {
+impl<R> Archive<R> {
     fn verify_pre_header<E>(pre_header: &[u8]) -> Result<(), ArchiveError<E>> {
         if pre_header.len() < header::ARCHIVE_MAGIC.len() {
             return Err(ArchiveError::invalid_archive("not an archive"));
@@ -91,7 +92,7 @@ impl Archive {
         Ok(())
     }
     /// Try to initialize an archive from a reader.
-    pub async fn try_init<R>(reader: &mut R) -> Result<Self, ArchiveError<R::Error>>
+    pub async fn try_init(mut reader: R) -> Result<Self, ArchiveError<R::Error>>
     where
         R: Reader,
     {
@@ -158,6 +159,7 @@ impl Archive {
             .map(|v| v as usize)
             .collect();
         Ok(Self {
+            reader,
             archive_chunks,
             header_checksum,
             header_size: header.len(),
@@ -250,16 +252,15 @@ impl Archive {
         ci
     }
     /// Get a stream of chunks from the archive.
-    pub fn chunk_stream<'a, R>(
-        &'a self,
+    pub fn chunk_stream<'a>(
+        &'a mut self,
         chunks: &ChunkIndex,
-        reader: &'a mut R,
     ) -> impl Stream<Item = Result<CompressedArchiveChunk, R::Error>> + Unpin + Sized + 'a
     where
         R: Reader + 'a,
     {
         let descriptors: Vec<&ChunkDescriptor> = self
-            .chunk_descriptors()
+            .archive_chunks
             .iter()
             .filter(|cd| chunks.contains(&cd.checksum))
             .collect();
@@ -267,7 +268,8 @@ impl Archive {
             .iter()
             .map(|cd| ReadAt::new(cd.archive_offset, cd.archive_size))
             .collect();
-        reader
+        let chunk_compression = self.chunk_compression();
+        self.reader
             .read_chunks(read_at)
             .enumerate()
             .map(move |(index, result)| {
@@ -278,7 +280,7 @@ impl Archive {
                             compression: if source_size == chunk.len() {
                                 Compression::None
                             } else {
-                                self.chunk_compression()
+                                chunk_compression
                             },
                             data: chunk,
                             source_size,
