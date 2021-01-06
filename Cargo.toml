@@ -22,7 +22,7 @@ atty = "0.2.14"
 log = "0.4.11"
 fern = "0.6.0"
 chrono = "0.4.19"
-futures-util = "0.3.8"
+futures-util = { version = "0.3.9", default-features = false, features = ["std"] }
 tokio = { version = "1.0.1", features = ["fs", "io-std", "macros", "time", "rt-multi-thread"] }
 bitar = { version = "0.7.1", path = "bitar" }
 url = "2.2.0"

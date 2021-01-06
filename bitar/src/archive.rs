@@ -1,6 +1,5 @@
 use blake2::{Blake2b, Digest};
-use futures_core::stream::Stream;
-use futures_util::StreamExt;
+use futures_util::{stream::Stream, StreamExt};
 use std::fmt;
 
 use crate::{

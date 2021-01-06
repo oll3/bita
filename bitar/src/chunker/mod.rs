@@ -6,7 +6,7 @@ pub use config::{Config, FilterBits, FilterConfig};
 use bytes::BytesMut;
 use core::pin::Pin;
 use core::task::{Context, Poll};
-use futures_core::{ready, stream::Stream};
+use futures_util::{ready, stream::Stream};
 use std::io;
 use tokio::io::{AsyncRead, ReadBuf};
 

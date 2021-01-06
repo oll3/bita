@@ -1,8 +1,7 @@
 use bytes::Bytes;
 use core::pin::Pin;
 use core::task::{Context, Poll};
-use futures_core::stream::Stream;
-use futures_util::{ready, StreamExt};
+use futures_util::{ready, stream::Stream, StreamExt};
 use reqwest::RequestBuilder;
 use std::future::Future;
 use std::time::Duration;
