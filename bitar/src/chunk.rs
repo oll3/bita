@@ -35,6 +35,7 @@ impl Chunk {
     pub fn verify(self) -> VerifiedChunk {
         VerifiedChunk::from(self)
     }
+    #[cfg(feature = "compress")]
     /// Create a compressed chunk.
     #[inline]
     pub fn compress(self, compression: Compression) -> Result<CompressedChunk, CompressionError> {
@@ -104,6 +105,7 @@ pub struct CompressedChunk {
 
 impl CompressedChunk {
     /// Create a compressed chunk.
+    #[cfg(feature = "compress")]
     pub fn try_compress(
         compression: Compression,
         chunk: Chunk,

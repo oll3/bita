@@ -1,7 +1,3 @@
-use brotli::enc::backward_references::BrotliEncoderParams;
-use bytes::Bytes;
-use std::io::Write;
-
 use crate::{
     chunk_dictionary::{chunk_compression::CompressionType, ChunkCompression},
     Chunk, CompressedChunk,
@@ -78,7 +74,12 @@ impl From<Compression> for ChunkCompression {
 
 impl Compression {
     /// Compress a block of data with set compression.
+    #[cfg(feature = "compress")]
     pub(crate) fn compress(self, chunk: Chunk) -> Result<CompressedChunk, CompressionError> {
+        use brotli::enc::backward_references::BrotliEncoderParams;
+        use bytes::Bytes;
+        use std::io::Write;
+
         let source_size = chunk.len();
         let result = match self {
             #[cfg(feature = "lzma-compression")]
@@ -143,7 +144,7 @@ impl Compression {
             Compression::Brotli(_) => {
                 let mut output = Vec::with_capacity(compressed.source_size);
                 let mut input_slice: &[u8] = compressed.data();
-                brotli::BrotliDecompress(&mut input_slice, &mut output)?;
+                brotli_decompressor::BrotliDecompress(&mut input_slice, &mut output)?;
                 Ok(Chunk::from(output))
             }
             Compression::None => {

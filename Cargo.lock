@@ -91,6 +91,7 @@ dependencies = [
  "async-trait",
  "blake2",
  "brotli",
+ "brotli-decompressor",
  "bytes",
  "futures-util",
  "hyper",

@@ -18,7 +18,8 @@ prost-build = "0.7"
 blake2 = "0.9"
 prost = "0.7"
 log = "0.4"
-brotli = "3.3"
+brotli-decompressor = "2.3"
+brotli = { version = "3.3", default-features = false, features = ["std", "disable-timer"], optional = true }
 futures-util = { version = "0.3", default-features = false }
 tokio = "1.0"
 bytes = "1.0"
@@ -41,3 +42,4 @@ default-tls = ["reqwest/default-tls"]
 rustls-tls = ["reqwest/rustls-tls"]
 lzma-compression = ["rust-lzma"]
 zstd-compression = ["zstd"]
+compress = ["brotli"]
