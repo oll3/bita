@@ -95,7 +95,7 @@ where
                     Err(err) => return Poll::Ready(Some(Err(err))),
                 },
                 State::Read => {
-                    if self.buf.len() < read_at.size {
+                    if self.buf.len() != read_at.size {
                         self.buf.resize(read_at.size, 0);
                     }
                     let mut buf = ReadBuf::new(&mut self.buf[self.buf_offset..]);
