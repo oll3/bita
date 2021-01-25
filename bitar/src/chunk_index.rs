@@ -177,8 +177,7 @@ impl ChunkIndex {
         visited: &mut HashSet<&'a HashSum>,
         ops: &mut Vec<ReorderOp<'a>>,
     ) {
-        let mut stack: Vec<(MoveChunk, Option<ReorderOp>)> = Vec::new();
-        stack.push((root_chunk, None));
+        let mut stack: Vec<(MoveChunk, Option<ReorderOp>)> = vec![(root_chunk, None)];
         while let Some((chunk, op)) = stack.last_mut() {
             if !visited.contains(chunk.hash) {
                 visited.insert(chunk.hash);

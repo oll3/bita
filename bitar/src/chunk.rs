@@ -110,7 +110,7 @@ impl CompressedChunk {
         compression: Compression,
         chunk: Chunk,
     ) -> Result<CompressedChunk, CompressionError> {
-        Ok(compression.compress(chunk)?)
+        compression.compress(chunk)
     }
     /// Chunk data.
     #[inline]
@@ -124,7 +124,7 @@ impl CompressedChunk {
     }
     /// Decompress the chunk.
     pub fn decompress(self) -> Result<Chunk, CompressionError> {
-        Ok(Compression::decompress(self)?)
+        Compression::decompress(self)
     }
     /// Compression used for chunk.
     #[inline]
