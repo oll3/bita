@@ -5,7 +5,7 @@ use crate::{
 
 #[derive(Debug)]
 pub enum CompressionError {
-    IO(std::io::Error),
+    Io(std::io::Error),
     #[cfg(feature = "lzma-compression")]
     LZMA(lzma::LzmaError),
 }
@@ -13,7 +13,7 @@ impl std::error::Error for CompressionError {}
 impl std::fmt::Display for CompressionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::IO(err) => write!(f, "i/o error: {}", err),
+            Self::Io(err) => write!(f, "i/o error: {}", err),
             #[cfg(feature = "lzma-compression")]
             Self::LZMA(err) => write!(f, "LZMA error: {}", err),
         }
@@ -21,7 +21,7 @@ impl std::fmt::Display for CompressionError {
 }
 impl From<std::io::Error> for CompressionError {
     fn from(e: std::io::Error) -> Self {
-        Self::IO(e)
+        Self::Io(e)
     }
 }
 #[cfg(feature = "lzma-compression")]

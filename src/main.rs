@@ -427,11 +427,9 @@ async fn parse_opts() -> Result<()> {
     };
     if let Some(matches) = matches.subcommand_matches("compress") {
         let output = Path::new(matches.value_of("OUTPUT").unwrap());
-        let input = if let Some(input) = matches.value_of("INPUT") {
-            Some(Path::new(input).to_path_buf())
-        } else {
-            None
-        };
+        let input = matches
+            .value_of("INPUT")
+            .map(|input| Path::new(input).to_path_buf());
         let temp_file = Path::with_extension(output, ".tmp");
         let hash_length = matches.value_of("hash-length").unwrap_or("64");
         let chunker_config = parse_chunker_config(&matches)?;

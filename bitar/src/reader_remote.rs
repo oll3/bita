@@ -125,7 +125,7 @@ where
                     .try_clone()
                     .ok_or(ReaderRemoteError::RequestNotClonable)?;
 
-                self.num_adjacent_reads = Self::adjacent_reads(&chunks[..]);
+                self.num_adjacent_reads = Self::adjacent_reads(chunks);
                 let last_adjacent = &chunks[self.num_adjacent_reads - 1];
                 let total_size = last_adjacent.end_offset() - next.offset;
                 self.chunk_buf.clear();
@@ -318,7 +318,7 @@ mod tests {
         let read = reader.read_at(0, 10);
         tokio::select! {
             _ = server => panic!("server ended"),
-            data = read => match data.unwrap_err() { ReaderRemoteError::UnexpectedEnd => {} err=> panic!(err) },
+            data = read => match data.unwrap_err() { ReaderRemoteError::UnexpectedEnd => {} err=> panic!("{}", err) },
         };
     }
     #[tokio::test]

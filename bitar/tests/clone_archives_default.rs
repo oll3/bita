@@ -9,19 +9,19 @@ use common::*;
 #[cfg(not(feature = "lzma-compression"))]
 #[tokio::test]
 async fn clone_local_v0_1_1_lzma_not_supported() {
-    match Archive::try_init(File::open(ARCHIVE_0_1_1_LZMA).await.unwrap()).await {
-        Err(bitar::ArchiveError::InvalidArchive(_)) => (),
-        result => panic!(result),
-    }
+    assert!(matches!(
+        Archive::try_init(File::open(ARCHIVE_0_1_1_LZMA).await.unwrap()).await,
+        Err(bitar::ArchiveError::InvalidArchive(_))
+    ))
 }
 
 #[cfg(not(feature = "zstd-compression"))]
 #[tokio::test]
 async fn clone_local_v0_1_1_zstd_not_supported() {
-    match Archive::try_init(File::open(ARCHIVE_0_1_1_ZSTD).await.unwrap()).await {
-        Err(bitar::ArchiveError::InvalidArchive(_)) => (),
-        result => panic!(result),
-    }
+    assert!(matches!(
+        Archive::try_init(File::open(ARCHIVE_0_1_1_ZSTD).await.unwrap()).await,
+        Err(bitar::ArchiveError::InvalidArchive(_))
+    ))
 }
 
 #[tokio::test]
@@ -46,10 +46,10 @@ async fn clone_remote_v0_7_1_brotli() {
 
 #[tokio::test]
 async fn clone_local_v0_7_1_corrupt_header() {
-    match Archive::try_init(File::open(ARCHIVE_0_7_1_CORRUPT_HEADER).await.unwrap()).await {
-        Err(bitar::ArchiveError::InvalidArchive(_)) => (),
-        result => panic!(result),
-    }
+    assert!(matches!(
+        Archive::try_init(File::open(ARCHIVE_0_7_1_CORRUPT_HEADER).await.unwrap()).await,
+        Err(bitar::ArchiveError::InvalidArchive(_))
+    ));
 }
 
 #[tokio::test]
