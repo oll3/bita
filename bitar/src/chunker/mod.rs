@@ -18,51 +18,6 @@ use crate::{
 
 const CHUNKER_BUF_SIZE: usize = 1024 * 1024;
 
-fn refill_read_buf<T>(
-    cx: &mut Context,
-    want: usize,
-    read_buf: &mut BytesMut,
-    mut source: &mut T,
-) -> Poll<Result<usize, io::Error>>
-where
-    T: AsyncRead + Unpin,
-{
-    let mut read_count = 0;
-    let before_size = read_buf.len();
-    {
-        // Use set_len() here instead of resize as we don't care for zeroing the content of buf.
-        let new_size = before_size + want;
-        if read_buf.capacity() < new_size {
-            read_buf.reserve(want);
-        }
-        unsafe {
-            read_buf.set_len(new_size);
-        }
-    }
-    while read_count < want {
-        let offset = before_size + read_count;
-        let mut buf = ReadBuf::new(&mut read_buf[offset..]);
-        let rc = match Pin::new(&mut source).poll_read(cx, &mut buf) {
-            Poll::Ready(Ok(())) if buf.filled().is_empty() => break, // EOF
-            Poll::Ready(Ok(())) => buf.filled().len(),
-            Poll::Ready(Err(err)) => {
-                read_buf.resize(before_size + read_count, 0);
-                return Poll::Ready(Err(err));
-            }
-            Poll::Pending => {
-                read_buf.resize(before_size + read_count, 0);
-                if read_count > 0 {
-                    return Poll::Ready(Ok(read_count));
-                }
-                return Poll::Pending;
-            }
-        };
-        read_count += rc;
-    }
-    read_buf.resize(before_size + read_count, 0);
-    Poll::Ready(Ok(read_count))
-}
-
 /// The chunker takes a readable source and scans it for chunk boundaries.
 /// The chunks found are emitted as a stream.
 pub enum Chunker<T>
@@ -97,7 +52,7 @@ impl<T> Stream for Chunker<T>
 where
     T: AsyncRead + Unpin,
 {
-    type Item = Result<(u64, Chunk), io::Error>;
+    type Item = io::Result<(u64, Chunk)>;
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         match *self {
             Chunker::BuzHash(ref mut c) => c.poll_chunk(cx),
@@ -129,8 +84,7 @@ where
             source_index: 0,
         }
     }
-    #[allow(clippy::type_complexity)]
-    fn poll_chunk(&mut self, cx: &mut Context) -> Poll<Option<Result<(u64, Chunk), io::Error>>> {
+    fn poll_chunk(&mut self, cx: &mut Context) -> Poll<Option<io::Result<(u64, Chunk)>>> {
         loop {
             if self.read_buf.len() >= self.chunk_size {
                 let chunk_start = self.chunk_start;
@@ -171,7 +125,7 @@ pub struct InternalChunker<T, H> {
     max_chunk_size: usize,
     read_buf: BytesMut,
     source: T,
-    buzhash_input_limit: usize,
+    hash_input_limit: usize,
     source_index: u64,
     buf_index: usize,
     chunk_start: u64,
@@ -184,7 +138,7 @@ where
 {
     fn new(config: &chunker::FilterConfig, source: T) -> Self {
         // Allow for chunk size less than buzhash window
-        let buzhash_input_limit = if config.min_chunk_size >= config.window_size {
+        let hash_input_limit = if config.min_chunk_size >= config.window_size {
             config.min_chunk_size - config.window_size
         } else {
             0
@@ -196,15 +150,14 @@ where
             hasher: RollingHash::new(config.window_size),
             read_buf: BytesMut::with_capacity(config.max_chunk_size + CHUNKER_BUF_SIZE),
             source,
-            buzhash_input_limit,
+            hash_input_limit,
             source_index: 0,
             buf_index: 0,
             chunk_start: 0,
         }
     }
 
-    #[allow(clippy::type_complexity)]
-    fn poll_chunk(&mut self, cx: &mut Context) -> Poll<Option<Result<(u64, Chunk), io::Error>>> {
+    fn poll_chunk(&mut self, cx: &mut Context) -> Poll<Option<io::Result<(u64, Chunk)>>> {
         loop {
             if self.buf_index >= self.read_buf.len() {
                 // Fill buffer from source
@@ -237,43 +190,11 @@ where
                     self.source_index += 1;
                 }
             }
-            let start_buf_index = self.buf_index;
-            if self.buzhash_input_limit > 0 && self.buf_index < self.buzhash_input_limit {
-                // Skip past the minimum chunk size to minimize the number of hash inputs
-                self.buf_index = std::cmp::min(self.buzhash_input_limit - 1, self.read_buf.len());
-            }
-            if self.min_chunk_size > 0 && self.buf_index < self.min_chunk_size {
-                // Hash the last part (rolling hash window size bytes) of the minimal possible chunk.
-                // There is no need to check the hash sum here since we're still below the minimal
-                // chunk size. Still we need the bytes in the hash window to get correct sum when
-                // reaching above the minimal chunk size.
-                let hasher = &mut self.hasher;
-                let buf_index = &mut self.buf_index;
-                self.read_buf[*buf_index..]
-                    .iter()
-                    .take(self.min_chunk_size - *buf_index - 1)
-                    .for_each(|val| {
-                        *buf_index += 1;
-                        hasher.input(*val);
-                    });
-            }
-            // Scan until end of buffer, chunk boundary (hash sum match) or max chunk size reached
-            let hasher = &mut self.hasher;
-            let buf_index = &mut self.buf_index;
-            let filter_mask = self.filter_mask;
-            let got_chunk = self.read_buf[*buf_index..]
-                .iter()
-                .take(self.max_chunk_size - *buf_index)
-                .map(|&val| {
-                    *buf_index += 1;
-                    hasher.input(val);
-                    hasher.sum()
-                })
-                .any(|sum| sum | filter_mask == sum)
-                || self.buf_index >= self.max_chunk_size;
-
-            self.source_index += (self.buf_index - start_buf_index) as u64;
-            if got_chunk {
+            let start_index = self.buf_index;
+            self.skip_min_chunk();
+            let found_boundary = self.scan_for_boundary();
+            self.source_index += (self.buf_index - start_index) as u64;
+            if found_boundary {
                 let chunk = Chunk(self.read_buf.split_to(self.buf_index).freeze());
                 let chunk_start = self.chunk_start;
                 self.buf_index = 0;
@@ -282,6 +203,41 @@ where
             }
         }
     }
+    fn skip_min_chunk(&mut self) {
+        if self.hash_input_limit > 0 && self.buf_index < self.hash_input_limit {
+            // Skip past the minimum chunk size to minimize the number of hash inputs
+            self.buf_index = std::cmp::min(self.hash_input_limit - 1, self.read_buf.len());
+        }
+        if self.min_chunk_size > 0 && self.buf_index < self.min_chunk_size {
+            // Hash the last part (rolling hash window size bytes) of the minimal possible chunk.
+            // There is no need to check the hash sum here since we're still below the minimal
+            // chunk size. Still we need the bytes in the hash window to get correct sum when
+            // reaching above the minimal chunk size.
+            let hasher = &mut self.hasher;
+            let input_end = std::cmp::min(self.min_chunk_size - 1, self.read_buf.len());
+            self.read_buf[self.buf_index..input_end]
+                .iter()
+                .for_each(|&val| hasher.input(val));
+            self.buf_index = input_end;
+        }
+    }
+    // Scan until end of buffer, chunk boundary (hash sum match) or max chunk size reached
+    fn scan_for_boundary(&mut self) -> bool {
+        let hasher = &mut self.hasher;
+        let filter_mask = self.filter_mask;
+        let min_bytes = std::cmp::min(self.max_chunk_size, self.read_buf.len());
+        let mut end_index = self.buf_index;
+        let found_boundary = self.read_buf[self.buf_index..min_bytes]
+            .iter()
+            .map(|&val| {
+                end_index += 1;
+                hasher.input(val);
+                hasher.sum()
+            })
+            .any(|sum| sum | filter_mask == sum);
+        self.buf_index = end_index;
+        found_boundary || self.buf_index >= self.max_chunk_size
+    }
 }
 
 impl<T, H> Stream for InternalChunker<T, H>
@@ -289,10 +245,55 @@ where
     T: AsyncRead + Unpin,
     H: RollingHash + Unpin,
 {
-    type Item = Result<(u64, Chunk), io::Error>;
+    type Item = io::Result<(u64, Chunk)>;
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         self.poll_chunk(cx)
     }
+}
+
+fn refill_read_buf<T>(
+    cx: &mut Context,
+    want: usize,
+    read_buf: &mut BytesMut,
+    mut source: &mut T,
+) -> Poll<io::Result<usize>>
+where
+    T: AsyncRead + Unpin,
+{
+    let mut read_count = 0;
+    let before_size = read_buf.len();
+    {
+        // Use set_len() here instead of resize as we don't care for zeroing the content of buf.
+        let new_size = before_size + want;
+        if read_buf.capacity() < new_size {
+            read_buf.reserve(want);
+        }
+        unsafe {
+            read_buf.set_len(new_size);
+        }
+    }
+    while read_count < want {
+        let offset = before_size + read_count;
+        let mut buf = ReadBuf::new(&mut read_buf[offset..]);
+        let rc = match Pin::new(&mut source).poll_read(cx, &mut buf) {
+            Poll::Ready(Ok(())) if buf.filled().is_empty() => break, // EOF
+            Poll::Ready(Ok(())) => buf.filled().len(),
+            Poll::Ready(Err(err)) => {
+                read_buf.resize(before_size + read_count, 0);
+                return Poll::Ready(Err(err));
+            }
+            Poll::Pending => {
+                read_buf.resize(before_size + read_count, 0);
+                if read_count > 0 {
+                    return Poll::Ready(Ok(read_count));
+                }
+                return Poll::Pending;
+            }
+        };
+        read_count += rc;
+    }
+    read_buf.resize(before_size + read_count, 0);
+    Poll::Ready(Ok(read_count))
 }
 
 #[cfg(test)]
@@ -327,7 +328,7 @@ mod tests {
             mut self: Pin<&mut Self>,
             _cx: &mut Context,
             buf: &mut ReadBuf,
-        ) -> Poll<Result<(), std::io::Error>> {
+        ) -> Poll<io::Result<()>> {
             let data_available = self.data.len() - self.offset;
             if data_available == 0 {
                 Poll::Ready(Ok(()))
