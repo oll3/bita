@@ -48,9 +48,6 @@ impl RollSum {
 }
 
 impl RollingHash for RollSum {
-    fn new(window_size: usize) -> Self {
-        Self::new(window_size)
-    }
     fn window_size(&self) -> usize {
         self.window.len()
     }

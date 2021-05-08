@@ -16,8 +16,7 @@ use url::Url;
 use crate::info_cmd;
 use crate::string_utils::*;
 use bitar::{
-    chunker, chunker::Chunker, Archive, ChunkIndex, CloneOutput, HashSum, Reader, ReaderRemote,
-    VerifiedChunk,
+    chunker, Archive, ChunkIndex, CloneOutput, HashSum, Reader, ReaderRemote, VerifiedChunk,
 };
 
 async fn file_size(file: &mut File) -> Result<u64, std::io::Error> {
@@ -83,7 +82,8 @@ where
     I: AsyncRead + Unpin,
     C: AsyncWrite + AsyncSeek + Unpin + Send,
 {
-    let chunk_stream = Chunker::new(config, input)
+    let chunk_stream = config
+        .new_chunker(input)
         .map(|r| spawn_blocking(|| r.map(|(_, chunk)| chunk.verify())))
         .buffered(max_buffered_chunks)
         .map(|r| match r {
@@ -142,8 +142,8 @@ async fn chunk_index_from_readable<R>(
 where
     R: AsyncRead + Unpin,
 {
-    let chunker = Chunker::new(config, readable);
-    let mut chunk_stream = chunker
+    let mut chunk_stream = config
+        .new_chunker(readable)
         .map(|r| spawn_blocking(|| r.map(|(offset, chunk)| (offset, chunk.verify()))))
         .buffered(max_buffered_chunks);
     let mut index = ChunkIndex::new_empty();

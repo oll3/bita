@@ -1,4 +1,4 @@
-use bitar::{chunker::Chunker, Archive, ChunkIndex, CloneOutput};
+use bitar::{Archive, ChunkIndex, CloneOutput};
 use futures_util::{StreamExt, TryStreamExt};
 use tokio::fs::{File, OpenOptions};
 
@@ -20,13 +20,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("open output");
 
     // Scan the output file for chunks and build a chunk index
-    let chunker = Chunker::new(archive.chunker_config(), &mut output_file);
-    let mut chunk_stream = chunker.map_ok(|(offset, chunk)| (offset, chunk.verify()));
     let mut output_index = ChunkIndex::new_empty();
-    while let Some(r) = chunk_stream.next().await {
-        let (offset, verified) = r?;
-        let (hash, chunk) = verified.into_parts();
-        output_index.add_chunk(hash, chunk.len(), &[offset]);
+    {
+        let chunker = archive.chunker_config().new_chunker(&mut output_file);
+        let mut chunk_stream = chunker.map_ok(|(offset, chunk)| (offset, chunk.verify()));
+        while let Some(r) = chunk_stream.next().await {
+            let (offset, verified) = r?;
+            let (hash, chunk) = verified.into_parts();
+            output_index.add_chunk(hash, chunk.len(), &[offset]);
+        }
     }
 
     // Create output to contain the clone of the archive's source

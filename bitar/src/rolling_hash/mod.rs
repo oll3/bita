@@ -6,7 +6,6 @@ pub use rollsum::RollSum;
 
 /// Rolling hash.
 pub trait RollingHash {
-    fn new(window_size: usize) -> Self;
     fn init(&mut self, value: u8) {
         self.input(value);
     }

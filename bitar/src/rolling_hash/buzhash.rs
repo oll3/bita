@@ -68,10 +68,6 @@ impl BuzHash {
     fn generate_seeded_table(seed: u32) -> Vec<u32> {
         BUZHASH_TABLE.iter().map(|x| x ^ seed).collect()
     }
-    /// Hash is valid when window is full.
-    pub fn valid(&self) -> bool {
-        self.window_full
-    }
     /// Should be used for processing input until hash is valid.
     pub fn init(&mut self, in_val: u8) {
         if !self.window_full {
@@ -117,11 +113,11 @@ impl BuzHash {
 }
 
 impl RollingHash for BuzHash {
-    fn new(window_size: usize) -> Self {
-        Self::new(window_size)
-    }
     fn window_size(&self) -> usize {
         self.window
+    }
+    fn init(&mut self, value: u8) {
+        self.init(value)
     }
     fn input(&mut self, value: u8) {
         self.input(value)
@@ -170,12 +166,12 @@ mod tests {
             [1, 2, 3, 4, 5]
                 .iter()
                 .filter_map(|&v| {
-                    if !h.valid() {
+                    if !h.window_full {
                         h.init(v);
                     } else {
                         h.input(v);
                     }
-                    if h.valid() {
+                    if h.window_full {
                         return Some(h.sum());
                     }
                     None
@@ -192,12 +188,12 @@ mod tests {
             [10, 20, 30, 40, 50, 60, 70, 80, 90, 1, 2, 3, 4, 5]
                 .iter()
                 .filter_map(|&v| {
-                    if !h.valid() {
+                    if !h.window_full {
                         h.init(v);
                     } else {
                         h.input(v);
                     }
-                    if h.valid() {
+                    if h.window_full {
                         return Some(h.sum());
                     }
                     None

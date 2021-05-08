@@ -1,257 +1,36 @@
 //! Chunker related functions and types.
 mod config;
+mod fixed_size;
+mod rolling_hash;
 
 pub use config::{Config, FilterBits, FilterConfig};
+pub use fixed_size::FixedSizeChunker;
+pub use rolling_hash::RollingHashChunker;
 
 use bytes::BytesMut;
 use core::pin::Pin;
 use core::task::{Context, Poll};
-use futures_util::{ready, stream::Stream};
+use futures_util::stream::Stream;
 use std::io;
 use tokio::io::{AsyncRead, ReadBuf};
 
-use crate::{
-    chunker,
-    rolling_hash::{BuzHash, RollSum, RollingHash},
-    Chunk,
-};
+use crate::Chunk;
 
 const CHUNKER_BUF_SIZE: usize = 1024 * 1024;
 
-/// The chunker takes a readable source and scans it for chunk boundaries.
-/// The chunks found are emitted as a stream.
-pub enum Chunker<T>
-where
-    T: AsyncRead + Unpin,
-{
-    BuzHash(InternalChunker<T, BuzHash>),
-    RollSum(InternalChunker<T, RollSum>),
-    FixedSize(FixedSizeChunker<T>),
+/// A chunker scans a readable source for chunks and emits them as a stream.
+pub trait Chunker: Unpin {
+    fn poll_chunk(&mut self, cx: &mut Context) -> Poll<Option<io::Result<(u64, Chunk)>>>;
 }
 
-impl<T> Chunker<T>
-where
-    T: AsyncRead + Unpin,
-{
-    pub fn new(config: &chunker::Config, source: T) -> Self {
-        match config {
-            chunker::Config::BuzHash(hash_config) => {
-                Chunker::BuzHash(InternalChunker::<T, BuzHash>::new(hash_config, source))
-            }
-            chunker::Config::RollSum(hash_config) => {
-                Chunker::RollSum(InternalChunker::<T, RollSum>::new(hash_config, source))
-            }
-            chunker::Config::FixedSize(fixed_size) => {
-                Chunker::FixedSize(FixedSizeChunker::<T>::new(*fixed_size, source))
-            }
-        }
-    }
-}
-
-impl<T> Stream for Chunker<T>
-where
-    T: AsyncRead + Unpin,
-{
-    type Item = io::Result<(u64, Chunk)>;
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        match *self {
-            Chunker::BuzHash(ref mut c) => c.poll_chunk(cx),
-            Chunker::RollSum(ref mut c) => c.poll_chunk(cx),
-            Chunker::FixedSize(ref mut c) => c.poll_chunk(cx),
-        }
-    }
-}
-
-pub struct FixedSizeChunker<T> {
-    source: T,
-    chunk_size: usize,
-    source_index: u64,
-    chunk_start: u64,
-    read_buf: BytesMut,
-}
-
-impl<'a, T> FixedSizeChunker<T>
-where
-    T: AsyncRead + Unpin,
-{
-    fn new(fixed_size: usize, source: T) -> Self {
-        // Allow for chunk size less than buzhash window
-        Self {
-            chunk_size: fixed_size,
-            read_buf: BytesMut::with_capacity(fixed_size + CHUNKER_BUF_SIZE),
-            source,
-            chunk_start: 0,
-            source_index: 0,
-        }
-    }
-    fn poll_chunk(&mut self, cx: &mut Context) -> Poll<Option<io::Result<(u64, Chunk)>>> {
-        loop {
-            if self.read_buf.len() >= self.chunk_size {
-                let chunk_start = self.chunk_start;
-                let chunk = Chunk(self.read_buf.split_to(self.chunk_size).freeze());
-                self.chunk_start = self.source_index;
-                return Poll::Ready(Some(Ok((chunk_start, chunk))));
-            } else {
-                // Fill buffer from source
-                let rc = match ready!(refill_read_buf(
-                    cx,
-                    CHUNKER_BUF_SIZE,
-                    &mut self.read_buf,
-                    &mut self.source,
-                )) {
-                    Ok(n) => n,
-                    Err(e) => return Poll::Ready(Some(Err(e))),
-                };
-                if rc == 0 {
-                    // EOF
-                    if !self.read_buf.is_empty() {
-                        let chunk_start = self.chunk_start;
-                        let chunk = Chunk(self.read_buf.split().freeze());
-                        self.chunk_start = self.source_index;
-                        return Poll::Ready(Some(Ok((chunk_start, chunk))));
-                    } else {
-                        return Poll::Ready(None);
-                    }
-                }
-            }
-        }
-    }
-}
-
-pub struct InternalChunker<T, H> {
-    hasher: H,
-    filter_mask: u32,
-    min_chunk_size: usize,
-    max_chunk_size: usize,
-    read_buf: BytesMut,
-    source: T,
-    hash_input_limit: usize,
-    source_index: u64,
-    buf_index: usize,
-    chunk_start: u64,
-}
-
-impl<T, H> InternalChunker<T, H>
-where
-    T: AsyncRead + Unpin,
-    H: RollingHash,
-{
-    fn new(config: &chunker::FilterConfig, source: T) -> Self {
-        // Allow for chunk size less than buzhash window
-        let hash_input_limit = if config.min_chunk_size >= config.window_size {
-            config.min_chunk_size - config.window_size
-        } else {
-            0
-        };
-        Self {
-            filter_mask: config.filter_bits.mask(),
-            min_chunk_size: config.min_chunk_size,
-            max_chunk_size: config.max_chunk_size,
-            hasher: RollingHash::new(config.window_size),
-            read_buf: BytesMut::with_capacity(config.max_chunk_size + CHUNKER_BUF_SIZE),
-            source,
-            hash_input_limit,
-            source_index: 0,
-            buf_index: 0,
-            chunk_start: 0,
-        }
-    }
-
-    fn poll_chunk(&mut self, cx: &mut Context) -> Poll<Option<io::Result<(u64, Chunk)>>> {
-        loop {
-            if self.buf_index >= self.read_buf.len() {
-                // Fill buffer from source
-                match ready!(refill_read_buf(
-                    cx,
-                    CHUNKER_BUF_SIZE,
-                    &mut self.read_buf,
-                    &mut self.source
-                )) {
-                    Ok(n) if n == 0 => {
-                        // EOF
-                        if !self.read_buf.is_empty() {
-                            let chunk = Chunk(self.read_buf.split().freeze());
-                            self.read_buf.resize(0, 0);
-                            self.buf_index = 0;
-                            return Poll::Ready(Some(Ok((self.chunk_start, chunk))));
-                        } else {
-                            return Poll::Ready(None);
-                        }
-                    }
-                    Err(e) => return Poll::Ready(Some(Err(e))),
-                    _ => {}
-                };
-                while self.source_index < self.hasher.window_size() as u64
-                    && self.buf_index < self.read_buf.len()
-                {
-                    // Initialize the buzhash
-                    self.hasher.init(self.read_buf[self.buf_index]);
-                    self.buf_index += 1;
-                    self.source_index += 1;
-                }
-            }
-            let start_index = self.buf_index;
-            self.skip_min_chunk();
-            let found_boundary = self.scan_for_boundary();
-            self.source_index += (self.buf_index - start_index) as u64;
-            if found_boundary {
-                let chunk = Chunk(self.read_buf.split_to(self.buf_index).freeze());
-                let chunk_start = self.chunk_start;
-                self.buf_index = 0;
-                self.chunk_start = self.source_index;
-                return Poll::Ready(Some(Ok((chunk_start, chunk))));
-            }
-        }
-    }
-    fn skip_min_chunk(&mut self) {
-        if self.hash_input_limit > 0 && self.buf_index < self.hash_input_limit {
-            // Skip past the minimum chunk size to minimize the number of hash inputs
-            self.buf_index = std::cmp::min(self.hash_input_limit - 1, self.read_buf.len());
-        }
-        if self.min_chunk_size > 0 && self.buf_index < self.min_chunk_size {
-            // Hash the last part (rolling hash window size bytes) of the minimal possible chunk.
-            // There is no need to check the hash sum here since we're still below the minimal
-            // chunk size. Still we need the bytes in the hash window to get correct sum when
-            // reaching above the minimal chunk size.
-            let hasher = &mut self.hasher;
-            let input_end = std::cmp::min(self.min_chunk_size - 1, self.read_buf.len());
-            self.read_buf[self.buf_index..input_end]
-                .iter()
-                .for_each(|&val| hasher.input(val));
-            self.buf_index = input_end;
-        }
-    }
-    // Scan until end of buffer, chunk boundary (hash sum match) or max chunk size reached
-    fn scan_for_boundary(&mut self) -> bool {
-        let hasher = &mut self.hasher;
-        let filter_mask = self.filter_mask;
-        let min_bytes = std::cmp::min(self.max_chunk_size, self.read_buf.len());
-        let mut end_index = self.buf_index;
-        let found_boundary = self.read_buf[self.buf_index..min_bytes]
-            .iter()
-            .map(|&val| {
-                end_index += 1;
-                hasher.input(val);
-                hasher.sum()
-            })
-            .any(|sum| sum | filter_mask == sum);
-        self.buf_index = end_index;
-        found_boundary || self.buf_index >= self.max_chunk_size
-    }
-}
-
-impl<T, H> Stream for InternalChunker<T, H>
-where
-    T: AsyncRead + Unpin,
-    H: RollingHash + Unpin,
-{
+impl Stream for dyn Chunker + '_ {
     type Item = io::Result<(u64, Chunk)>;
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         self.poll_chunk(cx)
     }
 }
 
-fn refill_read_buf<T>(
+pub(crate) fn refill_read_buf<T>(
     cx: &mut Context,
     want: usize,
     read_buf: &mut BytesMut,
@@ -298,6 +77,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::config::{Config, FilterBits, FilterConfig};
     use super::*;
     use core::pin::Pin;
     use core::task::{Context, Poll};
@@ -351,14 +131,14 @@ mod tests {
     #[tokio::test]
     async fn single_byte_per_source_read() {
         for chunker_config in &[
-            chunker::Config::RollSum(chunker::FilterConfig {
-                filter_bits: chunker::FilterBits(10),
+            Config::RollSum(FilterConfig {
+                filter_bits: FilterBits(10),
                 min_chunk_size: 20,
                 max_chunk_size: 600,
                 window_size: 10,
             }),
-            chunker::Config::BuzHash(chunker::FilterConfig {
-                filter_bits: chunker::FilterBits(10),
+            Config::BuzHash(FilterConfig {
+                filter_bits: FilterBits(10),
                 min_chunk_size: 20,
                 max_chunk_size: 600,
                 window_size: 10,
@@ -374,7 +154,8 @@ mod tests {
                     .collect()
             };
             let expected_offsets = {
-                Chunker::new(&chunker_config, &mut Box::new(&source_data[..]))
+                chunker_config
+                    .new_chunker(&mut Box::new(&source_data[..]))
                     .map(|result| {
                         let (offset, _chunk) = result.unwrap();
                         offset
@@ -385,7 +166,8 @@ mod tests {
             // Only give back a single byte per read from source, should still result in the same
             // result as with unlimited I/O.
             let mut source = MockSource::new(source_data.clone(), 1);
-            let offsets = Chunker::new(&chunker_config, &mut source)
+            let offsets = chunker_config
+                .new_chunker(&mut source)
                 .map(|result| {
                     let (offset, _chunk) = result.unwrap();
                     offset
@@ -398,14 +180,14 @@ mod tests {
     #[tokio::test]
     async fn zero_data() {
         for chunker_config in &[
-            chunker::Config::RollSum(chunker::FilterConfig {
-                filter_bits: chunker::FilterBits(5),
+            Config::RollSum(FilterConfig {
+                filter_bits: FilterBits(5),
                 min_chunk_size: 3,
                 max_chunk_size: 640,
                 window_size: 5,
             }),
-            chunker::Config::BuzHash(chunker::FilterConfig {
-                filter_bits: chunker::FilterBits(5),
+            Config::BuzHash(FilterConfig {
+                filter_bits: FilterBits(5),
                 min_chunk_size: 3,
                 max_chunk_size: 640,
                 window_size: 5,
@@ -414,7 +196,8 @@ mod tests {
             let expected_chunk_offsets: [u64; 0] = [0; 0];
             static SRC: [u8; 0] = [];
             assert_eq!(
-                Chunker::new(chunker_config, &mut Box::new(&SRC[..]))
+                chunker_config
+                    .new_chunker(&mut Box::new(&SRC[..]))
                     .map(|result| {
                         let (offset, chunk) = result.unwrap();
                         assert_eq!(chunk.len(), 0);
@@ -429,14 +212,14 @@ mod tests {
     #[tokio::test]
     async fn source_smaller_than_hash_window() {
         for chunker_config in &[
-            chunker::Config::RollSum(chunker::FilterConfig {
-                filter_bits: chunker::FilterBits(5),
+            Config::RollSum(FilterConfig {
+                filter_bits: FilterBits(5),
                 min_chunk_size: 0,
                 max_chunk_size: 40,
                 window_size: 10,
             }),
-            chunker::Config::BuzHash(chunker::FilterConfig {
-                filter_bits: chunker::FilterBits(5),
+            Config::BuzHash(FilterConfig {
+                filter_bits: FilterBits(5),
                 min_chunk_size: 0,
                 max_chunk_size: 40,
                 window_size: 10,
@@ -445,7 +228,8 @@ mod tests {
             let expected_chunk_offsets: [u64; 1] = [0; 1];
             static SRC: [u8; 5] = [0x1f, 0x55, 0x39, 0x5e, 0xfa];
             assert_eq!(
-                Chunker::new(chunker_config, &mut Box::new(&SRC[..]))
+                chunker_config
+                    .new_chunker(&mut Box::new(&SRC[..]))
                     .map(|result| {
                         let (offset, chunk) = result.unwrap();
                         assert_eq!(chunk, Chunk::from(vec![0x1f, 0x55, 0x39, 0x5e, 0xfa]));
@@ -460,14 +244,14 @@ mod tests {
     #[tokio::test]
     async fn source_smaller_than_min_chunk() {
         for chunker_config in &[
-            chunker::Config::RollSum(chunker::FilterConfig {
-                filter_bits: chunker::FilterBits(5),
+            Config::RollSum(FilterConfig {
+                filter_bits: FilterBits(5),
                 min_chunk_size: 10,
                 max_chunk_size: 40,
                 window_size: 5,
             }),
-            chunker::Config::BuzHash(chunker::FilterConfig {
-                filter_bits: chunker::FilterBits(5),
+            Config::BuzHash(FilterConfig {
+                filter_bits: FilterBits(5),
                 min_chunk_size: 10,
                 max_chunk_size: 40,
                 window_size: 5,
@@ -476,7 +260,8 @@ mod tests {
             let expected_chunk_offsets: [u64; 1] = [0; 1];
             static SRC: [u8; 5] = [0x1f, 0x55, 0x39, 0x5e, 0xfa];
             assert_eq!(
-                Chunker::new(chunker_config, &mut Box::new(&SRC[..]),)
+                chunker_config
+                    .new_chunker(&mut Box::new(&SRC[..]))
                     .map(|result| {
                         let (offset, chunk) = result.unwrap();
                         assert_eq!(chunk, Chunk::from(vec![0x1f, 0x55, 0x39, 0x5e, 0xfa]));
@@ -521,15 +306,13 @@ mod tests {
             }
         }
 
-        let chunk_offsets = Chunker::new(
-            &chunker::Config::BuzHash(chunker::FilterConfig {
-                filter_bits: chunker::FilterBits(5),
-                min_chunk_size: 3,
-                max_chunk_size: 640,
-                window_size: 5,
-            }),
-            &mut Box::new(unsafe { &SRC[..] }),
-        )
+        let chunk_offsets = Config::BuzHash(FilterConfig {
+            filter_bits: FilterBits(5),
+            min_chunk_size: 3,
+            max_chunk_size: 640,
+            window_size: 5,
+        })
+        .new_chunker(&mut Box::new(unsafe { &SRC[..] }))
         .map(|result| {
             let (offset, _chunk) = result.unwrap();
             offset
@@ -616,15 +399,13 @@ mod tests {
                 SRC.push((seed & 0xff) as u8);
             }
         }
-        let chunk_offsets = Chunker::new(
-            &chunker::Config::BuzHash(chunker::FilterConfig {
-                filter_bits: chunker::FilterBits(6),
-                min_chunk_size: 64,
-                max_chunk_size: 1024,
-                window_size: 20,
-            }),
-            &mut Box::new(unsafe { &SRC[..] }),
-        )
+        let chunk_offsets = Config::BuzHash(FilterConfig {
+            filter_bits: FilterBits(6),
+            min_chunk_size: 64,
+            max_chunk_size: 1024,
+            window_size: 20,
+        })
+        .new_chunker(&mut Box::new(unsafe { &SRC[..] }))
         .map(|result| {
             let (offset, _chunk) = result.unwrap();
             offset

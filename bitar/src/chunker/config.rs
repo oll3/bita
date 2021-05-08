@@ -1,3 +1,8 @@
+use tokio::io::AsyncRead;
+
+use super::{fixed_size::FixedSizeChunker, rolling_hash::RollingHashChunker, Chunker};
+use crate::rolling_hash::{BuzHash, RollSum};
+
 /// Helper type for creating a bit mask to use while scanning for chunk boundaries.
 ///
 /// The bit mask given from the filter is used to match against the rolling hash sum.
@@ -53,4 +58,25 @@ pub enum Config {
     BuzHash(FilterConfig),
     RollSum(FilterConfig),
     FixedSize(usize),
+}
+
+impl Config {
+    pub fn new_chunker<'chunker, R>(&self, source: R) -> Box<dyn Chunker + 'chunker>
+    where
+        R: AsyncRead + Unpin + 'chunker,
+    {
+        match self {
+            Config::BuzHash(filter_config) => Box::new(RollingHashChunker::new(
+                BuzHash::new(filter_config.window_size),
+                filter_config,
+                source,
+            )),
+            Config::RollSum(filter_config) => Box::new(RollingHashChunker::new(
+                RollSum::new(filter_config.window_size),
+                filter_config,
+                source,
+            )),
+            Config::FixedSize(fixed_size) => Box::new(FixedSizeChunker::new(*fixed_size, source)),
+        }
+    }
 }
