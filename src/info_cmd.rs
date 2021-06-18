@@ -55,6 +55,7 @@ pub fn print_archive<R>(archive: &Archive<R>) {
         size_to_str(archive.compressed_size() + archive.header_size() as u64)
     );
     info!("  Header checksum: {}", archive.header_checksum());
+    info!("  Chunk hash length: {} bytes", archive.chunk_hash_length());
 
     print_chunker_config(&archive.chunker_config());
 

@@ -4,7 +4,7 @@ mod diff_cmd;
 mod info_cmd;
 mod string_utils;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use clap::{App, Arg, SubCommand};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::path::Path;
@@ -257,6 +257,11 @@ fn add_chunker_args<'a, 'b>(
                 .long("compression")
                 .value_name("TYPE")
                 .help(&compression_desc),
+        ).arg(
+            Arg::with_name("hash-length")
+                .long("hash-length")
+                .value_name("LENGTH")
+                .help("Truncate the length of the stored chunk hash [default: 64]"),
         )
 }
 
@@ -437,7 +442,11 @@ async fn parse_opts() -> Result<()> {
         compress_cmd::compress_cmd(compress_cmd::Options {
             input,
             output: output.to_path_buf(),
-            hash_length: hash_length.parse().context("Invalid hash length value")?,
+            hash_length: match hash_length.parse::<usize>() {
+                Ok(length @ 4..=64) => length,
+                Ok(_) => bail!("Invalid hash length value (valid range is 4-64)"),
+                Err(err) => Err(err).context("Failed to parse hash length")?,
+            },
             force_create: matches.is_present("force-create"),
             temp_file,
             chunker_config,
