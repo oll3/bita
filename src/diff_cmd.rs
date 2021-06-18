@@ -5,8 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use tokio::fs::File;
 
-use crate::info_cmd;
-use crate::string_utils::*;
+use crate::{human_size, info_cmd};
 use bitar::{chunker, Compression, HashSum};
 
 #[derive(Clone, Debug)]
@@ -119,11 +118,11 @@ fn print_info(path: &Path, result: &ChunkerResult, diff: &[HashSum]) {
         result.total_chunks,
         result.descriptors.len(),
     );
-    info!("  Average chunk size: {}", size_to_str(avarage_chunk_size));
+    info!("  Average chunk size: {}", human_size!(avarage_chunk_size));
     info!(
         "  Total size: {} (compressed size: {})",
-        size_to_str(result.total_size),
-        size_to_str(result.total_compressed_size)
+        human_size!(result.total_size),
+        human_size!(result.total_compressed_size)
     );
     info!(
         "  Chunks not in other: {}",
@@ -146,8 +145,8 @@ fn selection_string(
     format!(
         "{} (size: {}, compressed size: {})",
         selection.len(),
-        size_to_str(size),
-        size_to_str(compressed_size),
+        human_size!(size),
+        human_size!(compressed_size),
     )
 }
 

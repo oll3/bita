@@ -2,7 +2,7 @@ use anyhow::Result;
 use log::*;
 use tokio::fs::File;
 
-use crate::string_utils::*;
+use crate::human_size;
 use bitar::{chunker, Archive, Reader, ReaderRemote};
 
 pub async fn print_archive_reader<R>(reader: R) -> Result<()>
@@ -18,13 +18,13 @@ where
 fn print_rolling_hash_config(hc: &chunker::FilterConfig) {
     info!(
         "  Rolling hash window size: {}",
-        size_to_str(hc.window_size)
+        human_size!(hc.window_size)
     );
-    info!("  Chunk minimum size: {}", size_to_str(hc.min_chunk_size));
-    info!("  Chunk maximum size: {}", size_to_str(hc.max_chunk_size));
+    info!("  Chunk minimum size: {}", human_size!(hc.min_chunk_size));
+    info!("  Chunk maximum size: {}", human_size!(hc.max_chunk_size));
     info!(
         "  Chunk average target size: {} (mask: {:#b})",
-        size_to_str(hc.filter_bits.chunk_target_average()),
+        human_size!(hc.filter_bits.chunk_target_average()),
         hc.filter_bits.mask(),
     );
 }
@@ -42,7 +42,7 @@ pub fn print_chunker_config(config: &chunker::Config) {
         chunker::Config::BuzHash(hc) => print_rolling_hash_config(hc),
         chunker::Config::RollSum(hc) => print_rolling_hash_config(hc),
         chunker::Config::FixedSize(chunk_size) => {
-            info!("  Fixed chunk size: {}", size_to_str(*chunk_size));
+            info!("  Fixed chunk size: {}", human_size!(*chunk_size));
         }
     }
 }
@@ -52,7 +52,7 @@ pub fn print_archive<R>(archive: &Archive<R>) {
     info!("  Built with version: {}", archive.built_with_version());
     info!(
         "  Archive size: {}",
-        size_to_str(archive.compressed_size() + archive.header_size() as u64)
+        human_size!(archive.compressed_size() + archive.header_size() as u64)
     );
     info!("  Header checksum: {}", archive.header_checksum());
     info!("  Chunk hash length: {} bytes", archive.chunk_hash_length());
@@ -68,7 +68,7 @@ pub fn print_archive<R>(archive: &Archive<R>) {
     );
     info!(
         "  Average chunk size: {}",
-        size_to_str(
+        human_size!(
             archive
                 .chunk_descriptors()
                 .iter()
@@ -79,7 +79,7 @@ pub fn print_archive<R>(archive: &Archive<R>) {
     );
     info!(
         "  Source size: {}",
-        size_to_str(archive.total_source_size())
+        human_size!(archive.total_source_size())
     );
 }
 

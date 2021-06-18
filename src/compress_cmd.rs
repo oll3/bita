@@ -10,8 +10,7 @@ use tokio::{
     io::{AsyncRead, AsyncWriteExt},
 };
 
-use crate::info_cmd;
-use crate::string_utils::*;
+use crate::{human_size, info_cmd};
 use bitar::chunk_dictionary as dict;
 use bitar::{chunker, Compression};
 
@@ -103,11 +102,11 @@ where
                 index,
                 verified.hash(),
                 offset,
-                size_to_str(chunk_len),
+                human_size!(chunk_len),
                 if use_uncompressed {
                     "left uncompressed".to_owned()
                 } else {
-                    format!("compressed to: {}", size_to_str(compressed.len()))
+                    format!("compressed to: {}", human_size!(compressed.len()))
                 },
             );
             let (hash, chunk) = verified.into_parts();

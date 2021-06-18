@@ -13,8 +13,7 @@ use tokio::{
 };
 use url::Url;
 
-use crate::info_cmd;
-use crate::string_utils::*;
+use crate::{human_size, info_cmd};
 use bitar::{
     chunker, Archive, ChunkIndex, CloneOutput, HashSum, Reader, ReaderRemote, VerifiedChunk,
 };
@@ -128,8 +127,8 @@ where
     let total_written = feed_output(output, chunk_stream).await?;
     info!(
         "Fetched {} from archive and decompressed to {}.",
-        size_to_str(total_fetched),
-        size_to_str(total_written)
+        human_size!(total_fetched),
+        human_size!(total_written)
     );
     Ok(total_fetched)
 }
@@ -203,8 +202,8 @@ where
         if size < archive.total_source_size() {
             return Err(anyhow!(
                 "Size of output device ({}) is less than archive target file ({})",
-                size_to_str(size),
-                size_to_str(archive.total_source_size())
+                human_size!(size),
+                human_size!(archive.total_source_size())
             ));
         }
     }
@@ -233,7 +232,7 @@ where
             .context("Failed to clone in place")?;
         info!(
             "Used {} from {}",
-            size_to_str(used_from_self),
+            human_size!(used_from_self),
             opts.output.display()
         );
         total_read_from_seed += used_from_self;
@@ -253,7 +252,7 @@ where
         )
         .await
         .context("Failed to clone from stdin")?;
-        info!("Used {} bytes from stdin", size_to_str(bytes_to_output));
+        info!("Used {} bytes from stdin", human_size!(bytes_to_output));
         total_read_from_seed += bytes_to_output;
     }
     for seed_path in &opts.seed_files {
@@ -275,7 +274,7 @@ where
         .context(format!("Failed to clone from {}", seed_path.display()))?;
         info!(
             "Used {} bytes from {}",
-            size_to_str(bytes_to_output),
+            human_size!(bytes_to_output),
             seed_path.display()
         );
         total_read_from_seed += bytes_to_output;
@@ -327,8 +326,8 @@ where
 
     info!(
         "Successfully cloned archive using {} from archive and {} from seeds.",
-        size_to_str(total_read_from_remote),
-        size_to_str(total_read_from_seed)
+        human_size!(total_read_from_remote),
+        human_size!(total_read_from_seed)
     );
 
     Ok(())
