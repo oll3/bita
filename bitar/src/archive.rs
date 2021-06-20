@@ -1,13 +1,11 @@
 use blake2::{Blake2b, Digest};
 use futures_util::{stream::Stream, StreamExt};
-use std::fmt;
+use std::{convert::TryInto, fmt};
 
 use crate::{
-    chunk_dictionary as dict, chunker, header, reader::ReadAt, ChunkIndex, CompressedChunk,
-    Compression, HashSum, Reader,
+    chunk_dictionary as dict, chunker, header, reader::ReadAt, ChunkIndex, CompressedArchiveChunk,
+    CompressedChunk, Compression, HashSum, Reader,
 };
-
-use crate::CompressedArchiveChunk;
 
 #[derive(Debug)]
 pub enum ArchiveError<R> {
@@ -103,9 +101,11 @@ impl<R> Archive<R> {
             .to_vec();
         Self::verify_pre_header(&header)?;
 
-        let dictionary_size =
-            u64_from_le_slice(&header[header::ARCHIVE_MAGIC.len()..header::PRE_HEADER_SIZE])
-                as usize;
+        let dictionary_size = u64::from_le_bytes(
+            header[header::ARCHIVE_MAGIC.len()..header::PRE_HEADER_SIZE]
+                .try_into()
+                .unwrap(),
+        ) as usize;
 
         // Read the dictionary, chunk data offset and header hash
         header.extend_from_slice(
@@ -136,7 +136,7 @@ impl<R> Archive<R> {
         // Get chunk data offset
         let chunk_data_offset = {
             let offs = header::PRE_HEADER_SIZE + dictionary_size;
-            u64_from_le_slice(&header[offs..(offs + 8)])
+            u64::from_le_bytes(header[offs..(offs + 8)].try_into().unwrap())
         };
         let archive_chunks = dictionary
             .chunk_descriptors
@@ -295,24 +295,21 @@ impl<R> Archive<R> {
 fn chunker_config_from_params<R>(
     p: dict::ChunkerParameters,
 ) -> Result<chunker::Config, ArchiveError<R>> {
-    match dict::chunker_parameters::ChunkingAlgorithm::from_i32(p.chunking_algorithm) {
-        Some(dict::chunker_parameters::ChunkingAlgorithm::Buzhash) => {
-            Ok(chunker::Config::BuzHash(chunker::FilterConfig {
-                filter_bits: chunker::FilterBits::from_bits(p.chunk_filter_bits),
-                min_chunk_size: p.min_chunk_size as usize,
-                max_chunk_size: p.max_chunk_size as usize,
-                window_size: p.rolling_hash_window_size as usize,
-            }))
-        }
-        Some(dict::chunker_parameters::ChunkingAlgorithm::Rollsum) => {
-            Ok(chunker::Config::RollSum(chunker::FilterConfig {
-                filter_bits: chunker::FilterBits::from_bits(p.chunk_filter_bits),
-                min_chunk_size: p.min_chunk_size as usize,
-                max_chunk_size: p.max_chunk_size as usize,
-                window_size: p.rolling_hash_window_size as usize,
-            }))
-        }
-        Some(dict::chunker_parameters::ChunkingAlgorithm::FixedSize) => {
+    use dict::chunker_parameters::ChunkingAlgorithm;
+    match ChunkingAlgorithm::from_i32(p.chunking_algorithm) {
+        Some(ChunkingAlgorithm::Buzhash) => Ok(chunker::Config::BuzHash(chunker::FilterConfig {
+            filter_bits: chunker::FilterBits::from_bits(p.chunk_filter_bits),
+            min_chunk_size: p.min_chunk_size as usize,
+            max_chunk_size: p.max_chunk_size as usize,
+            window_size: p.rolling_hash_window_size as usize,
+        })),
+        Some(ChunkingAlgorithm::Rollsum) => Ok(chunker::Config::RollSum(chunker::FilterConfig {
+            filter_bits: chunker::FilterBits::from_bits(p.chunk_filter_bits),
+            min_chunk_size: p.min_chunk_size as usize,
+            max_chunk_size: p.max_chunk_size as usize,
+            window_size: p.rolling_hash_window_size as usize,
+        })),
+        Some(ChunkingAlgorithm::FixedSize) => {
             Ok(chunker::Config::FixedSize(p.max_chunk_size as usize))
         }
         _ => Err(ArchiveError::invalid_archive("unknown chunking algorithm")),
@@ -345,10 +342,4 @@ fn compression_from_dictionary<R>(
         Some(dict::chunk_compression::CompressionType::None) => Ok(Compression::None),
         None => Err(ArchiveError::invalid_archive("unknown compression")),
     }
-}
-
-fn u64_from_le_slice(v: &[u8]) -> u64 {
-    let mut tmp: [u8; 8] = Default::default();
-    tmp.copy_from_slice(v);
-    u64::from_le_bytes(tmp)
 }
