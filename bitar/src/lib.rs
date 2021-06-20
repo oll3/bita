@@ -20,7 +20,9 @@ pub use chunk::{
 };
 pub use chunk_index::{ChunkIndex, ChunkLocation, ReorderOp};
 pub use clone_output::CloneOutput;
-pub use compression::{Compression, CompressionError};
+pub use compression::{
+    Compression, CompressionAlgorithm, CompressionError, CompressionLevelOutOfRangeError,
+};
 pub use hashsum::HashSum;
 pub use reader::Reader;
 pub use reader_remote::{ReaderRemote, ReaderRemoteError};

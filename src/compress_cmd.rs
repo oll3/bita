@@ -19,7 +19,7 @@ pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 async fn chunk_input<T>(
     mut input: T,
     chunker_config: &chunker::Config,
-    compression: Compression,
+    compression: Option<Compression>,
     temp_file_path: &std::path::Path,
     hash_length: usize,
     num_chunk_buffers: usize,
@@ -150,7 +150,7 @@ pub struct Options {
     pub temp_file: PathBuf,
     pub hash_length: usize,
     pub chunker_config: chunker::Config,
-    pub compression: Compression,
+    pub compression: Option<Compression>,
     pub num_chunk_buffers: usize,
 }
 pub async fn compress_cmd(opts: Options) -> Result<()> {

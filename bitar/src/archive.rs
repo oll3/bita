@@ -3,8 +3,8 @@ use futures_util::{stream::Stream, StreamExt};
 use std::{convert::TryInto, fmt};
 
 use crate::{
-    chunk_dictionary as dict, chunker, header, reader::ReadAt, ChunkIndex, CompressedArchiveChunk,
-    CompressedChunk, Compression, HashSum, Reader,
+    chunk_dictionary as dict, chunker, compression::CompressionAlgorithm, header, reader::ReadAt,
+    ChunkIndex, CompressedArchiveChunk, CompressedChunk, Compression, HashSum, Reader,
 };
 
 #[derive(Debug)]
@@ -65,7 +65,7 @@ pub struct Archive<R> {
     total_chunks: usize,
     header_size: usize,
     header_checksum: HashSum,
-    chunk_compression: Compression,
+    chunk_compression: Option<Compression>,
     created_by_app_version: String,
     chunk_data_offset: u64,
     source_total_size: u64,
@@ -225,7 +225,7 @@ impl<R> Archive<R> {
         self.chunk_hash_length
     }
     /// Get the compression used for chunks in the archive.
-    pub fn chunk_compression(&self) -> Compression {
+    pub fn chunk_compression(&self) -> Option<Compression> {
         self.chunk_compression
     }
     /// Get the version of crate used when building the archive.
@@ -267,7 +267,7 @@ impl<R> Archive<R> {
             .iter()
             .map(|cd| ReadAt::new(cd.archive_offset, cd.archive_size))
             .collect();
-        let chunk_compression = self.chunk_compression();
+        let archive_chunk_compression = self.chunk_compression().map(|c| c.algorithm);
         self.reader
             .read_chunks(read_at)
             .enumerate()
@@ -277,9 +277,11 @@ impl<R> Archive<R> {
                     Ok(chunk) => Ok(CompressedArchiveChunk {
                         chunk: CompressedChunk {
                             compression: if source_size == chunk.len() {
-                                Compression::None
+                                // When chunk size matches the source chunk size chunk has not been compressed
+                                // since compressing it probably made it bigger.
+                                None
                             } else {
-                                chunk_compression
+                                archive_chunk_compression
                             },
                             data: chunk,
                             source_size,
@@ -318,28 +320,32 @@ fn chunker_config_from_params<R>(
 
 fn compression_from_dictionary<R>(
     c: dict::ChunkCompression,
-) -> Result<Compression, ArchiveError<R>> {
-    match dict::chunk_compression::CompressionType::from_i32(c.compression) {
+) -> Result<Option<Compression>, ArchiveError<R>> {
+    use dict::chunk_compression::CompressionType;
+    match CompressionType::from_i32(c.compression) {
         #[cfg(feature = "lzma-compression")]
-        Some(dict::chunk_compression::CompressionType::Lzma) => {
-            Ok(Compression::LZMA(c.compression_level))
-        }
+        Some(dict::chunk_compression::CompressionType::Lzma) => Ok(Some(Compression {
+            algorithm: CompressionAlgorithm::Lzma,
+            level: c.compression_level,
+        })),
         #[cfg(not(feature = "lzma-compression"))]
-        Some(dict::chunk_compression::CompressionType::Lzma) => Err(ArchiveError::invalid_archive(
+        Some(CompressionType::Lzma) => Err(ArchiveError::invalid_archive(
             "LZMA compression not enabled",
         )),
         #[cfg(feature = "zstd-compression")]
-        Some(dict::chunk_compression::CompressionType::Zstd) => {
-            Ok(Compression::ZSTD(c.compression_level))
-        }
+        Some(CompressionType::Zstd) => Ok(Some(Compression {
+            algorithm: CompressionAlgorithm::Zstd,
+            level: c.compression_level,
+        })),
         #[cfg(not(feature = "zstd-compression"))]
-        Some(dict::chunk_compression::CompressionType::Zstd) => Err(ArchiveError::invalid_archive(
+        Some(CompressionType::Zstd) => Err(ArchiveError::invalid_archive(
             "ZSTD compression not enabled",
         )),
-        Some(dict::chunk_compression::CompressionType::Brotli) => {
-            Ok(Compression::Brotli(c.compression_level))
-        }
-        Some(dict::chunk_compression::CompressionType::None) => Ok(Compression::None),
+        Some(CompressionType::Brotli) => Ok(Some(Compression {
+            algorithm: CompressionAlgorithm::Brotli,
+            level: c.compression_level,
+        })),
+        Some(CompressionType::None) => Ok(None),
         None => Err(ArchiveError::invalid_archive("unknown compression")),
     }
 }

@@ -82,18 +82,12 @@ pub fn compression_names() -> String {
     s
 }
 
-fn parse_compression(matches: &clap::ArgMatches<'_>) -> Result<Compression> {
+fn parse_compression(matches: &clap::ArgMatches<'_>) -> Result<Option<Compression>> {
     let compression_level = matches
         .value_of("compression-level")
         .unwrap_or("6")
         .parse()
         .context("Failed to parse compression level")?;
-    if !(1..=19).contains(&compression_level) {
-        return Err(anyhow!(
-            "Compression level ({}) not within range (1 - 19)",
-            compression_level
-        ));
-    }
     Ok(
         match matches
             .value_of("compression")
@@ -102,11 +96,11 @@ fn parse_compression(matches: &clap::ArgMatches<'_>) -> Result<Compression> {
             .as_ref()
         {
             #[cfg(feature = "lzma-compression")]
-            "lzma" => Compression::LZMA(compression_level),
+            "lzma" => Some(Compression::lzma(compression_level)?),
             #[cfg(feature = "zstd-compression")]
-            "zstd" => Compression::ZSTD(compression_level),
-            "brotli" => Compression::Brotli(compression_level),
-            "none" => Compression::None,
+            "zstd" => Some(Compression::zstd(compression_level)?),
+            "brotli" => Some(Compression::brotli(compression_level)?),
+            "none" => None,
             name => return Err(anyhow!("Invalid compression ({})", name)),
         },
     )
@@ -250,7 +244,7 @@ fn add_chunker_args<'a, 'b>(
             Arg::with_name("compression-level")
                 .long("compression-level")
                 .value_name("LEVEL")
-                .help("Set the chunk data compression level (0-9) [default: 6]"),
+                .help("Set the chunk data compression level [default: 6]"),
         )
         .arg(
             Arg::with_name("compression")

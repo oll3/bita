@@ -2,7 +2,7 @@
 use bytes::Bytes;
 use std::fmt;
 
-use crate::{Compression, CompressionError, HashSum};
+use crate::{Compression, CompressionAlgorithm, CompressionError, HashSum};
 
 /// A single chunk.
 ///
@@ -38,7 +38,10 @@ impl Chunk {
     #[cfg(feature = "compress")]
     /// Create a compressed chunk.
     #[inline]
-    pub fn compress(self, compression: Compression) -> Result<CompressedChunk, CompressionError> {
+    pub fn compress(
+        self,
+        compression: Option<Compression>,
+    ) -> Result<CompressedChunk, CompressionError> {
         CompressedChunk::try_compress(compression, self)
     }
     #[inline]
@@ -100,17 +103,29 @@ impl VerifiedChunk {
 pub struct CompressedChunk {
     pub(crate) data: Bytes,
     pub(crate) source_size: usize,
-    pub(crate) compression: Compression,
+    pub(crate) compression: Option<CompressionAlgorithm>,
 }
 
 impl CompressedChunk {
     /// Create a compressed chunk.
     #[cfg(feature = "compress")]
     pub fn try_compress(
-        compression: Compression,
+        compression: Option<Compression>,
         chunk: Chunk,
     ) -> Result<CompressedChunk, CompressionError> {
-        compression.compress(chunk)
+        if let Some(compression) = compression {
+            Ok(CompressedChunk {
+                source_size: chunk.len(),
+                data: compression.compress(chunk.0)?,
+                compression: Some(compression.algorithm),
+            })
+        } else {
+            Ok(CompressedChunk {
+                source_size: chunk.len(),
+                data: chunk.0,
+                compression: None,
+            })
+        }
     }
     /// Chunk data.
     #[inline]
@@ -124,15 +139,19 @@ impl CompressedChunk {
     }
     /// Decompress the chunk.
     pub fn decompress(self) -> Result<Chunk, CompressionError> {
-        Compression::decompress(self)
+        Ok(match self.compression {
+            Some(compression) => Chunk::from(compression.decompress(self.data, self.source_size)?),
+            // Chunk not compressed.
+            None => Chunk::from(self.data),
+        })
     }
     /// Compression used for chunk.
     #[inline]
-    pub fn compression(&self) -> Compression {
+    pub fn compression(&self) -> Option<CompressionAlgorithm> {
         self.compression
     }
     #[inline]
-    pub fn into_inner(self) -> (Compression, Bytes) {
+    pub fn into_inner(self) -> (Option<CompressionAlgorithm>, Bytes) {
         (self.compression, self.data)
     }
 }

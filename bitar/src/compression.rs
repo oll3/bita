@@ -1,7 +1,7 @@
-use crate::{
-    chunk_dictionary::{chunk_compression::CompressionType, ChunkCompression},
-    Chunk, CompressedChunk,
-};
+use bytes::Bytes;
+use std::fmt;
+
+use crate::chunk_dictionary as dict;
 
 #[derive(Debug)]
 pub enum CompressionError {
@@ -10,8 +10,8 @@ pub enum CompressionError {
     LZMA(lzma::LzmaError),
 }
 impl std::error::Error for CompressionError {}
-impl std::fmt::Display for CompressionError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for CompressionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Io(err) => write!(f, "i/o error: {}", err),
             #[cfg(feature = "lzma-compression")]
@@ -31,126 +31,176 @@ impl From<lzma::LzmaError> for CompressionError {
     }
 }
 
-/// Compression helper type.
-#[derive(Debug, Clone, Copy)]
-pub enum Compression {
-    None,
-    #[cfg(feature = "lzma-compression")]
-    LZMA(u32),
-    #[cfg(feature = "zstd-compression")]
-    ZSTD(u32),
-    Brotli(u32),
+#[derive(Debug)]
+pub struct CompressionLevelOutOfRangeError(CompressionAlgorithm);
+impl std::error::Error for CompressionLevelOutOfRangeError {}
+impl fmt::Display for CompressionLevelOutOfRangeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} compression level out of range (valid range is 1-{})",
+            self.0,
+            self.0.max_level()
+        )
+    }
 }
 
-impl std::fmt::Display for Compression {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CompressionAlgorithm {
+    #[cfg(feature = "lzma-compression")]
+    Lzma,
+    #[cfg(feature = "zstd-compression")]
+    Zstd,
+    Brotli,
+}
+
+impl CompressionAlgorithm {
+    /// Get the compression algorithm's max level.
+    pub fn max_level(self) -> u32 {
         match self {
             #[cfg(feature = "lzma-compression")]
-            Compression::LZMA(ref level) => write!(f, "LZMA({})", level),
+            CompressionAlgorithm::Lzma => 9,
             #[cfg(feature = "zstd-compression")]
-            Compression::ZSTD(ref level) => write!(f, "ZSTD({})", level),
-            Compression::Brotli(ref level) => write!(f, "Brotli({})", level),
-            Compression::None => write!(f, "None"),
+            CompressionAlgorithm::Zstd => 22,
+            CompressionAlgorithm::Brotli => 11,
         }
+    }
+    /// Decompress a block of data using the set compression.
+    pub(crate) fn decompress(
+        self,
+        compressed: Bytes,
+        size_hint: usize,
+    ) -> Result<Bytes, CompressionError> {
+        let mut output = Vec::with_capacity(size_hint);
+        match self {
+            #[cfg(feature = "lzma-compression")]
+            CompressionAlgorithm::Lzma => {
+                use lzma::LzmaWriter;
+                use std::io::prelude::*;
+                let mut f = LzmaWriter::new_decompressor(&mut output)?;
+                f.write_all(&compressed)?;
+                f.finish()?;
+            }
+            #[cfg(feature = "zstd-compression")]
+            CompressionAlgorithm::Zstd => {
+                zstd::stream::copy_decode(&compressed[..], &mut output)?;
+            }
+            CompressionAlgorithm::Brotli => {
+                let mut input_slice = &compressed[..];
+                brotli_decompressor::BrotliDecompress(&mut input_slice, &mut output)?;
+            }
+        }
+        Ok(Bytes::from(output))
     }
 }
 
-impl From<Compression> for ChunkCompression {
-    fn from(c: Compression) -> Self {
-        let (chunk_compression, chunk_compression_level) = match c {
+impl fmt::Display for CompressionAlgorithm {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let algorithm_name = match self {
             #[cfg(feature = "lzma-compression")]
-            Compression::LZMA(ref level) => (CompressionType::Lzma, *level),
+            CompressionAlgorithm::Lzma => "LZMA",
             #[cfg(feature = "zstd-compression")]
-            Compression::ZSTD(ref level) => (CompressionType::Zstd, *level),
-            Compression::Brotli(ref level) => (CompressionType::Brotli, *level),
-            Compression::None => (CompressionType::None, 0),
+            CompressionAlgorithm::Zstd => "zstd",
+            CompressionAlgorithm::Brotli => "Brotli",
         };
-        Self {
-            compression: chunk_compression as i32,
-            compression_level: chunk_compression_level,
-        }
+        write!(f, "{}", algorithm_name)
     }
+}
+
+/// Compression.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Compression {
+    pub(crate) algorithm: CompressionAlgorithm,
+    pub(crate) level: u32,
 }
 
 impl Compression {
+    /// Create a new compression of given algorithm and level.
+    pub fn try_new(
+        algorithm: CompressionAlgorithm,
+        level: u32,
+    ) -> Result<Compression, CompressionLevelOutOfRangeError> {
+        if level < 1 || level > algorithm.max_level() {
+            return Err(CompressionLevelOutOfRangeError(algorithm));
+        }
+        Ok(Compression { algorithm, level })
+    }
+    /// Create a new brotli compression of given level.
+    pub fn brotli(level: u32) -> Result<Compression, CompressionLevelOutOfRangeError> {
+        Self::try_new(CompressionAlgorithm::Brotli, level)
+    }
+    #[cfg(feature = "lzma-compression")]
+    /// Create a new lzma compression of given level.
+    pub fn lzma(level: u32) -> Result<Compression, CompressionLevelOutOfRangeError> {
+        Self::try_new(CompressionAlgorithm::Lzma, level)
+    }
+    #[cfg(feature = "zstd-compression")]
+    /// Create a new zstd compression of given level.
+    pub fn zstd(level: u32) -> Result<Compression, CompressionLevelOutOfRangeError> {
+        Self::try_new(CompressionAlgorithm::Zstd, level)
+    }
     /// Compress a block of data with set compression.
     #[cfg(feature = "compress")]
-    pub(crate) fn compress(self, chunk: Chunk) -> Result<CompressedChunk, CompressionError> {
+    pub(crate) fn compress(self, chunk: Bytes) -> Result<Bytes, CompressionError> {
         use brotli::enc::backward_references::BrotliEncoderParams;
-        use bytes::Bytes;
         use std::io::Write;
-
-        let source_size = chunk.len();
-        let result = match self {
+        let mut output = Vec::with_capacity(chunk.len());
+        match self.algorithm {
             #[cfg(feature = "lzma-compression")]
-            Compression::LZMA(ref level) => {
+            CompressionAlgorithm::Lzma => {
                 use lzma::LzmaWriter;
                 use std::io::prelude::*;
-                let mut result = Vec::with_capacity(chunk.len());
-                {
-                    let mut f = LzmaWriter::new_compressor(&mut result, *level)?;
-                    f.write_all(chunk.data())?;
-                    f.finish()?;
-                }
-                Bytes::from(result)
+                let mut f = LzmaWriter::new_compressor(&mut output, self.level)?;
+                f.write_all(&chunk)?;
+                f.finish()?;
             }
             #[cfg(feature = "zstd-compression")]
-            Compression::ZSTD(ref level) => {
-                let mut result = Vec::with_capacity(chunk.len());
-                zstd::stream::copy_encode(chunk.data(), &mut result, *level as i32)?;
-                Bytes::from(result)
+            CompressionAlgorithm::Zstd => {
+                zstd::stream::copy_encode(&chunk[..], &mut output, self.level as i32)?;
             }
-            Compression::Brotli(ref level) => {
-                let mut result = Vec::with_capacity(chunk.len());
+            CompressionAlgorithm::Brotli => {
                 let params = BrotliEncoderParams {
-                    quality: *level as i32,
+                    quality: self.level as i32,
                     magic_number: false,
                     ..Default::default()
                 };
-                {
-                    let mut writer =
-                        brotli::CompressorWriter::with_params(&mut result, 1024 * 1024, &params);
-                    writer.write_all(chunk.data())?;
-                }
-                Bytes::from(result)
+                let mut writer =
+                    brotli::CompressorWriter::with_params(&mut output, 1024 * 1024, &params);
+                writer.write_all(&chunk)?;
             }
-            Compression::None => chunk.into_inner(),
-        };
-        Ok(CompressedChunk {
-            data: result,
-            source_size,
-            compression: self,
-        })
+        }
+        Ok(Bytes::from(output))
     }
-    /// Decompress a block of data using the set compression.
-    pub(crate) fn decompress(compressed: CompressedChunk) -> Result<Chunk, CompressionError> {
-        match compressed.compression() {
+}
+
+impl fmt::Display for Compression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} (level {})", self.algorithm, self.level)
+    }
+}
+
+impl From<Option<Compression>> for dict::ChunkCompression {
+    fn from(c: Option<Compression>) -> Self {
+        let (compression, compression_level) = match c {
             #[cfg(feature = "lzma-compression")]
-            Compression::LZMA(_) => {
-                use lzma::LzmaWriter;
-                use std::io::prelude::*;
-                let mut output = Vec::with_capacity(compressed.source_size);
-                let mut f = LzmaWriter::new_decompressor(&mut output)?;
-                f.write_all(compressed.data())?;
-                f.finish()?;
-                Ok(Chunk::from(output))
-            }
+            Some(Compression {
+                algorithm: CompressionAlgorithm::Lzma,
+                level,
+            }) => (dict::chunk_compression::CompressionType::Lzma, level),
             #[cfg(feature = "zstd-compression")]
-            Compression::ZSTD(_) => {
-                let mut output = Vec::with_capacity(compressed.source_size);
-                zstd::stream::copy_decode(compressed.data(), &mut output)?;
-                Ok(Chunk::from(output))
-            }
-            Compression::Brotli(_) => {
-                let mut output = Vec::with_capacity(compressed.source_size);
-                let mut input_slice: &[u8] = compressed.data();
-                brotli_decompressor::BrotliDecompress(&mut input_slice, &mut output)?;
-                Ok(Chunk::from(output))
-            }
-            Compression::None => {
-                // Archived chunk is NOT compressed
-                Ok(Chunk::from(compressed.into_inner().1))
-            }
+            Some(Compression {
+                algorithm: CompressionAlgorithm::Zstd,
+                level,
+            }) => (dict::chunk_compression::CompressionType::Zstd, level),
+            Some(Compression {
+                algorithm: CompressionAlgorithm::Brotli,
+                level,
+            }) => (dict::chunk_compression::CompressionType::Brotli, level),
+            None => (dict::chunk_compression::CompressionType::None, 0),
+        };
+        Self {
+            compression: compression as i32,
+            compression_level,
         }
     }
 }

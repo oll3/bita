@@ -27,7 +27,7 @@ struct ChunkerResult {
 async fn chunk_file(
     path: &Path,
     chunker_config: &chunker::Config,
-    compression: Compression,
+    compression: Option<Compression>,
     num_chunk_buffers: usize,
 ) -> Result<ChunkerResult> {
     let mut descriptors: HashMap<HashSum, ChunkDescriptor> = HashMap::new();
@@ -155,7 +155,7 @@ pub struct Options {
     pub input_a: PathBuf,
     pub input_b: PathBuf,
     pub chunker_config: chunker::Config,
-    pub compression: Compression,
+    pub compression: Option<Compression>,
     pub num_chunk_buffers: usize,
 }
 
