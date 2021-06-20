@@ -64,7 +64,7 @@ impl VerifiedChunk {
     /// Create a new verified chunk by calculating a hash of it.
     pub fn new(chunk: Chunk) -> Self {
         Self {
-            hash_sum: HashSum::b2_digest(&chunk.data()),
+            hash_sum: HashSum::b2_digest(chunk.data()),
             chunk,
         }
     }

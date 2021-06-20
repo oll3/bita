@@ -38,7 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let reused_bytes = output.reorder_in_place(output_index).await?;
 
     // Fetch the rest of the chunks from the archive
-    let mut chunk_stream = archive.chunk_stream(&output.chunks());
+    let mut chunk_stream = archive.chunk_stream(output.chunks());
     let mut read_archive_bytes = 0;
     while let Some(result) = chunk_stream.next().await {
         let compressed = result?;

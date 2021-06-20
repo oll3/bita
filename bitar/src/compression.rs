@@ -110,7 +110,7 @@ impl Compression {
                 {
                     let mut writer =
                         brotli::CompressorWriter::with_params(&mut result, 1024 * 1024, &params);
-                    writer.write_all(&chunk.data())?;
+                    writer.write_all(chunk.data())?;
                 }
                 Bytes::from(result)
             }

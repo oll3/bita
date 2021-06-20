@@ -162,7 +162,7 @@ fn parse_input_config(matches: &clap::ArgMatches<'_>) -> Result<clone_cmd::Input
                             let name = split.next().unwrap().trim_end_matches(": ").trim();
                             let value = split.next().context("Missing header value")?.trim();
                             headers.insert(
-                                HeaderName::from_bytes(&name.as_bytes())
+                                HeaderName::from_bytes(name.as_bytes())
                                     .context("Invalid header name")?,
                                 HeaderValue::from_str(value).context("Invalid header value")?,
                             );
@@ -256,7 +256,7 @@ fn add_chunker_args<'a, 'b>(
             Arg::with_name("compression")
                 .long("compression")
                 .value_name("TYPE")
-                .help(&compression_desc),
+                .help(compression_desc),
         ).arg(
             Arg::with_name("hash-length")
                 .long("hash-length")
@@ -437,7 +437,7 @@ async fn parse_opts() -> Result<()> {
             .map(|input| Path::new(input).to_path_buf());
         let temp_file = Path::with_extension(output, ".tmp");
         let hash_length = matches.value_of("hash-length").unwrap_or("64");
-        let chunker_config = parse_chunker_config(&matches)?;
+        let chunker_config = parse_chunker_config(matches)?;
         let compression = parse_compression(matches)?;
         compress_cmd::compress_cmd(compress_cmd::Options {
             input,
@@ -478,7 +478,7 @@ async fn parse_opts() -> Result<()> {
         } else {
             None
         };
-        let input_archive = parse_input_config(&matches)?;
+        let input_archive = parse_input_config(matches)?;
         clone_cmd::clone_cmd(clone_cmd::Options {
             input_archive,
             header_checksum,
@@ -497,7 +497,7 @@ async fn parse_opts() -> Result<()> {
     } else if let Some(matches) = matches.subcommand_matches("diff") {
         let input_a = Path::new(matches.value_of("A").unwrap());
         let input_b = Path::new(matches.value_of("B").unwrap());
-        let chunker_config = parse_chunker_config(&matches)?;
+        let chunker_config = parse_chunker_config(matches)?;
         let compression = parse_compression(matches)?;
         diff_cmd::diff_cmd(diff_cmd::Options {
             input_a: input_a.to_path_buf(),

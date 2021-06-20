@@ -108,7 +108,7 @@ impl ChunkIndex {
     }
     /// Get first source offset of a chunk.
     fn get_first_offset(&self, hash: &HashSum) -> Option<u64> {
-        self.get(&hash)
+        self.get(hash)
             .map(|ChunkLocation { offsets, .. }| offsets[0])
     }
     /// Get number of chunks in the index.
@@ -188,7 +188,7 @@ impl ChunkIndex {
                 if let Some(ChunkLocation {
                     size,
                     offsets: target_offsets,
-                }) = new_order.get(&chunk.hash)
+                }) = new_order.get(chunk.hash)
                 {
                     target_offsets.iter().for_each(|&target_offset| {
                         source_layout
@@ -282,7 +282,7 @@ impl ChunkIndex {
                 );
 
                 chunks_in_tree.into_iter().for_each(|hash| {
-                    let ChunkLocation { size, offsets } = &self.get(&hash).unwrap();
+                    let ChunkLocation { size, offsets } = &self.get(hash).unwrap();
                     offsets.iter().for_each(|offset| {
                         source_layout.remove(&OffsetSize::new(*offset, *size));
                     });

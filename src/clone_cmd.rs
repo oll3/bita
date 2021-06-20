@@ -213,7 +213,7 @@ where
         info!("Building chunk index of {}...", opts.output.display());
         Some(
             chunk_index_from_readable(
-                &archive.chunker_config(),
+                archive.chunker_config(),
                 opts.num_chunk_buffers,
                 &mut output_file,
             )

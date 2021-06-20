@@ -57,7 +57,7 @@ pub fn print_archive<R>(archive: &Archive<R>) {
     info!("  Header checksum: {}", archive.header_checksum());
     info!("  Chunk hash length: {} bytes", archive.chunk_hash_length());
 
-    print_chunker_config(&archive.chunker_config());
+    print_chunker_config(archive.chunker_config());
 
     info!("Source:");
     info!("  Source checksum: {}", archive.source_checksum());
