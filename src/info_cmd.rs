@@ -56,6 +56,13 @@ pub fn print_archive<R>(archive: &Archive<R>) {
     );
     info!("  Header checksum: {}", archive.header_checksum());
     info!("  Chunk hash length: {} bytes", archive.chunk_hash_length());
+    info!(
+        "  Chunk compression: {}",
+        match archive.chunk_compression() {
+            None => "None".to_string(),
+            Some(c) => format!("{}", c),
+        }
+    );
 
     print_chunker_config(archive.chunker_config());
 
