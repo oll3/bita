@@ -12,11 +12,11 @@ categories = ["compression", "filesystem"]
 
 
 [build-dependencies]
-prost-build = "0.7"
+prost-build = "0.8"
 
 [dependencies]
 blake2 = "0.9"
-prost = "0.7"
+prost = "0.8"
 log = "0.4"
 brotli-decompressor = "2.3"
 brotli = { version = "3.3", default-features = false, features = ["std", "disable-timer"], optional = true }
