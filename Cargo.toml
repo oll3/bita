@@ -17,21 +17,21 @@ members = [
 
 [dependencies]
 clap = "2.33.3"
-blake2 = "0.9.1"
+blake2 = "0.9.2"
 atty = "0.2.14"
 log = "0.4.14"
 fern = "0.6.0"
 chrono = "0.4.19"
-futures-util = { version = "0.3.14", default-features = false, features = ["std"] }
-tokio = { version = "1.5.0", features = ["fs", "io-std", "macros", "time", "rt-multi-thread"] }
+futures-util = { version = "0.3.17", default-features = false, features = ["std"] }
+tokio = { version = "1.12.0", features = ["fs", "io-std", "macros", "time", "rt-multi-thread"] }
 bitar = { version = "0.8.0", path = "bitar", features = ["compress"] }
-url = "2.2.1"
+url = "2.2.2"
 num_cpus = "1.13.0"
-async-trait = "0.1.50"
-anyhow = "1.0.40"
+async-trait = "0.1.51"
+anyhow = "1.0.44"
 
 [dependencies.reqwest]
-version = "0.11.0"
+version = "0.11.5"
 default-features = false
 features = ["stream"]
 
