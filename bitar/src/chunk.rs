@@ -2,7 +2,9 @@
 use bytes::Bytes;
 use std::fmt;
 
-use crate::{Compression, CompressionAlgorithm, CompressionError, HashSum};
+#[cfg(feature = "compress")]
+use crate::Compression;
+use crate::{CompressionAlgorithm, CompressionError, HashSum};
 
 /// A single chunk.
 ///
