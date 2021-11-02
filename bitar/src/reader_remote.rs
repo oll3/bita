@@ -4,10 +4,10 @@ use core::pin::Pin;
 use core::task::{Context, Poll};
 use futures_util::{ready, stream::Stream, StreamExt};
 use reqwest::{RequestBuilder, Url};
-use std::time::Duration;
+use std::{fmt, time::Duration};
 
 use crate::{
-    http_range_request,
+    http_range_request::HttpRangeRequest,
     reader::{ReadAt, Reader},
 };
 
@@ -25,8 +25,8 @@ impl std::error::Error for ReaderRemoteError {
         }
     }
 }
-impl std::fmt::Display for ReaderRemoteError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for ReaderRemoteError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::UnexpectedEnd => write!(f, "unexpected end"),
             Self::RequestNotClonable => write!(f, "request is not clonable"),
@@ -100,7 +100,7 @@ struct ChunkReader<'a> {
     num_adjacent_reads: usize,
     retry_count: u32,
     retry_delay: Duration,
-    request: Option<http_range_request::Builder>,
+    request: Option<HttpRangeRequest>,
 }
 
 impl<'a> ChunkReader<'a>
@@ -137,7 +137,7 @@ where
                 let total_size = last_adjacent.end_offset() - next.offset;
                 self.chunk_buf.clear();
                 self.request = Some(
-                    http_range_request::Builder::new(request_builder, next.offset, total_size)
+                    HttpRangeRequest::new(request_builder, next.offset, total_size)
                         .retry(self.retry_count, self.retry_delay),
                 );
             };
@@ -177,7 +177,7 @@ impl<'a> Stream for ChunkReader<'a> {
 impl Reader for ReaderRemote {
     type Error = ReaderRemoteError;
     async fn read_at(&mut self, offset: u64, size: usize) -> Result<Bytes, ReaderRemoteError> {
-        let request = http_range_request::Builder::new(
+        let request = HttpRangeRequest::new(
             self.request_builder
                 .try_clone()
                 .ok_or(ReaderRemoteError::RequestNotClonable)?,

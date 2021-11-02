@@ -10,7 +10,7 @@ use tokio::time::sleep;
 
 use crate::reader_remote::ReaderRemoteError;
 
-pub(crate) struct Builder {
+pub(crate) struct HttpRangeRequest {
     request: RequestBuilder,
     state: RequestState,
     size: u64,
@@ -19,7 +19,7 @@ pub(crate) struct Builder {
     retry_count: u32,
 }
 
-impl Builder {
+impl HttpRangeRequest {
     pub fn new(request: RequestBuilder, offset: u64, size: u64) -> Self {
         Self {
             request,
@@ -141,7 +141,7 @@ enum RequestState {
     Delay(Pin<Box<tokio::time::Sleep>>),
 }
 
-impl<'a> Stream for Builder {
+impl<'a> Stream for HttpRangeRequest {
     type Item = Result<Bytes, ReaderRemoteError>;
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         self.poll_read(cx)
