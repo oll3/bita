@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+use bitar::ReaderIo;
 use bitar::{Archive, CloneOutput, ReaderRemote};
 use blake2::{Blake2b, Digest};
 use futures_util::stream::StreamExt;
@@ -31,7 +32,7 @@ pub static ARCHIVE_0_7_1_BROTLI: &str = "tests/resources/zero-0_7_1-brotli.cba";
 
 pub async fn clone_local_expect_checksum(path: &str, b2sum: &[u8]) {
     clone_expect_checksum(
-        Archive::try_init(File::open(path).await.unwrap())
+        Archive::try_init(ReaderIo::new(File::open(path).await.unwrap()))
             .await
             .unwrap(),
         b2sum,

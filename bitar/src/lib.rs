@@ -7,6 +7,7 @@ mod compression;
 mod hashsum;
 mod http_range_request;
 mod reader;
+mod reader_io;
 mod reader_remote;
 mod rolling_hash;
 
@@ -25,6 +26,7 @@ pub use compression::{
 };
 pub use hashsum::HashSum;
 pub use reader::Reader;
+pub use reader_io::ReaderIo;
 pub use reader_remote::{ReaderRemote, ReaderRemoteError};
 
 pub mod chunk_dictionary {

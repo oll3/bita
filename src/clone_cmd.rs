@@ -15,7 +15,8 @@ use url::Url;
 
 use crate::{human_size, info_cmd};
 use bitar::{
-    chunker, Archive, ChunkIndex, CloneOutput, HashSum, Reader, ReaderRemote, VerifiedChunk,
+    chunker, Archive, ChunkIndex, CloneOutput, HashSum, Reader, ReaderIo, ReaderRemote,
+    VerifiedChunk,
 };
 
 async fn file_size(file: &mut File) -> Result<u64, std::io::Error> {
@@ -376,9 +377,11 @@ pub async fn clone_cmd(opts: Options) -> Result<()> {
         InputArchive::Local(path) => {
             clone_archive(
                 opts,
-                File::open(&path)
-                    .await
-                    .context(format!("Failed to open {}", path.display()))?,
+                ReaderIo::new(
+                    File::open(&path)
+                        .await
+                        .context(format!("Failed to open {}", path.display()))?,
+                ),
             )
             .await
         }

@@ -11,7 +11,7 @@ use tokio::{
 };
 
 use crate::{human_size, info_cmd};
-use bitar::chunk_dictionary as dict;
+use bitar::{chunk_dictionary as dict, ReaderIo};
 use bitar::{chunker, Compression};
 
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -258,8 +258,8 @@ pub async fn compress_cmd(opts: Options) -> Result<()> {
     drop(output_file);
     {
         // Print archive info
-        let mut reader = File::open(opts.output).await?;
-        info_cmd::print_archive_reader(&mut reader).await?;
+        let reader = ReaderIo::new(File::open(opts.output).await?);
+        info_cmd::print_archive_reader(reader).await?;
     }
     Ok(())
 }

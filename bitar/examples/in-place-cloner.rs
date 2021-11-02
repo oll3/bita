@@ -1,4 +1,4 @@
-use bitar::{Archive, ChunkIndex, CloneOutput};
+use bitar::{Archive, ChunkIndex, CloneOutput, ReaderIo};
 use futures_util::{StreamExt, TryStreamExt};
 use tokio::fs::{File, OpenOptions};
 
@@ -8,7 +8,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let input_path = "examples/resources/example-archive.cba";
 
     // Open archive which source we want to clone
-    let mut archive = Archive::try_init(File::open(input_path).await?).await?;
+    let mut archive = Archive::try_init(ReaderIo::new(File::open(input_path).await?)).await?;
 
     // Create a file for clone output
     let mut output_file = OpenOptions::new()
