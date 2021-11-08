@@ -1,6 +1,6 @@
 mod common;
 
-use bitar::{Archive, ReaderIo};
+use bitar::{archive_reader::IoReader, Archive};
 use futures_util::stream::StreamExt;
 use tokio::fs::File;
 
@@ -10,7 +10,7 @@ use common::*;
 #[tokio::test]
 async fn clone_local_v0_1_1_lzma_not_supported() {
     assert!(matches!(
-        Archive::try_init(ReaderIo::new(File::open(ARCHIVE_0_1_1_LZMA).await.unwrap())).await,
+        Archive::try_init(IoReader::new(File::open(ARCHIVE_0_1_1_LZMA).await.unwrap())).await,
         Err(bitar::ArchiveError::InvalidArchive(_))
     ))
 }
@@ -19,7 +19,7 @@ async fn clone_local_v0_1_1_lzma_not_supported() {
 #[tokio::test]
 async fn clone_local_v0_1_1_zstd_not_supported() {
     assert!(matches!(
-        Archive::try_init(ReaderIo::new(File::open(ARCHIVE_0_1_1_ZSTD).await.unwrap())).await,
+        Archive::try_init(IoReader::new(File::open(ARCHIVE_0_1_1_ZSTD).await.unwrap())).await,
         Err(bitar::ArchiveError::InvalidArchive(_))
     ))
 }
@@ -47,7 +47,7 @@ async fn clone_remote_v0_7_1_brotli() {
 #[tokio::test]
 async fn clone_local_v0_7_1_corrupt_header() {
     assert!(matches!(
-        Archive::try_init(ReaderIo::new(
+        Archive::try_init(IoReader::new(
             File::open(ARCHIVE_0_7_1_CORRUPT_HEADER).await.unwrap()
         ))
         .await,
@@ -57,7 +57,7 @@ async fn clone_local_v0_7_1_corrupt_header() {
 
 #[tokio::test]
 async fn clone_local_v0_7_1_corrupt_chunk() {
-    let mut archive = Archive::try_init(ReaderIo::new(
+    let mut archive = Archive::try_init(IoReader::new(
         File::open(ARCHIVE_0_7_1_CORRUPT_CHUNK).await.unwrap(),
     ))
     .await

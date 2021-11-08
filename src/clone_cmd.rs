@@ -15,8 +15,8 @@ use url::Url;
 
 use crate::{human_size, info_cmd};
 use bitar::{
-    chunker, Archive, ChunkIndex, CloneOutput, HashSum, Reader, ReaderIo, ReaderRemote,
-    VerifiedChunk,
+    archive_reader::{ArchiveReader, HttpReader, IoReader},
+    chunker, Archive, ChunkIndex, CloneOutput, HashSum, VerifiedChunk,
 };
 
 async fn file_size(file: &mut File) -> Result<u64, std::io::Error> {
@@ -99,7 +99,7 @@ async fn clone_from_archive<R, C>(
     output: &mut CloneOutput<C>,
 ) -> Result<u64>
 where
-    R: Reader,
+    R: ArchiveReader,
     R::Error: std::error::Error + Sync + Send + 'static,
     C: AsyncWrite + AsyncSeek + Unpin + Send,
 {
@@ -158,7 +158,7 @@ where
 
 async fn clone_archive<R>(opts: Options, reader: R) -> Result<()>
 where
-    R: Reader,
+    R: ArchiveReader,
     R::Error: std::error::Error + Send + Sync + 'static,
 {
     let mut archive = Archive::try_init(reader).await.context(format!(
@@ -377,7 +377,7 @@ pub async fn clone_cmd(opts: Options) -> Result<()> {
         InputArchive::Local(path) => {
             clone_archive(
                 opts,
-                ReaderIo::new(
+                IoReader::new(
                     File::open(&path)
                         .await
                         .context(format!("Failed to open {}", path.display()))?,
@@ -394,7 +394,7 @@ pub async fn clone_cmd(opts: Options) -> Result<()> {
             }
             clone_archive(
                 opts,
-                ReaderRemote::from_request(request)
+                HttpReader::from_request(request)
                     .retries(input.retries)
                     .retry_delay(input.retry_delay),
             )

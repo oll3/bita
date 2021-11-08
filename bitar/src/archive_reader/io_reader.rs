@@ -6,31 +6,32 @@ use futures_util::{ready, stream::Stream};
 use std::io;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, ReadBuf};
 
-use crate::reader::ReadAt;
-use crate::Reader;
+use crate::archive_reader::ArchiveReader;
+use crate::ChunkOffset;
 
-/// Wrapper which implements Reader for any T which implements
-/// tokio AsyncRead and AsyncSeek
-pub struct ReaderIo<T>(T);
+/// Wrapper which implements ArchiveBackend for any type which implements
+/// tokio AsyncRead and AsyncSeek.
+pub struct IoReader<T>(T);
 
-impl<T> ReaderIo<T> {
+impl<T> IoReader<T> {
     pub fn new(inner: T) -> Self {
         Self(inner)
     }
 }
 
-impl<T> From<T> for ReaderIo<T> {
+impl<T> From<T> for IoReader<T> {
     fn from(inner: T) -> Self {
         Self(inner)
     }
 }
 
 #[async_trait]
-impl<T> Reader for ReaderIo<T>
+impl<T> ArchiveReader for IoReader<T>
 where
     T: AsyncRead + AsyncSeek + Unpin + Send,
 {
     type Error = io::Error;
+
     async fn read_at(&mut self, offset: u64, size: usize) -> Result<Bytes, io::Error> {
         self.0.seek(io::SeekFrom::Start(offset)).await?;
         let mut buf = BytesMut::with_capacity(size);
@@ -44,7 +45,7 @@ where
 
     fn read_chunks<'a>(
         &'a mut self,
-        chunks: Vec<ReadAt>,
+        chunks: Vec<ChunkOffset>,
     ) -> Pin<Box<dyn Stream<Item = Result<Bytes, io::Error>> + Send + 'a>> {
         Box::pin(IoChunkReader::new(&mut self.0, chunks))
     }
@@ -61,7 +62,7 @@ where
     R: AsyncRead + AsyncSeek + Unpin + Send + ?Sized,
 {
     state: IoChunkReaderState,
-    chunks: Vec<ReadAt>,
+    chunks: Vec<ChunkOffset>,
     chunk_index: usize,
     buf: BytesMut,
     buf_offset: usize,
@@ -72,11 +73,11 @@ impl<'a, R> IoChunkReader<'a, R>
 where
     R: AsyncRead + AsyncSeekExt + Unpin + Send + ?Sized,
 {
-    fn new(reader: &'a mut R, chunks: Vec<ReadAt>) -> Self {
+    fn new(reader: &'a mut R, chunks: Vec<ChunkOffset>) -> Self {
         let first = chunks
             .get(0)
             .cloned()
-            .unwrap_or(ReadAt { offset: 0, size: 0 });
+            .unwrap_or(ChunkOffset { offset: 0, size: 0 });
         Self {
             reader,
             state: IoChunkReaderState::Seek,
@@ -86,6 +87,7 @@ where
             buf_offset: 0,
         }
     }
+
     fn poll_chunk<'b>(&'b mut self, cx: &mut Context) -> Poll<Option<Result<Bytes, io::Error>>>
     where
         R: AsyncSeek + AsyncRead + Send + Unpin,
@@ -141,9 +143,11 @@ where
     R: AsyncRead + AsyncSeek + Unpin + Send,
 {
     type Item = Result<Bytes, io::Error>;
+
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         self.poll_chunk(cx)
     }
+
     fn size_hint(&self) -> (usize, Option<usize>) {
         let chunks_left = self.chunks.len() - self.chunk_index;
         (chunks_left, Some(chunks_left))
@@ -163,36 +167,38 @@ mod tests {
         let mut file = NamedTempFile::new().unwrap();
         let expected: Vec<u8> = b"hello file".to_vec();
         file.write_all(&expected).unwrap();
-        let reader = ReaderIo(File::open(&file.path()).await.unwrap());
+        let reader = IoReader(File::open(&file.path()).await.unwrap());
         pin_mut!(reader);
         let read_back = reader.read_at(0, expected.len()).await.unwrap();
         assert_eq!(read_back, expected);
     }
+
     #[tokio::test]
     async fn local_read_single_big() {
         let mut file = NamedTempFile::new().unwrap();
         let expected: Vec<u8> = (0..10 * 1024 * 1024).map(|v| v as u8).collect();
         file.write_all(&expected).unwrap();
-        let reader = ReaderIo(File::open(&file.path()).await.unwrap());
+        let reader = IoReader(File::open(&file.path()).await.unwrap());
         pin_mut!(reader);
         let read_back = reader.read_at(0, expected.len()).await.unwrap();
         assert_eq!(read_back, expected);
     }
+
     #[tokio::test]
     async fn local_read_chunks() {
         let mut file = NamedTempFile::new().unwrap();
         let expected: Vec<u8> = (0..10 * 1024 * 1024).map(|v| v as u8).collect();
         let chunks = vec![
-            ReadAt::new(0, 10),
-            ReadAt::new(10, 20),
-            ReadAt::new(30, 30),
-            ReadAt::new(60, 100),
-            ReadAt::new(160, 200),
-            ReadAt::new(360, 400),
-            ReadAt::new(760, 8 * 1024 * 1024),
+            ChunkOffset::new(0, 10),
+            ChunkOffset::new(10, 20),
+            ChunkOffset::new(30, 30),
+            ChunkOffset::new(60, 100),
+            ChunkOffset::new(160, 200),
+            ChunkOffset::new(360, 400),
+            ChunkOffset::new(760, 8 * 1024 * 1024),
         ];
         file.write_all(&expected).unwrap();
-        let mut reader = ReaderIo(File::open(&file.path()).await.unwrap());
+        let mut reader = IoReader(File::open(&file.path()).await.unwrap());
         let stream = reader.read_chunks(chunks.clone());
         {
             pin_mut!(stream);

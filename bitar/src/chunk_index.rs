@@ -2,7 +2,8 @@ use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
-use crate::{chunk_location_map::ChunkLocationMap, chunk_location_map::OffsetSize, HashSum};
+use crate::ChunkOffset;
+use crate::{chunk_location_map::ChunkLocationMap, HashSum};
 
 /// Represents a single chunk re-ordering operation.
 #[derive(Debug, Clone, PartialEq)]
@@ -252,7 +253,7 @@ impl ChunkIndex {
                 {
                     target_offsets.iter().for_each(|&target_offset| {
                         source_layout
-                            .iter_overlapping(OffsetSize::new(target_offset, *size))
+                            .iter_overlapping(ChunkOffset::new(target_offset, *size))
                             // filter overlapping chunks with same hash
                             .filter(|(_, &ovhash)| chunk.hash != ovhash)
                             .for_each(|(location, &ovhash)| {
@@ -308,7 +309,7 @@ impl ChunkIndex {
                         let size = location.size;
                         let first_offset = self.get_first_offset(hash).unwrap();
                         source_layout.insert(
-                            OffsetSize {
+                            ChunkOffset {
                                 size,
                                 offset: first_offset,
                             },
@@ -344,7 +345,7 @@ impl ChunkIndex {
                 chunks_in_tree.into_iter().for_each(|hash| {
                     let ChunkLocation { size, offsets } = &self.get(hash).unwrap();
                     offsets.iter().for_each(|offset| {
-                        source_layout.remove(&OffsetSize::new(*offset, *size));
+                        source_layout.remove(&ChunkOffset::new(*offset, *size));
                     });
                     chunks_processed.insert(hash);
                 });

@@ -5,10 +5,9 @@ use futures_util::{ready, stream::Stream, StreamExt};
 use reqwest::RequestBuilder;
 use std::future::Future;
 use std::time::Duration;
-
 use tokio::time::sleep;
 
-use crate::reader_remote::ReaderRemoteError;
+use crate::archive_reader::HttpReaderError;
 
 pub(crate) struct HttpRangeRequest {
     request: RequestBuilder,
@@ -30,16 +29,18 @@ impl HttpRangeRequest {
             state: RequestState::Init,
         }
     }
+
     pub fn retry(mut self, retry_count: u32, retry_delay: Duration) -> Self {
         self.retry_delay = retry_delay;
         self.retry_count = retry_count;
         self
     }
+
     async fn single_fail(
         request: RequestBuilder,
         offset: u64,
         size: u64,
-    ) -> Result<Bytes, ReaderRemoteError> {
+    ) -> Result<Bytes, HttpReaderError> {
         let end_offset = offset + size - 1;
         let request = request.header(
             reqwest::header::RANGE,
@@ -48,12 +49,13 @@ impl HttpRangeRequest {
         let response = request.send().await?;
         Ok(response.bytes().await?)
     }
-    pub async fn single(mut self) -> Result<Bytes, ReaderRemoteError> {
+
+    pub async fn single(mut self) -> Result<Bytes, HttpReaderError> {
         loop {
             match Self::single_fail(
                 self.request
                     .try_clone()
-                    .ok_or(ReaderRemoteError::RequestNotClonable)?,
+                    .ok_or(HttpReaderError::RequestNotClonable)?,
                 self.offset,
                 self.size,
             )
@@ -72,19 +74,15 @@ impl HttpRangeRequest {
             sleep(self.retry_delay).await;
         }
     }
-    fn poll_read_fail(
-        &mut self,
-        cx: &mut Context,
-    ) -> Poll<Option<Result<Bytes, ReaderRemoteError>>> {
+
+    fn poll_read_fail(&mut self, cx: &mut Context) -> Poll<Option<Result<Bytes, HttpReaderError>>> {
         loop {
             match &mut self.state {
                 RequestState::Init => {
                     let end_offset = self.offset + self.size - 1;
                     let request = match self.request.try_clone() {
                         Some(request) => request,
-                        None => {
-                            return Poll::Ready(Some(Err(ReaderRemoteError::RequestNotClonable)))
-                        }
+                        None => return Poll::Ready(Some(Err(HttpReaderError::RequestNotClonable))),
                     };
                     let request = request
                         .header(
@@ -98,7 +96,7 @@ impl HttpRangeRequest {
                     Ok(response) => {
                         self.state = RequestState::Stream(Box::new(response.bytes_stream()))
                     }
-                    Err(err) => return Poll::Ready(Some(Err(ReaderRemoteError::from(err)))),
+                    Err(err) => return Poll::Ready(Some(Err(HttpReaderError::from(err)))),
                 },
                 RequestState::Stream(stream) => match ready!(stream.poll_next_unpin(cx)) {
                     Some(Ok(item)) => {
@@ -106,7 +104,7 @@ impl HttpRangeRequest {
                         self.size -= item.len() as u64;
                         return Poll::Ready(Some(Ok(item)));
                     }
-                    Some(Err(err)) => return Poll::Ready(Some(Err(ReaderRemoteError::from(err)))),
+                    Some(Err(err)) => return Poll::Ready(Some(Err(HttpReaderError::from(err)))),
                     None => return Poll::Ready(None),
                 },
                 RequestState::Delay(sleep) => {
@@ -116,7 +114,8 @@ impl HttpRangeRequest {
             }
         }
     }
-    fn poll_read(&mut self, cx: &mut Context) -> Poll<Option<Result<Bytes, ReaderRemoteError>>> {
+
+    fn poll_read(&mut self, cx: &mut Context) -> Poll<Option<Result<Bytes, HttpReaderError>>> {
         loop {
             match self.poll_read_fail(cx) {
                 Poll::Ready(Some(Err(err))) => {
@@ -142,7 +141,8 @@ enum RequestState {
 }
 
 impl<'a> Stream for HttpRangeRequest {
-    type Item = Result<Bytes, ReaderRemoteError>;
+    type Item = Result<Bytes, HttpReaderError>;
+
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         self.poll_read(cx)
     }

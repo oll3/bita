@@ -1,6 +1,6 @@
 #![allow(dead_code)]
-use bitar::ReaderIo;
-use bitar::{Archive, CloneOutput, ReaderRemote};
+use bitar::archive_reader::{HttpReader, IoReader};
+use bitar::{Archive, CloneOutput};
 use blake2::{Blake2b, Digest};
 use futures_util::stream::StreamExt;
 use hyper::service::{make_service_fn, service_fn};
@@ -32,7 +32,7 @@ pub static ARCHIVE_0_7_1_BROTLI: &str = "tests/resources/zero-0_7_1-brotli.cba";
 
 pub async fn clone_local_expect_checksum(path: &str, b2sum: &[u8]) {
     clone_expect_checksum(
-        Archive::try_init(ReaderIo::new(File::open(path).await.unwrap()))
+        Archive::try_init(IoReader::new(File::open(path).await.unwrap()))
             .await
             .unwrap(),
         b2sum,
@@ -46,7 +46,7 @@ pub async fn clone_remote_expect_checksum(path: &str, b2sum: &'static [u8]) {
     let server = serve_archive(listener, path);
     let clone_task = tokio::spawn(async move {
         clone_expect_checksum(
-            Archive::try_init(ReaderRemote::from_url(
+            Archive::try_init(HttpReader::from_url(
                 Url::parse(&format!("http://127.0.0.1:{}", server_port)).unwrap(),
             ))
             .await
@@ -61,8 +61,10 @@ pub async fn clone_remote_expect_checksum(path: &str, b2sum: &'static [u8]) {
     };
 }
 
-async fn clone_expect_checksum<R: bitar::Reader>(mut archive: Archive<R>, b2sum: &[u8])
-where
+async fn clone_expect_checksum<R: bitar::archive_reader::ArchiveReader>(
+    mut archive: Archive<R>,
+    b2sum: &[u8],
+) where
     R::Error: std::fmt::Debug,
 {
     let mut output_buf = vec![];

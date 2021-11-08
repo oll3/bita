@@ -3,11 +3,14 @@ use log::*;
 use tokio::fs::File;
 
 use crate::human_size;
-use bitar::{chunker, Archive, Reader, ReaderIo, ReaderRemote};
+use bitar::{
+    archive_reader::{ArchiveReader, HttpReader, IoReader},
+    chunker, Archive,
+};
 
 pub async fn print_archive_reader<R>(reader: R) -> Result<()>
 where
-    R: Reader,
+    R: ArchiveReader,
     R::Error: std::error::Error + Send + Sync + 'static,
 {
     let archive = Archive::try_init(reader).await?;
@@ -92,8 +95,8 @@ pub fn print_archive<R>(archive: &Archive<R>) {
 
 pub async fn info_cmd(input: String) -> Result<()> {
     if let Ok(url) = input.parse::<reqwest::Url>() {
-        print_archive_reader(ReaderRemote::from_url(url)).await
+        print_archive_reader(HttpReader::from_url(url)).await
     } else {
-        print_archive_reader(ReaderIo::new(File::open(&input).await?)).await
+        print_archive_reader(IoReader::new(File::open(&input).await?)).await
     }
 }

@@ -3,8 +3,9 @@ use futures_util::{stream::Stream, StreamExt};
 use std::{convert::TryInto, fmt};
 
 use crate::{
-    chunk_dictionary as dict, chunker, compression::CompressionAlgorithm, header, reader::ReadAt,
-    ChunkIndex, CompressedArchiveChunk, CompressedChunk, Compression, HashSum, Reader,
+    archive_reader::ArchiveReader, chunk_dictionary as dict, chunker,
+    compression::CompressionAlgorithm, header, ChunkIndex, ChunkOffset, CompressedArchiveChunk,
+    CompressedChunk, Compression, HashSum,
 };
 
 #[derive(Debug)]
@@ -101,7 +102,7 @@ impl<R> Archive<R> {
     /// Try to initialize an archive from a reader.
     pub async fn try_init(mut reader: R) -> Result<Self, ArchiveError<R::Error>>
     where
-        R: Reader,
+        R: ArchiveReader,
     {
         // Read the pre-header (file magic and size)
         let mut header: Vec<u8> = reader
@@ -266,16 +267,16 @@ impl<R> Archive<R> {
         chunks: &ChunkIndex,
     ) -> impl Stream<Item = Result<CompressedArchiveChunk, R::Error>> + Unpin + Sized + 'a
     where
-        R: Reader + 'a,
+        R: ArchiveReader + 'a,
     {
         let descriptors: Vec<&ChunkDescriptor> = self
             .archive_chunks
             .iter()
             .filter(|cd| chunks.contains(&cd.checksum))
             .collect();
-        let read_at: Vec<ReadAt> = descriptors
+        let read_at: Vec<ChunkOffset> = descriptors
             .iter()
-            .map(|cd| ReadAt::new(cd.archive_offset, cd.archive_size))
+            .map(|cd| ChunkOffset::new(cd.archive_offset, cd.archive_size))
             .collect();
         let archive_chunk_compression = self.chunk_compression().map(|c| c.algorithm);
         self.reader

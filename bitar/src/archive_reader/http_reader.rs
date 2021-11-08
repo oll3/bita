@@ -6,48 +6,17 @@ use futures_util::{ready, stream::Stream, StreamExt};
 use reqwest::{RequestBuilder, Url};
 use std::{fmt, time::Duration};
 
-use crate::{
-    http_range_request::HttpRangeRequest,
-    reader::{ReadAt, Reader},
-};
+use super::http_range_request::HttpRangeRequest;
+use crate::archive_reader::{ArchiveReader, ChunkOffset};
 
-#[derive(Debug)]
-pub enum ReaderRemoteError {
-    UnexpectedEnd,
-    RequestNotClonable,
-    Http(reqwest::Error),
-}
-impl std::error::Error for ReaderRemoteError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            ReaderRemoteError::Http(err) => Some(err),
-            ReaderRemoteError::UnexpectedEnd | ReaderRemoteError::RequestNotClonable => None,
-        }
-    }
-}
-impl fmt::Display for ReaderRemoteError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnexpectedEnd => write!(f, "unexpected end"),
-            Self::RequestNotClonable => write!(f, "request is not clonable"),
-            Self::Http(_) => write!(f, "http error"),
-        }
-    }
-}
-impl From<reqwest::Error> for ReaderRemoteError {
-    fn from(e: reqwest::Error) -> Self {
-        Self::Http(e)
-    }
-}
-
-/// Read archive from remote location.
-pub struct ReaderRemote {
+/// Read a http/https hosted archive.
+pub struct HttpReader {
     request_builder: RequestBuilder,
     retry_count: u32,
     retry_delay: Duration,
 }
 
-impl ReaderRemote {
+impl HttpReader {
     /// Create a remote archive reader using RequestBuilder for the http request.
     pub fn from_request(request_builder: RequestBuilder) -> Self {
         Self {
@@ -56,18 +25,21 @@ impl ReaderRemote {
             retry_delay: Duration::from_secs(0),
         }
     }
+
     /// Create a remote archive reader using an URL and default parameters for the request.
     pub fn from_url(url: Url) -> Self {
         Self::from_request(reqwest::Client::new().get(url))
     }
+
     /// Set number of times to retry on failure
     ///
-    /// The reader will try to reconnect and continue download from where the failure occured.
+    /// The reader will try to reconnect and continue download from where the failure occurred.
     /// Any progress made so far should not be lost.
     pub fn retries(mut self, retry_count: u32) -> Self {
         self.retry_count = retry_count;
         self
     }
+
     /// Set a delay between attempts to reconnect to the remote server.
     ///
     /// On failure the reader will wait for the given time before trying to reconnect.
@@ -75,10 +47,11 @@ impl ReaderRemote {
         self.retry_delay = retry_delay;
         self
     }
+
     fn read_chunk_stream(
         &mut self,
-        chunks: Vec<ReadAt>,
-    ) -> impl Stream<Item = Result<Bytes, ReaderRemoteError>> + '_ {
+        chunks: Vec<ChunkOffset>,
+    ) -> impl Stream<Item = Result<Bytes, HttpReaderError>> + '_ {
         ChunkReader {
             request_builder: &self.request_builder,
             chunk_buf: BytesMut::new(),
@@ -95,7 +68,7 @@ impl ReaderRemote {
 struct ChunkReader<'a> {
     request_builder: &'a RequestBuilder,
     chunk_buf: BytesMut,
-    chunks: Vec<ReadAt>,
+    chunks: Vec<ChunkOffset>,
     chunk_index: usize,
     num_adjacent_reads: usize,
     retry_count: u32,
@@ -107,7 +80,7 @@ impl<'a> ChunkReader<'a>
 where
     Self: Unpin,
 {
-    fn poll_read(&mut self, cx: &mut Context) -> Poll<Option<Result<Bytes, ReaderRemoteError>>> {
+    fn poll_read(&mut self, cx: &mut Context) -> Poll<Option<Result<Bytes, HttpReaderError>>> {
         loop {
             let chunks = &self.chunks[self.chunk_index..];
             if chunks.is_empty() {
@@ -130,11 +103,11 @@ where
                 let request_builder = self
                     .request_builder
                     .try_clone()
-                    .ok_or(ReaderRemoteError::RequestNotClonable)?;
+                    .ok_or(HttpReaderError::RequestNotClonable)?;
 
                 self.num_adjacent_reads = Self::adjacent_reads(chunks);
                 let last_adjacent = &chunks[self.num_adjacent_reads - 1];
-                let total_size = last_adjacent.end_offset() - next.offset;
+                let total_size = last_adjacent.end() - next.offset;
                 self.chunk_buf.clear();
                 self.request = Some(
                     HttpRangeRequest::new(request_builder, next.offset, total_size)
@@ -149,11 +122,12 @@ where
                     self.chunk_buf.extend(chunk);
                 }
                 Some(Err(err)) => return Poll::Ready(Some(Err(err))),
-                None => return Poll::Ready(Some(Err(ReaderRemoteError::UnexpectedEnd))),
+                None => return Poll::Ready(Some(Err(HttpReaderError::UnexpectedEnd))),
             }
         }
     }
-    fn adjacent_reads(chunks: &[ReadAt]) -> usize {
+
+    fn adjacent_reads(chunks: &[ChunkOffset]) -> usize {
         chunks
             .windows(2)
             .take_while(|p| (p[0].offset + p[0].size as u64) == p[1].offset)
@@ -163,10 +137,12 @@ where
 }
 
 impl<'a> Stream for ChunkReader<'a> {
-    type Item = Result<Bytes, ReaderRemoteError>;
+    type Item = Result<Bytes, HttpReaderError>;
+
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         self.poll_read(cx)
     }
+
     fn size_hint(&self) -> (usize, Option<usize>) {
         let chunks_left = self.chunks.len() - self.chunk_index;
         (chunks_left, Some(chunks_left))
@@ -174,13 +150,14 @@ impl<'a> Stream for ChunkReader<'a> {
 }
 
 #[async_trait]
-impl Reader for ReaderRemote {
-    type Error = ReaderRemoteError;
-    async fn read_at(&mut self, offset: u64, size: usize) -> Result<Bytes, ReaderRemoteError> {
+impl ArchiveReader for HttpReader {
+    type Error = HttpReaderError;
+
+    async fn read_at(&mut self, offset: u64, size: usize) -> Result<Bytes, HttpReaderError> {
         let request = HttpRangeRequest::new(
             self.request_builder
                 .try_clone()
-                .ok_or(ReaderRemoteError::RequestNotClonable)?,
+                .ok_or(HttpReaderError::RequestNotClonable)?,
             offset,
             size as u64,
         )
@@ -191,16 +168,49 @@ impl Reader for ReaderRemote {
             // Truncate the response if bigger than requested size
             Ok(res.split_to(size))
         } else if res.len() < size {
-            Err(ReaderRemoteError::UnexpectedEnd)
+            Err(HttpReaderError::UnexpectedEnd)
         } else {
             Ok(res)
         }
     }
+
     fn read_chunks<'a>(
         &'a mut self,
-        chunks: Vec<ReadAt>,
-    ) -> Pin<Box<dyn Stream<Item = Result<Bytes, ReaderRemoteError>> + Send + 'a>> {
+        chunks: Vec<ChunkOffset>,
+    ) -> Pin<Box<dyn Stream<Item = Result<Bytes, HttpReaderError>> + Send + 'a>> {
         Box::pin(self.read_chunk_stream(chunks))
+    }
+}
+
+#[derive(Debug)]
+pub enum HttpReaderError {
+    UnexpectedEnd,
+    RequestNotClonable,
+    Http(reqwest::Error),
+}
+
+impl std::error::Error for HttpReaderError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            HttpReaderError::Http(err) => Some(err),
+            HttpReaderError::UnexpectedEnd | HttpReaderError::RequestNotClonable => None,
+        }
+    }
+}
+
+impl fmt::Display for HttpReaderError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnexpectedEnd => write!(f, "unexpected end"),
+            Self::RequestNotClonable => write!(f, "request is not clonable"),
+            Self::Http(_) => write!(f, "http error"),
+        }
+    }
+}
+
+impl From<reqwest::Error> for HttpReaderError {
+    fn from(e: reqwest::Error) -> Self {
+        Self::Http(e)
     }
 }
 
@@ -238,9 +248,11 @@ mod tests {
             .await
             .unwrap();
     }
-    fn new_reader(port: u16) -> ReaderRemote {
-        ReaderRemote::from_url(Url::parse(&format!("http://127.0.0.1:{}", port)).unwrap())
+
+    fn new_reader(port: u16) -> HttpReader {
+        HttpReader::from_url(Url::parse(&format!("http://127.0.0.1:{}", port)).unwrap())
     }
+
     fn new_listener() -> (std::net::TcpListener, u16) {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -249,31 +261,35 @@ mod tests {
 
     #[test]
     fn one_adjacent_reads() {
-        let chunks = vec![ReadAt::new(0, 1), ReadAt::new(10, 1)];
+        let chunks = vec![ChunkOffset::new(0, 1), ChunkOffset::new(10, 1)];
         assert_eq!(ChunkReader::adjacent_reads(&chunks[..]), 1);
     }
 
     #[test]
     fn two_adjacent_reads() {
-        let chunks = vec![ReadAt::new(0, 1), ReadAt::new(1, 3), ReadAt::new(10, 3)];
+        let chunks = vec![
+            ChunkOffset::new(0, 1),
+            ChunkOffset::new(1, 3),
+            ChunkOffset::new(10, 3),
+        ];
         assert_eq!(ChunkReader::adjacent_reads(&chunks[..]), 2);
     }
 
     #[test]
     fn multiple_adjacent_reads() {
         let chunks = vec![
-            ReadAt::new(0, 1),
-            ReadAt::new(1, 3),
-            ReadAt::new(4, 3),
-            ReadAt::new(7, 3),
-            ReadAt::new(50, 3),
+            ChunkOffset::new(0, 1),
+            ChunkOffset::new(1, 3),
+            ChunkOffset::new(4, 3),
+            ChunkOffset::new(7, 3),
+            ChunkOffset::new(50, 3),
         ];
         assert_eq!(ChunkReader::adjacent_reads(&chunks[..]), 4);
     }
 
     #[test]
     fn builder() {
-        let reader = ReaderRemote::from_url(Url::parse("http://localhost/file").unwrap())
+        let reader = HttpReader::from_url(Url::parse("http://localhost/file").unwrap())
             .retries(3)
             .retry_delay(Duration::from_secs(10));
         assert_eq!(reader.retry_delay, Duration::from_secs(10));
@@ -282,6 +298,7 @@ mod tests {
         assert_eq!(request.url(), &Url::parse("http://localhost/file").unwrap());
         assert_eq!(request.method(), reqwest::Method::GET);
     }
+
     #[tokio::test]
     async fn read_single() {
         let expect = vec![1, 2, 3, 4, 5, 6];
@@ -294,6 +311,7 @@ mod tests {
             data = read => assert_eq!(data.unwrap(), expect),
         };
     }
+
     #[tokio::test]
     async fn read_single_offset() {
         let expect = vec![1, 2, 3, 4, 5, 6];
@@ -306,6 +324,7 @@ mod tests {
             data = read => assert_eq!(&data.unwrap()[..], &expect[1..]),
         };
     }
+
     #[tokio::test]
     async fn read_single_zero() {
         let (listener, port) = new_listener();
@@ -317,6 +336,7 @@ mod tests {
             data = read => assert_eq!(&data.unwrap()[..], &[]),
         };
     }
+
     #[tokio::test]
     async fn unexpected_end() {
         let (listener, port) = new_listener();
@@ -325,9 +345,10 @@ mod tests {
         let read = reader.read_at(0, 10);
         tokio::select! {
             _ = server => panic!("server ended"),
-            data = read => match data.unwrap_err() { ReaderRemoteError::UnexpectedEnd => {} err=> panic!("{}", err) },
+            data = read => match data.unwrap_err() { HttpReaderError::UnexpectedEnd => {} err=> panic!("{}", err) },
         };
     }
+
     #[tokio::test]
     async fn read_chunks() {
         let expect = vec![
@@ -337,12 +358,12 @@ mod tests {
         let server = new_server(listener, expect.clone());
         let mut reader = new_reader(port);
         let chunks = vec![
-            ReadAt { offset: 0, size: 6 },
-            ReadAt {
+            ChunkOffset { offset: 0, size: 6 },
+            ChunkOffset {
                 offset: 6,
                 size: 10,
             },
-            ReadAt {
+            ChunkOffset {
                 offset: 16,
                 size: 4,
             },
@@ -355,6 +376,7 @@ mod tests {
             ]),
         };
     }
+
     #[tokio::test]
     async fn read_chunks_with_offset() {
         let expect = vec![
@@ -364,12 +386,12 @@ mod tests {
         let server = new_server(listener, expect.clone());
         let mut reader = new_reader(port);
         let chunks = vec![
-            ReadAt { offset: 2, size: 4 },
-            ReadAt {
+            ChunkOffset { offset: 2, size: 4 },
+            ChunkOffset {
                 offset: 6,
                 size: 10,
             },
-            ReadAt {
+            ChunkOffset {
                 offset: 16,
                 size: 4,
             },
@@ -382,18 +404,19 @@ mod tests {
             ]),
         };
     }
+
     #[tokio::test]
     async fn connection_timeout() {
         let (listener, port) = new_listener();
         let _server = new_server(listener, vec![]);
-        let mut reader = ReaderRemote::from_request(
+        let mut reader = HttpReader::from_request(
             reqwest::Client::new()
                 .get(Url::parse(&format!("http://127.0.0.1:{}", port)).unwrap())
                 .timeout(Duration::from_millis(5)),
         );
-        let chunks = vec![ReadAt { offset: 0, size: 1 }];
+        let chunks = vec![ChunkOffset { offset: 0, size: 1 }];
         match reader.read_chunks(chunks).next().await {
-            Some(Err(ReaderRemoteError::Http(reqwest::Error { .. }))) => {}
+            Some(Err(HttpReaderError::Http(reqwest::Error { .. }))) => {}
             _ => panic!("unexpected result"),
         };
     }
