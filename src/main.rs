@@ -430,17 +430,24 @@ async fn parse_opts() -> Result<()> {
             .value_of("INPUT")
             .map(|input| Path::new(input).to_path_buf());
         let temp_file = Path::with_extension(output, ".tmp");
-        let hash_length = matches.value_of("hash-length").unwrap_or("64");
+        let hash_length = if let Some(hash_length) = matches.value_of("hash-length") {
+            let hash_length = hash_length.parse::<usize>().context("parse hash length")?;
+            if !(4..=HashSum::MAX_LEN).contains(&hash_length) {
+                bail!(
+                    "Invalid hash length value (valid range is 4-{})",
+                    HashSum::MAX_LEN
+                );
+            }
+            hash_length
+        } else {
+            HashSum::MAX_LEN
+        };
         let chunker_config = parse_chunker_config(matches)?;
         let compression = parse_compression(matches)?;
         compress_cmd::compress_cmd(compress_cmd::Options {
             input,
             output: output.to_path_buf(),
-            hash_length: match hash_length.parse::<usize>() {
-                Ok(length @ 4..=64) => length,
-                Ok(_) => bail!("Invalid hash length value (valid range is 4-64)"),
-                Err(err) => Err(err).context("Failed to parse hash length")?,
-            },
+            hash_length,
             force_create: matches.is_present("force-create"),
             temp_file,
             chunker_config,

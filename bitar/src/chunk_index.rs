@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
@@ -78,16 +79,69 @@ impl ChunkLocation {
 ///
 /// Allows us to map between chunk hashes and source content location.
 #[derive(Clone, Debug)]
-pub struct ChunkIndex(HashMap<HashSum, ChunkLocation>);
+pub struct ChunkIndex {
+    map: HashMap<HashSum, ChunkLocation>,
+    hash_length: usize,
+}
+
+pub trait HashSumKey {
+    fn sum(&self) -> &[u8];
+}
+
+impl HashSumKey for HashSum {
+    fn sum(&self) -> &[u8] {
+        self.slice()
+    }
+}
+
+impl<'a> Borrow<dyn HashSumKey + 'a> for HashSum {
+    fn borrow(&self) -> &(dyn HashSumKey + 'a) {
+        self
+    }
+}
+
+struct TruncatedHashSum<'a> {
+    hash: &'a HashSum,
+    truncate_len: usize,
+}
+
+impl<'a> HashSumKey for TruncatedHashSum<'a> {
+    fn sum(&self) -> &[u8] {
+        let hash = self.hash.slice();
+        if hash.len() > self.truncate_len {
+            &hash[..self.truncate_len]
+        } else {
+            hash
+        }
+    }
+}
+
+impl<'a> Eq for (dyn HashSumKey + 'a) {}
+
+impl<'a> PartialEq for (dyn HashSumKey + 'a) {
+    fn eq(&self, other: &dyn HashSumKey) -> bool {
+        self.sum() == other.sum()
+    }
+}
+
+impl<'a> std::hash::Hash for (dyn HashSumKey + 'a) {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.sum().hash(state)
+    }
+}
 
 impl ChunkIndex {
     /// Create an empty chunk index.
-    pub fn new_empty() -> Self {
-        Self(HashMap::new())
+    pub fn new_empty(hash_length: usize) -> Self {
+        Self {
+            map: HashMap::new(),
+            hash_length,
+        }
     }
     /// Add a chunk with size and offsets to the index.
-    pub fn add_chunk(&mut self, hash: HashSum, size: usize, offsets: &[u64]) {
-        let location = self.0.entry(hash).or_insert(ChunkLocation {
+    pub fn add_chunk(&mut self, mut hash: HashSum, size: usize, offsets: &[u64]) {
+        hash.truncate(self.hash_length);
+        let location = self.map.entry(hash).or_insert(ChunkLocation {
             size,
             offsets: vec![],
         });
@@ -97,14 +151,20 @@ impl ChunkIndex {
     }
     /// Remove a chunk by hash.
     pub fn remove(&mut self, hash: &HashSum) -> Option<ChunkLocation> {
-        self.0.remove(hash)
+        self.map.remove(&TruncatedHashSum {
+            hash,
+            truncate_len: self.hash_length,
+        } as &dyn HashSumKey)
     }
     /// Test if a chunk is in the index.
     pub fn contains(&self, hash: &HashSum) -> bool {
-        self.0.contains_key(hash)
+        self.map.contains_key(&TruncatedHashSum {
+            hash,
+            truncate_len: self.hash_length,
+        } as &dyn HashSumKey)
     }
     fn get(&self, hash: &HashSum) -> Option<&ChunkLocation> {
-        self.0.get(hash)
+        self.map.get(hash)
     }
     /// Get first source offset of a chunk.
     fn get_first_offset(&self, hash: &HashSum) -> Option<u64> {
@@ -113,19 +173,19 @@ impl ChunkIndex {
     }
     /// Get number of chunks in the index.
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.map.len()
     }
     /// Test if index is empty.
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.map.is_empty()
     }
     /// Iterate source offsets of a chunk.
     pub fn offsets<'a>(&'a self, hash: &HashSum) -> Option<impl Iterator<Item = u64> + 'a> {
-        self.0.get(hash).map(|d| d.offsets.iter().copied())
+        self.map.get(hash).map(|d| d.offsets.iter().copied())
     }
     /// Iterate chunk hashes in index.
     pub fn keys(&self) -> impl Iterator<Item = &HashSum> {
-        self.0.keys()
+        self.map.keys()
     }
     /// Filter the given chunk index for chunks which are already in place in self
     ///
@@ -134,7 +194,7 @@ impl ChunkIndex {
         let mut num_alread_in_place = 0;
         let mut total_size = 0;
         let new_set: HashMap<HashSum, ChunkLocation> = chunk_set
-            .0
+            .map
             .iter()
             .filter_map(|(hash, cd)| {
                 let mut cd = cd.clone();
@@ -158,7 +218,7 @@ impl ChunkIndex {
                 Some((hash.clone(), cd))
             })
             .collect();
-        chunk_set.0 = new_set;
+        chunk_set.map = new_set;
         (num_alread_in_place, total_size)
     }
     // Each chunk to reorder will potentially overwrite other chunks.
@@ -241,7 +301,7 @@ impl ChunkIndex {
         let mut source_layout: ChunkLocationMap<&HashSum> = ChunkLocationMap::new();
         let chunks_to_move: Vec<MoveChunk> = {
             let mut chunks = self
-                .0
+                .map
                 .iter()
                 .filter_map(|(hash, location)| {
                     if new_order.contains(hash) {
@@ -296,7 +356,7 @@ impl ChunkIndex {
     ///
     /// Chunks are returned in undefined order.
     pub fn iter_chunks(&self) -> impl Iterator<Item = (&HashSum, &ChunkLocation)> {
-        self.0.iter()
+        self.map.iter()
     }
 }
 
@@ -338,7 +398,7 @@ mod tests {
     }
     #[test]
     fn add_chunk_multiple_offsets() {
-        let mut ci = ChunkIndex::new_empty();
+        let mut ci = ChunkIndex::new_empty(HashSum::MAX_LEN);
         ci.add_chunk(HashSum::from(&[1]), 10, &[5]);
         ci.add_chunk(HashSum::from(&[1]), 10, &[15]);
         let mut it = ci.iter_chunks();
@@ -355,11 +415,11 @@ mod tests {
     }
     #[test]
     fn reorder_with_overlap_and_loop() {
-        let mut current_index = ChunkIndex::new_empty();
+        let mut current_index = ChunkIndex::new_empty(HashSum::MAX_LEN);
         current_index.add_chunk(HashSum::from(&[1]), 10, &[0]);
         current_index.add_chunk(HashSum::from(&[2]), 20, &[10]);
         current_index.add_chunk(HashSum::from(&[3]), 20, &[30, 50]);
-        let mut target_index = ChunkIndex::new_empty();
+        let mut target_index = ChunkIndex::new_empty(HashSum::MAX_LEN);
         target_index.add_chunk(HashSum::from(&[1]), 10, &[60]);
         target_index.add_chunk(HashSum::from(&[2]), 20, &[50]);
         target_index.add_chunk(HashSum::from(&[3]), 20, &[10, 30]);
@@ -395,9 +455,9 @@ mod tests {
     }
     #[test]
     fn reorder_but_do_not_copy_to_self() {
-        let mut current_index = ChunkIndex::new_empty();
+        let mut current_index = ChunkIndex::new_empty(HashSum::MAX_LEN);
         current_index.add_chunk(HashSum::from(&[1]), 10, &[0, 20]);
-        let mut target_index = ChunkIndex::new_empty();
+        let mut target_index = ChunkIndex::new_empty(HashSum::MAX_LEN);
         target_index.add_chunk(HashSum::from(&[1]), 10, &[20, 40]);
         current_index.strip_chunks_already_in_place(&mut target_index);
         let ops = current_index.reorder_ops(&target_index);
@@ -413,43 +473,43 @@ mod tests {
     }
     #[test]
     fn filter_one_chunk_in_place() {
-        let mut current_index = ChunkIndex::new_empty();
+        let mut current_index = ChunkIndex::new_empty(HashSum::MAX_LEN);
         current_index.add_chunk(HashSum::from(&[1]), 10, &[0]);
-        let mut target_index = ChunkIndex::new_empty();
+        let mut target_index = ChunkIndex::new_empty(HashSum::MAX_LEN);
         target_index.add_chunk(HashSum::from(&[1]), 10, &[0]);
         current_index.strip_chunks_already_in_place(&mut target_index);
         assert_eq!(target_index.len(), 0);
     }
     #[test]
     fn filter_one_chunk_multiple_offsets_in_place() {
-        let mut current_index = ChunkIndex::new_empty();
+        let mut current_index = ChunkIndex::new_empty(HashSum::MAX_LEN);
         current_index.add_chunk(HashSum::from(&[1]), 10, &[20, 0]);
-        let mut target_index = ChunkIndex::new_empty();
+        let mut target_index = ChunkIndex::new_empty(HashSum::MAX_LEN);
         target_index.add_chunk(HashSum::from(&[1]), 10, &[0, 20]);
         current_index.strip_chunks_already_in_place(&mut target_index);
         assert_eq!(target_index.len(), 0);
     }
     #[test]
     fn filter_one_chunk_multiple_offsets_not_in_place() {
-        let mut current_index = ChunkIndex::new_empty();
+        let mut current_index = ChunkIndex::new_empty(HashSum::MAX_LEN);
         current_index.add_chunk(HashSum::from(&[1]), 10, &[0, 20]);
-        let mut target_index = ChunkIndex::new_empty();
+        let mut target_index = ChunkIndex::new_empty(HashSum::MAX_LEN);
         target_index.add_chunk(HashSum::from(&[1]), 10, &[20, 30]);
         current_index.strip_chunks_already_in_place(&mut target_index);
         assert_eq!(target_index.len(), 1);
         assert_eq!(
-            target_index.0.get(&HashSum::from(&[1])).unwrap().offsets,
+            target_index.map.get(&HashSum::from(&[1])).unwrap().offsets,
             &[30]
         );
     }
     #[test]
     fn filter_multiple_chunks_in_place() {
-        let mut current_index = ChunkIndex::new_empty();
+        let mut current_index = ChunkIndex::new_empty(HashSum::MAX_LEN);
         current_index.add_chunk(HashSum::from(&[1]), 10, &[0]);
         current_index.add_chunk(HashSum::from(&[2]), 20, &[20]);
         current_index.add_chunk(HashSum::from(&[3]), 20, &[30, 50]);
         current_index.add_chunk(HashSum::from(&[4]), 5, &[70, 80]);
-        let mut target_index = ChunkIndex::new_empty();
+        let mut target_index = ChunkIndex::new_empty(HashSum::MAX_LEN);
         target_index.add_chunk(HashSum::from(&[1]), 10, &[10]);
         target_index.add_chunk(HashSum::from(&[2]), 20, &[20]);
         target_index.add_chunk(HashSum::from(&[3]), 20, &[30, 50]);
@@ -470,5 +530,12 @@ mod tests {
                 offsets: vec![90],
             }
         );
+    }
+    #[test]
+    fn lookup_truncated_hash_sum() {
+        let mut index = ChunkIndex::new_empty(4);
+        index.add_chunk(HashSum::from([1, 2, 3, 4, 99, 99]), 10, &[0]);
+        assert!(index.contains(&HashSum::from([1, 2, 3, 4, 5, 6])));
+        index.remove(&HashSum::from([1, 2, 3, 4, 5, 6])).unwrap();
     }
 }

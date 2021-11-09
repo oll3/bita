@@ -4,28 +4,29 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-const MAX_SUM_LENGHT: usize = 64;
-
 /// Holds a hash sum.
 ///
 /// Typically used for representing the hash of a chunk or the hash of file.
 /// Sum can be a maximum of 512 bits/64 bytes.
 #[derive(Clone)]
 pub struct HashSum {
-    sum: [u8; MAX_SUM_LENGHT],
+    sum: [u8; Self::MAX_LEN],
     length: usize,
 }
 
 impl HashSum {
+    /// Max valid length of a hash sum
+    pub const MAX_LEN: usize = 64;
+
     /// Create new hash sum using blake2 to digest the given data.
     pub(crate) fn b2_digest(data: &[u8]) -> Self {
         let mut b2 = Blake2b::new();
         b2.update(data);
-        let mut sum: [u8; MAX_SUM_LENGHT] = [0; MAX_SUM_LENGHT];
+        let mut sum: [u8; Self::MAX_LEN] = [0; Self::MAX_LEN];
         sum.copy_from_slice(&b2.finalize());
         Self {
             sum,
-            length: MAX_SUM_LENGHT,
+            length: Self::MAX_LEN,
         }
     }
     /// Returns a new vec containing the hash sum.
@@ -44,6 +45,12 @@ impl HashSum {
     pub fn is_empty(&self) -> bool {
         self.length == 0
     }
+    /// Truncate hash length.
+    pub fn truncate(&mut self, new_len: usize) {
+        if self.length > new_len {
+            self.length = new_len;
+        }
+    }
 }
 
 impl<T> From<T> for HashSum
@@ -51,8 +58,8 @@ where
     T: AsRef<[u8]>,
 {
     fn from(v: T) -> Self {
-        let min_len = cmp::min(v.as_ref().len(), MAX_SUM_LENGHT);
-        let mut sum: [u8; MAX_SUM_LENGHT] = [0; MAX_SUM_LENGHT];
+        let min_len = cmp::min(v.as_ref().len(), Self::MAX_LEN);
+        let mut sum: [u8; Self::MAX_LEN] = [0; Self::MAX_LEN];
         sum[0..min_len].copy_from_slice(&v.as_ref()[0..min_len]);
         Self {
             sum,

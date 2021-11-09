@@ -134,6 +134,7 @@ where
 }
 
 async fn chunk_index_from_readable<R>(
+    hash_length: usize,
     config: &chunker::Config,
     max_buffered_chunks: usize,
     readable: &mut R,
@@ -145,7 +146,7 @@ where
         .new_chunker(readable)
         .map(|r| spawn_blocking(|| r.map(|(offset, chunk)| (offset, chunk.verify()))))
         .buffered(max_buffered_chunks);
-    let mut index = ChunkIndex::new_empty();
+    let mut index = ChunkIndex::new_empty(hash_length);
     while let Some(r) = chunk_stream.next().await {
         let (chunk_offset, verified) = r??;
         let (hash, chunk) = verified.into_parts();
@@ -213,6 +214,7 @@ where
         info!("Building chunk index of {}...", opts.output.display());
         Some(
             chunk_index_from_readable(
+                archive.chunk_hash_length(),
                 archive.chunker_config(),
                 opts.num_chunk_buffers,
                 &mut output_file,

@@ -35,7 +35,7 @@ impl Chunk {
     /// Create a verified chunk by calculating a hash sum for it.
     #[inline]
     pub fn verify(self) -> VerifiedChunk {
-        VerifiedChunk::from(self)
+        VerifiedChunk::new(self)
     }
     #[cfg(feature = "compress")]
     /// Create a compressed chunk.
@@ -57,12 +57,6 @@ impl Chunk {
 pub struct VerifiedChunk {
     pub(crate) chunk: Chunk,
     pub(crate) hash_sum: HashSum,
-}
-
-impl From<Chunk> for VerifiedChunk {
-    fn from(chunk: Chunk) -> Self {
-        Self::new(chunk)
-    }
 }
 
 impl VerifiedChunk {
@@ -211,7 +205,8 @@ impl ArchiveChunk {
     /// Results in a verified chunk or an error if the chunk hash sum doesn't
     /// match with the expected one.
     pub fn verify(self) -> Result<VerifiedChunk, HashSumMismatchError> {
-        let hash_sum = HashSum::b2_digest(self.chunk.data());
+        let mut hash_sum = HashSum::b2_digest(self.chunk.data());
+        hash_sum.truncate(self.expected_hash.len());
         if hash_sum != self.expected_hash {
             Err(HashSumMismatchError {
                 expected: self.expected_hash,

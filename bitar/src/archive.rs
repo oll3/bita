@@ -254,7 +254,7 @@ impl<R> Archive<R> {
     }
     /// Build a ChunkIndex representing the source file.
     pub fn build_source_index(&self) -> ChunkIndex {
-        let mut ci = ChunkIndex::new_empty();
+        let mut ci = ChunkIndex::new_empty(self.chunk_hash_length);
         self.iter_source_chunks().for_each(|(offset, cd)| {
             ci.add_chunk(cd.checksum.clone(), cd.source_size as usize, &[offset]);
         });

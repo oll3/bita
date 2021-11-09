@@ -20,7 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("open output");
 
     // Scan the output file for chunks and build a chunk index
-    let mut output_index = ChunkIndex::new_empty();
+    let mut output_index = ChunkIndex::new_empty(archive.chunk_hash_length());
     {
         let chunker = archive.chunker_config().new_chunker(&mut output_file);
         let mut chunk_stream = chunker.map_ok(|(offset, chunk)| (offset, chunk.verify()));

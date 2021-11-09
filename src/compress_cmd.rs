@@ -109,16 +109,17 @@ where
                     format!("compressed to: {}", human_size!(compressed.len()))
                 },
             );
-            let (hash, chunk) = verified.into_parts();
+            let (mut hash, chunk) = verified.into_parts();
             let use_data = if use_uncompressed {
                 chunk.data()
             } else {
                 compressed.data()
             };
+            hash.truncate(hash_length);
 
             // Store a descriptor which refers to the compressed data
             archive_chunks.push(dict::ChunkDescriptor {
-                checksum: hash.slice()[0..hash_length].to_vec(),
+                checksum: hash.to_vec(),
                 source_size: chunk_len as u32,
                 archive_offset,
                 archive_size: use_data.len() as u32,
