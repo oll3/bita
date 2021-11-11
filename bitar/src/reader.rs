@@ -138,12 +138,13 @@ where
     type Error = io::Error;
     async fn read_at(&mut self, offset: u64, size: usize) -> Result<Bytes, io::Error> {
         self.seek(io::SeekFrom::Start(offset)).await?;
-        let mut buf = Vec::with_capacity(size);
-        unsafe {
-            buf.set_len(size);
+        let mut buf = BytesMut::with_capacity(size);
+        while buf.len() < size {
+            if self.read_buf(&mut buf).await? == 0 {
+                return Err(io::ErrorKind::UnexpectedEof.into());
+            }
         }
-        self.read_exact(&mut buf[..]).await?;
-        Ok(Bytes::from(buf))
+        Ok(buf.freeze())
     }
     fn read_chunks<'a>(
         &'a mut self,
