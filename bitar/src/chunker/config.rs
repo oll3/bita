@@ -61,9 +61,9 @@ pub enum Config {
 }
 
 impl Config {
-    pub fn new_chunker<'chunker, R>(&self, source: R) -> Box<dyn Chunker + 'chunker>
+    pub fn new_chunker<'chunker, R>(&self, source: R) -> Box<dyn Chunker + Send + Unpin + 'chunker>
     where
-        R: AsyncRead + Unpin + 'chunker,
+        R: AsyncRead + Unpin + Send + 'chunker,
     {
         match self {
             Config::BuzHash(filter_config) => Box::new(RollingHashChunker::new(

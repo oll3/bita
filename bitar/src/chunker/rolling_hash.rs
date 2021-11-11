@@ -86,8 +86,8 @@ impl<R, H> RollingHashChunker<R, H> {
 
 impl<R, H> Chunker for RollingHashChunker<R, H>
 where
-    R: AsyncRead + Unpin,
-    H: RollingHash + Unpin,
+    R: AsyncRead + Unpin + Send,
+    H: RollingHash + Unpin + Send,
 {
     fn poll_chunk(&mut self, cx: &mut Context) -> Poll<Option<io::Result<(u64, Chunk)>>> {
         loop {

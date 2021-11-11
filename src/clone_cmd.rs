@@ -78,7 +78,7 @@ async fn clone_from_readable<I, C>(
     output: &mut CloneOutput<C>,
 ) -> Result<u64>
 where
-    I: AsyncRead + Unpin,
+    I: AsyncRead + Unpin + Send,
     C: AsyncWrite + AsyncSeek + Unpin + Send,
 {
     let chunk_stream = config
@@ -140,7 +140,7 @@ async fn chunk_index_from_readable<R>(
     readable: &mut R,
 ) -> Result<ChunkIndex>
 where
-    R: AsyncRead + Unpin,
+    R: AsyncRead + Unpin + Send,
 {
     let mut chunk_stream = config
         .new_chunker(readable)

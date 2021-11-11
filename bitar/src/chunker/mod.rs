@@ -19,11 +19,11 @@ use crate::Chunk;
 const CHUNKER_BUF_SIZE: usize = 1024 * 1024;
 
 /// A chunker scans a readable source for chunks and emits them as a stream.
-pub trait Chunker: Unpin {
+pub trait Chunker {
     fn poll_chunk(&mut self, cx: &mut Context) -> Poll<Option<io::Result<(u64, Chunk)>>>;
 }
 
-impl Stream for dyn Chunker + '_ {
+impl Stream for dyn Chunker + Send + Unpin + '_ {
     type Item = io::Result<(u64, Chunk)>;
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         self.poll_chunk(cx)

@@ -28,7 +28,7 @@ impl<'a, R> FixedSizeChunker<R> {
 }
 impl<'a, R> Chunker for FixedSizeChunker<R>
 where
-    R: AsyncRead + Unpin,
+    R: AsyncRead + Unpin + Send,
 {
     fn poll_chunk(&mut self, cx: &mut Context) -> Poll<Option<io::Result<(u64, Chunk)>>> {
         loop {

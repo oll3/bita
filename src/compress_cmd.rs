@@ -30,7 +30,7 @@ async fn chunk_input<T>(
     Vec<usize>,
 )>
 where
-    T: AsyncRead + Unpin,
+    T: AsyncRead + Unpin + Send,
 {
     let mut source_hasher = Blake2b::new();
     let mut unique_chunks = HashMap::new();
