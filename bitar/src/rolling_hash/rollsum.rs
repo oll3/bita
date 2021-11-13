@@ -48,8 +48,12 @@ impl RollSum {
 }
 
 impl RollingHash for RollSum {
-    fn window_size(&self) -> usize {
-        self.window.len()
+    fn init_done(&self) -> bool {
+        // No init needed.
+        true
+    }
+    fn init(&mut self, _value: u8) {
+        unimplemented!("not used")
     }
     fn input(&mut self, value: u8) {
         self.input(value)

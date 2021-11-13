@@ -1,7 +1,13 @@
+use std::io;
+
+use futures_util::Stream;
 use tokio::io::AsyncRead;
 
-use super::{fixed_size::FixedSizeChunker, rolling_hash::RollingHashChunker, Chunker};
-use crate::rolling_hash::{BuzHash, RollSum};
+use super::{fixed_size::FixedSizeChunker, rolling_hash::RollingHashChunker, StreamingChunker};
+use crate::{
+    rolling_hash::{BuzHash, RollSum},
+    Chunk,
+};
 
 /// Helper type for creating a bit mask to use while scanning for chunk boundaries.
 ///
@@ -72,22 +78,27 @@ pub enum Config {
 }
 
 impl Config {
-    pub fn new_chunker<'chunker, R>(&self, source: R) -> Box<dyn Chunker + Send + Unpin + 'chunker>
+    /// Create an (async) stream of chunks from the given source using config.
+    pub fn new_chunker<'r, R>(
+        &self,
+        source: R,
+    ) -> Box<dyn Stream<Item = io::Result<(u64, Chunk)>> + Unpin + Send + 'r>
     where
-        R: AsyncRead + Unpin + Send + 'chunker,
+        R: AsyncRead + Unpin + Send + 'r,
     {
         match self {
-            Config::BuzHash(filter_config) => Box::new(RollingHashChunker::new(
-                BuzHash::new(filter_config.window_size),
-                filter_config,
+            Config::BuzHash(filter) => Box::new(StreamingChunker::new(
+                RollingHashChunker::new(BuzHash::new(filter.window_size), filter),
                 source,
             )),
-            Config::RollSum(filter_config) => Box::new(RollingHashChunker::new(
-                RollSum::new(filter_config.window_size),
-                filter_config,
+            Config::RollSum(filter) => Box::new(StreamingChunker::new(
+                RollingHashChunker::new(RollSum::new(filter.window_size), filter),
                 source,
             )),
-            Config::FixedSize(fixed_size) => Box::new(FixedSizeChunker::new(*fixed_size, source)),
+            Config::FixedSize(fixed_size) => Box::new(StreamingChunker::new(
+                FixedSizeChunker::new(*fixed_size),
+                source,
+            )),
         }
     }
 }

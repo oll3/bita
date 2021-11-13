@@ -113,8 +113,8 @@ impl BuzHash {
 }
 
 impl RollingHash for BuzHash {
-    fn window_size(&self) -> usize {
-        self.window
+    fn init_done(&self) -> bool {
+        self.window_full
     }
     fn init(&mut self, value: u8) {
         self.init(value)
