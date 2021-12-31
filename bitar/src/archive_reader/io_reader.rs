@@ -9,7 +9,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, ReadBuf};
 use crate::archive_reader::ArchiveReader;
 use crate::ChunkOffset;
 
-/// Wrapper which implements ArchiveBackend for any type which implements
+/// Wrapper which implements ArchiveReader for any type which implements
 /// tokio AsyncRead and AsyncSeek.
 pub struct IoReader<T>(T);
 
