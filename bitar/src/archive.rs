@@ -1,4 +1,4 @@
-use blake2::{Blake2b, Digest};
+use blake2::{Blake2b512, Digest};
 use futures_util::{stream::Stream, StreamExt};
 use std::{convert::TryInto, fmt};
 
@@ -128,7 +128,7 @@ impl<R> Archive<R> {
 
         // Verify the header against the header checksum
         let header_checksum = {
-            let mut hasher = Blake2b::new();
+            let mut hasher = Blake2b512::new();
             let offs = header::PRE_HEADER_SIZE + dictionary_size + 8;
             hasher.update(&header[..offs]);
             let header_checksum = HashSum::from(&header[offs..(offs + 64)]);

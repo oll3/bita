@@ -1,4 +1,4 @@
-use blake2::{Blake2b, Digest};
+use blake2::{Blake2b512, Digest};
 use std::{
     cmp, fmt,
     hash::{Hash, Hasher},
@@ -20,7 +20,7 @@ impl HashSum {
 
     /// Create new hash sum using blake2 to digest the given data.
     pub(crate) fn b2_digest(data: &[u8]) -> Self {
-        let mut b2 = Blake2b::new();
+        let mut b2 = Blake2b512::new();
         b2.update(data);
         let mut sum: [u8; Self::MAX_LEN] = [0; Self::MAX_LEN];
         sum.copy_from_slice(&b2.finalize());

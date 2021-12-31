@@ -15,7 +15,7 @@ categories = ["compression", "filesystem"]
 prost-build = "0.9"
 
 [dependencies]
-blake2 = "0.9"
+blake2 = "0.10"
 prost = "0.9"
 log = "0.4"
 brotli-decompressor = "2.3"

@@ -8,7 +8,7 @@
 //! |      n |    8 | Chunk data offset in archive, absolute from archive start (u64 le). |
 //! |  n + 8 |   64 | Full header checksum (blake2), from offset 0 to n + 8.              |
 
-use blake2::{Blake2b, Digest};
+use blake2::{Blake2b512, Digest};
 use prost::Message;
 
 use crate::chunk_dictionary::ChunkDictionary;
@@ -25,7 +25,7 @@ pub fn build(
     chunk_data_offset: Option<u64>,
 ) -> Result<Vec<u8>, std::io::Error> {
     let mut header: Vec<u8> = vec![];
-    let mut hasher = Blake2b::new();
+    let mut hasher = Blake2b512::new();
     let mut dictionary_buf: Vec<u8> = Vec::new();
 
     dictionary.encode(&mut dictionary_buf)?;

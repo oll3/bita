@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Context, Result};
-use blake2::{Blake2b, Digest};
+use blake2::{Blake2b512, Digest};
 use futures_util::StreamExt;
 use log::*;
 use reqwest::header::HeaderMap;
@@ -26,7 +26,7 @@ async fn file_size(file: &mut File) -> Result<u64, std::io::Error> {
 
 async fn file_checksum(file: &mut File) -> Result<HashSum, std::io::Error> {
     file.seek(SeekFrom::Start(0)).await?;
-    let mut output_hasher = Blake2b::new();
+    let mut output_hasher = Blake2b512::new();
     let mut buffer: Vec<u8> = vec![0; 4 * 1024 * 1024];
     loop {
         let rc = file.read(&mut buffer).await?;

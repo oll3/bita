@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Context, Result};
-use blake2::{Blake2b, Digest};
+use blake2::{Blake2b512, Digest};
 use futures_util::{future, StreamExt};
 use log::*;
 use std::collections::HashMap;
@@ -32,7 +32,7 @@ async fn chunk_input<T>(
 where
     T: AsyncRead + Unpin + Send,
 {
-    let mut source_hasher = Blake2b::new();
+    let mut source_hasher = Blake2b512::new();
     let mut unique_chunks = HashMap::new();
     let mut source_size: u64 = 0;
     let mut chunk_order = Vec::new();

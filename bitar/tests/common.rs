@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 use bitar::archive_reader::{HttpReader, IoReader};
 use bitar::{Archive, CloneOutput};
-use blake2::{Blake2b, Digest};
+use blake2::{Blake2b512, Digest};
 use futures_util::stream::StreamExt;
 use hyper::service::{make_service_fn, service_fn};
 use reqwest::Url;
@@ -86,7 +86,7 @@ async fn clone_expect_checksum<R: bitar::archive_reader::ArchiveReader>(
                 .unwrap();
         }
     }
-    let mut hash = Blake2b::new();
+    let mut hash = Blake2b512::new();
     hash.update(&output_buf[..]);
     assert_eq!(&hash.finalize()[..], b2sum);
     assert_eq!(archive.source_checksum().slice(), b2sum);
