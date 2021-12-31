@@ -35,6 +35,7 @@ impl HttpReader {
     ///
     /// The reader will try to reconnect and continue download from where the failure occurred.
     /// Any progress made so far should not be lost.
+    #[must_use]
     pub fn retries(mut self, retry_count: u32) -> Self {
         self.retry_count = retry_count;
         self
@@ -43,6 +44,7 @@ impl HttpReader {
     /// Set a delay between attempts to reconnect to the remote server.
     ///
     /// On failure the reader will wait for the given time before trying to reconnect.
+    #[must_use]
     pub fn retry_delay(mut self, retry_delay: Duration) -> Self {
         self.retry_delay = retry_delay;
         self
