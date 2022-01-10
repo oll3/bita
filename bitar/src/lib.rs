@@ -8,6 +8,8 @@ mod compression;
 mod hashsum;
 mod rolling_hash;
 
+pub mod api;
+
 pub mod archive_reader;
 pub mod chunker;
 pub mod header;
