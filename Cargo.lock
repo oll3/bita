@@ -107,6 +107,7 @@ dependencies = [
  "futures-util",
  "hyper",
  "log",
+ "num_cpus",
  "prost",
  "prost-build",
  "reqwest",

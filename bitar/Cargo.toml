@@ -20,15 +20,16 @@ prost = "0.9"
 log = "0.4"
 brotli-decompressor = "2.3"
 brotli = { version = "3.3", default-features = false, features = ["std", "disable-timer"], optional = true }
-futures-util = { version = "0.3", default-features = false }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 tokio = "1"
 bytes = "1.1"
 rust-lzma = { version = "0.5", optional = true }
 zstd = { version = "0.9", optional = true }
 async-trait = "0.1"
+num_cpus = "1.13.1"
+tempfile = "3.2.0"
 
 [dev-dependencies]
-tempfile = "3.2.0"
 tokio = { version = "1", features = ["fs", "macros", "rt-multi-thread"] }
 hyper = { version = "0.14", features = ["server"] }
 
