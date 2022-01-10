@@ -124,10 +124,25 @@ fn parse_size(size_str: &str) -> Result<usize> {
 
 fn parse_input_config(matches: &clap::ArgMatches<'_>) -> Result<clone_cmd::InputArchive> {
     let input = matches.value_of("INPUT").unwrap().to_string();
-    Ok(match input.parse::<Url>() {
-        Ok(url) => {
-            // Use as URL
-            clone_cmd::InputArchive::Remote(Box::new(clone_cmd::RemoteInput {
+
+    let input_path = Path::new(&input);
+    if input_path.exists() {
+        return Ok(clone_cmd::InputArchive::Local(input.into()));
+    }
+
+    // Absolute windows paths, e.g. C:\temp.cba can be parsed as a URL. This
+    // check prevents invalid paths from being used as a remote path.
+    if Url::from_file_path(&input).is_ok() {
+        return Err(anyhow!(format!(
+            "Input is not a valid path: {}",
+            input_path.display()
+        )));
+    }
+
+    if let Ok(url) = input.parse::<Url>() {
+        // Use as URL
+        return Ok(clone_cmd::InputArchive::Remote(Box::new(
+            clone_cmd::RemoteInput {
                 url,
                 retries: matches
                     .value_of("http-retry-count")
@@ -165,13 +180,14 @@ fn parse_input_config(matches: &clap::ArgMatches<'_>) -> Result<clone_cmd::Input
                     }
                     None => HeaderMap::new(),
                 },
-            }))
-        }
-        Err(_) => {
-            // Use as path
-            clone_cmd::InputArchive::Local(input.into())
-        }
-    })
+            },
+        )));
+    };
+
+    Err(anyhow!(
+        "Input is not a valid local path or remote url: {}",
+        input
+    ))
 }
 
 fn init_log(level: log::LevelFilter) -> Result<()> {
