@@ -62,7 +62,7 @@ fn parse_chunker_config(matches: &clap::ArgMatches<'_>) -> Result<chunker::Confi
         ) {
             (Some(fixed_size), _) => chunker::Config::FixedSize(parse_size(fixed_size)?),
             (_, "rollsum") => chunker::Config::RollSum(parse_hash_chunker_config(matches, "64B")?),
-            (_, "buzhash") => chunker::Config::RollSum(parse_hash_chunker_config(matches, "16B")?),
+            (_, "buzhash") => chunker::Config::BuzHash(parse_hash_chunker_config(matches, "16B")?),
             _ => unreachable!(),
         },
     )
