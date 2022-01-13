@@ -1,13 +1,17 @@
 #![allow(dead_code)]
-use bitar::archive_reader::{HttpReader, IoReader};
-use bitar::{Archive, CloneOutput};
+use std::io::Cursor;
+use std::io::Read;
+
 use blake2::{Blake2b512, Digest};
 use futures_util::stream::StreamExt;
 use hyper::service::{make_service_fn, service_fn};
+use rand::Rng;
 use reqwest::Url;
-use std::io::Cursor;
-use std::io::Read;
 use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+
+use bitar::archive_reader::{HttpReader, IoReader};
+use bitar::{api, chunker, Archive, CloneOutput, CompressionAlgorithm};
 
 // Checksum of the rand archive source file.
 pub static RAND_B2SUM: &[u8] = &[
@@ -23,6 +27,7 @@ pub static ZERO_B2SUM: &[u8] = &[
     0x31, 0xdb, 0x43, 0xb9, 0x25, 0xce, 0xea, 0x90, 0x84, 0x77, 0x60, 0xf6, 0x47, 0x0e, 0xb7, 0x2a,
     0x1c, 0xf8, 0xfe, 0xaf, 0x1c, 0xd4, 0xb7, 0x6d, 0xdc, 0xde, 0x96, 0xa6, 0x14, 0xb3, 0x52, 0x7a,
 ];
+
 pub static ARCHIVE_0_1_1_NONE: &str = "tests/resources/rand-0_1_1-none.cba";
 pub static ARCHIVE_0_1_1_LZMA: &str = "tests/resources/zero-0_1_1-lzma.cba";
 pub static ARCHIVE_0_1_1_ZSTD: &str = "tests/resources/zero-0_1_1-zstd.cba";
@@ -123,6 +128,86 @@ async fn serve_archive(listener: std::net::TcpListener, path: &str) {
                 }))
             }
         }))
+        .await
+        .unwrap();
+}
+
+pub async fn clone_to_memory<R: bitar::archive_reader::ArchiveReader>(
+    mut archive: Archive<R>,
+) -> Vec<u8>
+where
+    R::Error: std::fmt::Debug,
+{
+    let mut output_buf = vec![];
+    {
+        let mut output =
+            CloneOutput::new(Cursor::new(&mut output_buf), archive.build_source_index());
+        let mut chunk_stream = archive.chunk_stream(output.chunks());
+        while let Some(result) = chunk_stream.next().await {
+            output
+                .feed(
+                    &result
+                        .expect("chunk")
+                        .decompress()
+                        .expect("decompress")
+                        .verify()
+                        .expect("verify"),
+                )
+                .await
+                .unwrap();
+        }
+    }
+    output_buf
+}
+
+pub async fn write_random_bytes(input: &mut File, byte_count: usize) {
+    let mut rng = rand::thread_rng();
+
+    let mut data = Vec::with_capacity(byte_count);
+    for _ in 0..byte_count {
+        data.push(rng.gen());
+    }
+
+    input.write_all(&mut data).await.unwrap();
+    input.flush().await.unwrap();
+    input.rewind().await.unwrap();
+}
+
+pub async fn check_archive_equals_source(archive: &mut File, source: &mut File) {
+    archive.rewind().await.unwrap();
+    source.rewind().await.unwrap();
+
+    let archive = Archive::try_init(IoReader::new(archive)).await.unwrap();
+
+    let cloned_bytes = clone_to_memory(archive).await;
+    let mut input_bytes = Vec::new();
+    source.read_to_end(&mut input_bytes).await.unwrap();
+
+    assert_eq!(input_bytes, cloned_bytes);
+}
+
+pub async fn compress_archive(
+    input: &mut File,
+    output: &mut File,
+    chunker_config: chunker::Config,
+    algorithm: Option<CompressionAlgorithm>,
+) {
+    let compression = if let Some(compression_algorithm) = algorithm {
+        Some(
+            bitar::Compression::try_new(compression_algorithm, compression_algorithm.max_level())
+                .unwrap(),
+        )
+    } else {
+        None
+    };
+
+    let options = bitar::api::compress::CreateArchiveOptions {
+        chunker_config,
+        compression,
+        ..Default::default()
+    };
+
+    api::compress::create_archive(input, output, &options)
         .await
         .unwrap();
 }

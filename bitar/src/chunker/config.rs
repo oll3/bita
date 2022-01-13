@@ -52,6 +52,17 @@ pub struct FilterConfig {
     pub window_size: usize,
 }
 
+impl Default for FilterConfig {
+    fn default() -> FilterConfig {
+        FilterConfig {
+            filter_bits: FilterBits::from_size(64 * 1024),
+            min_chunk_size: 16 * 1024,
+            max_chunk_size: 16 * 1024 * 1024,
+            window_size: 64,
+        }
+    }
+}
+
 /// Algorithm and configuration to use while scanning for chunk boundaries.
 #[derive(Clone, Debug)]
 pub enum Config {

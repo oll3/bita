@@ -13,13 +13,8 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 
 use crate::chunk_dictionary;
 use crate::chunker;
-use crate::HashSum;
-
-#[cfg(not(feature = "compress"))]
-use bytes::Bytes;
-
-#[cfg(feature = "compress")]
 use crate::Compression;
+use crate::HashSum;
 
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -40,7 +35,6 @@ pub struct CreateArchiveOptions {
     pub temporary_file_override: Option<PathBuf>,
 
     /// The type of compression to use when compressing a chunk
-    #[cfg(feature = "compress")]
     pub compression: Option<Compression>,
 }
 
@@ -56,8 +50,6 @@ impl Default for CreateArchiveOptions {
             num_chunk_buffers: num_buffers,
             source_hash_length: HashSum::MAX_LEN,
             temporary_file_override: None,
-
-            #[cfg(feature = "compress")]
             compression: None,
         }
     }
@@ -106,8 +98,8 @@ impl error::Error for CreateArchiveError {}
 
 /// Compress the input into the output as a bita archive
 pub async fn create_archive<R: AsyncRead + Unpin + Send, W: AsyncWrite + Unpin>(
-    mut input: R,
-    mut output: W,
+    mut input: &mut R,
+    mut output: &mut W,
     options: &CreateArchiveOptions,
 ) -> Result<CreateArchiveResult, CreateArchiveError> {
     let mut source_hasher = Blake2b512::new();
@@ -154,20 +146,13 @@ pub async fn create_archive<R: AsyncRead + Unpin + Send, W: AsyncWrite + Unpin>(
             let _opt = options.clone();
 
             tokio::task::spawn_blocking(move || {
-                #[cfg(not(feature = "compress"))]
-                {
-                    (chunk_index, offset, verified, Bytes::new())
-                }
-                #[cfg(feature = "compress")]
-                {
-                    let compressed = verified
-                        .chunk()
-                        .clone()
-                        .compress(_opt.compression)
-                        .expect("compress chunk");
-                    let (_compression, bytes) = compressed.into_inner();
-                    (chunk_index, offset, verified, bytes)
-                }
+                let compressed = verified
+                    .chunk()
+                    .clone()
+                    .compress(_opt.compression)
+                    .expect("compress chunk");
+                let (_compression, bytes) = compressed.into_inner();
+                (chunk_index, offset, verified, bytes)
             })
         })
         .buffered(options.num_chunk_buffers);
@@ -183,21 +168,14 @@ pub async fn create_archive<R: AsyncRead + Unpin + Send, W: AsyncWrite + Unpin>(
     .map_err(|_| CreateArchiveError::TempFileCreateError)?;
 
     while let Some(result) = chunk_stream.next().await {
-        let (_chunk_index, _offset, verified, _compressed_bytes) =
+        let (_chunk_index, _offset, verified, compressed_bytes) =
             result.map_err(|_| CreateArchiveError::ChunkerError)?;
 
         let use_data = {
-            #[cfg(not(feature = "compress"))]
-            {
+            if compressed_bytes.len() < verified.chunk().len() {
+                &compressed_bytes
+            } else {
                 verified.chunk().data()
-            }
-            #[cfg(feature = "compress")]
-            {
-                if _compressed_bytes.len() < verified.chunk().len() {
-                    &_compressed_bytes
-                } else {
-                    verified.chunk().data()
-                }
             }
         };
 
@@ -264,11 +242,7 @@ pub async fn create_archive<R: AsyncRead + Unpin + Send, W: AsyncWrite + Unpin>(
         source_checksum: source_hash.clone(),
         source_total_size: source_length as u64,
         chunker_params: Some(chunker_params),
-
-        #[cfg(feature = "compress")]
         chunk_compression: Some(options.compression.into()),
-
-        ..Default::default()
     };
 
     let header_buf = crate::header::build(&file_header, None).expect("Failed to create header");

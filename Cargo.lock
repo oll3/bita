@@ -110,6 +110,7 @@ dependencies = [
  "num_cpus",
  "prost",
  "prost-build",
+ "rand",
  "reqwest",
  "rust-lzma",
  "tempfile",
