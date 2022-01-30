@@ -161,11 +161,11 @@ pub async fn create_archive<R: AsyncRead + Unpin + Send, W: AsyncWrite + Unpin>(
     } else {
         tempfile::tempfile().map(tokio::fs::File::from_std)
     }
-    .map_err(|e| CreateArchiveError::TempFileError(e))?;
+    .map_err(CreateArchiveError::TempFileError)?;
 
     while let Some(result) = chunk_stream.next().await {
         let (_chunk_index, _offset, verified, compressed_bytes) =
-            result.map_err(|e| CreateArchiveError::ChunkerError(e))?;
+            result.map_err(CreateArchiveError::ChunkerError)?;
 
         let use_data = {
             if compressed_bytes.len() < verified.chunk().len() {
@@ -183,7 +183,7 @@ pub async fn create_archive<R: AsyncRead + Unpin + Send, W: AsyncWrite + Unpin>(
         temp_file
             .write_all(use_data)
             .await
-            .map_err(|e| CreateArchiveError::TempFileError(e))?;
+            .map_err(CreateArchiveError::TempFileError)?;
 
         // Store a descriptor which refers to the compressed data
         archive_chunks.push(chunk_dictionary::ChunkDescriptor {
@@ -246,16 +246,16 @@ pub async fn create_archive<R: AsyncRead + Unpin + Send, W: AsyncWrite + Unpin>(
     output
         .write_all(&header_buf)
         .await
-        .map_err(|e| CreateArchiveError::OutputWriteError(e))?;
+        .map_err(CreateArchiveError::OutputWriteError)?;
 
     temp_file
         .rewind()
         .await
-        .map_err(|e| CreateArchiveError::TempFileError(e))?;
+        .map_err(CreateArchiveError::TempFileError)?;
 
     io::copy(&mut temp_file, &mut output)
         .await
-        .map_err(|e| CreateArchiveError::OutputWriteError(e))?;
+        .map_err(CreateArchiveError::OutputWriteError)?;
 
     Ok(CreateArchiveResult {
         source_length,
