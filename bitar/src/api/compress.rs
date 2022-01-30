@@ -10,11 +10,12 @@ use tokio::fs;
 use tokio::io;
 use tokio::io::AsyncSeekExt;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
+use tokio::task::JoinError;
 
 use crate::chunk_dictionary;
 use crate::chunker;
 use crate::Compression;
-use crate::HashSum;
+use crate::CompressionAlgorithm;
 
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -27,8 +28,8 @@ pub struct CreateArchiveOptions {
     /// Number of parallel buffers to use when manipulating chunks
     pub num_chunk_buffers: usize,
 
-    /// The length that the source hash should be truncated to for the output
-    pub source_hash_length: usize,
+    /// The length that the chunk hash should be truncated to for the output
+    pub chunk_hash_length: usize,
 
     /// A temporary file is used to write intermediate chunk data. Setting this
     /// option forces this file to be used instead of a randomly generated one
@@ -46,11 +47,14 @@ impl Default for CreateArchiveOptions {
         };
 
         CreateArchiveOptions {
-            chunker_config: chunker::Config::FixedSize(64),
+            chunker_config: chunker::Config::RollSum(chunker::FilterConfig::default()),
             num_chunk_buffers: num_buffers,
-            source_hash_length: HashSum::MAX_LEN,
+            chunk_hash_length: 64,
             temporary_file_override: None,
-            compression: None,
+            compression: Some(Compression {
+                algorithm: CompressionAlgorithm::Brotli,
+                level: 6,
+            }),
         }
     }
 }
@@ -66,30 +70,22 @@ pub struct CreateArchiveResult {
 /// Error from the `create_archive` function
 #[derive(Debug)]
 pub enum CreateArchiveError {
-    /// Failed to create the intermediate temp file used to create the archive
-    TempFileCreateError,
-    /// Error writing to the temp file
-    TempFileWriteError,
-    /// Failed to read from the intermediate temp file used to create the archive
-    TempFileReadError,
+    /// Error that occurred while operatin on the temp file used to creat the archive
+    TempFileError(io::Error),
     /// Failed to chunk the input file
-    ChunkerError,
+    ChunkerError(JoinError),
     /// Failed to write to the output file
-    OutputWriteError,
+    OutputWriteError(io::Error),
 }
 
 impl fmt::Display for CreateArchiveError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            CreateArchiveError::TempFileCreateError => {
-                write!(f, "Error creating intermediate temp file")
+            CreateArchiveError::TempFileError(_) => {
+                write!(f, "Error occurred while operating on the temp file")
             }
-            CreateArchiveError::TempFileWriteError => write!(f, "Error writing to the temp file"),
-            CreateArchiveError::TempFileReadError => {
-                write!(f, "Error reading from the temp file")
-            }
-            CreateArchiveError::ChunkerError => write!(f, "Error chunking the input file"),
-            CreateArchiveError::OutputWriteError => write!(f, "Error writing to output file"),
+            CreateArchiveError::ChunkerError(_) => write!(f, "Error chunking the input file"),
+            CreateArchiveError::OutputWriteError(_) => write!(f, "Error writing to output file"),
         }
     }
 }
@@ -98,8 +94,8 @@ impl error::Error for CreateArchiveError {}
 
 /// Compress the input into the output as a bita archive
 pub async fn create_archive<R: AsyncRead + Unpin + Send, W: AsyncWrite + Unpin>(
-    mut input: &mut R,
-    mut output: &mut W,
+    mut input: R,
+    mut output: W,
     options: &CreateArchiveOptions,
 ) -> Result<CreateArchiveResult, CreateArchiveError> {
     let mut source_hasher = Blake2b512::new();
@@ -165,11 +161,11 @@ pub async fn create_archive<R: AsyncRead + Unpin + Send, W: AsyncWrite + Unpin>(
     } else {
         tempfile::tempfile().map(tokio::fs::File::from_std)
     }
-    .map_err(|_| CreateArchiveError::TempFileCreateError)?;
+    .map_err(|e| CreateArchiveError::TempFileError(e))?;
 
     while let Some(result) = chunk_stream.next().await {
         let (_chunk_index, _offset, verified, compressed_bytes) =
-            result.map_err(|_| CreateArchiveError::ChunkerError)?;
+            result.map_err(|e| CreateArchiveError::ChunkerError(e))?;
 
         let use_data = {
             if compressed_bytes.len() < verified.chunk().len() {
@@ -180,14 +176,14 @@ pub async fn create_archive<R: AsyncRead + Unpin + Send, W: AsyncWrite + Unpin>(
         };
 
         let mut hash = verified.hash().clone();
-        hash.truncate(options.source_hash_length);
+        hash.truncate(options.chunk_hash_length);
 
         // Write the compressed chunks to the file. This is not the final output
         // as we need to calculate the header and prepend it
         temp_file
             .write_all(use_data)
             .await
-            .map_err(|_| CreateArchiveError::TempFileWriteError)?;
+            .map_err(|e| CreateArchiveError::TempFileError(e))?;
 
         // Store a descriptor which refers to the compressed data
         archive_chunks.push(chunk_dictionary::ChunkDescriptor {
@@ -205,7 +201,7 @@ pub async fn create_archive<R: AsyncRead + Unpin + Send, W: AsyncWrite + Unpin>(
             min_chunk_size: hash_config.min_chunk_size as u32,
             max_chunk_size: hash_config.max_chunk_size as u32,
             rolling_hash_window_size: hash_config.window_size as u32,
-            chunk_hash_length: options.source_hash_length as u32,
+            chunk_hash_length: options.chunk_hash_length as u32,
             chunking_algorithm: chunk_dictionary::chunker_parameters::ChunkingAlgorithm::Buzhash
                 as i32,
         },
@@ -214,7 +210,7 @@ pub async fn create_archive<R: AsyncRead + Unpin + Send, W: AsyncWrite + Unpin>(
             min_chunk_size: hash_config.min_chunk_size as u32,
             max_chunk_size: hash_config.max_chunk_size as u32,
             rolling_hash_window_size: hash_config.window_size as u32,
-            chunk_hash_length: options.source_hash_length as u32,
+            chunk_hash_length: options.chunk_hash_length as u32,
             chunking_algorithm: chunk_dictionary::chunker_parameters::ChunkingAlgorithm::Rollsum
                 as i32,
         },
@@ -223,7 +219,7 @@ pub async fn create_archive<R: AsyncRead + Unpin + Send, W: AsyncWrite + Unpin>(
             chunk_filter_bits: 0,
             rolling_hash_window_size: 0,
             max_chunk_size: *chunk_size as u32,
-            chunk_hash_length: options.source_hash_length as u32,
+            chunk_hash_length: options.chunk_hash_length as u32,
             chunking_algorithm: chunk_dictionary::chunker_parameters::ChunkingAlgorithm::FixedSize
                 as i32,
         },
@@ -250,16 +246,16 @@ pub async fn create_archive<R: AsyncRead + Unpin + Send, W: AsyncWrite + Unpin>(
     output
         .write_all(&header_buf)
         .await
-        .map_err(|_| CreateArchiveError::OutputWriteError)?;
+        .map_err(|e| CreateArchiveError::OutputWriteError(e))?;
 
     temp_file
         .rewind()
         .await
-        .map_err(|_| CreateArchiveError::TempFileReadError)?;
+        .map_err(|e| CreateArchiveError::TempFileError(e))?;
 
     io::copy(&mut temp_file, &mut output)
         .await
-        .map_err(|_| CreateArchiveError::OutputWriteError)?;
+        .map_err(|e| CreateArchiveError::OutputWriteError(e))?;
 
     Ok(CreateArchiveResult {
         source_length,
