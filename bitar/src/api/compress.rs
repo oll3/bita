@@ -90,7 +90,15 @@ impl fmt::Display for CreateArchiveError {
     }
 }
 
-impl error::Error for CreateArchiveError {}
+impl error::Error for CreateArchiveError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            CreateArchiveError::TempFileError(e) => Some(e),
+            CreateArchiveError::ChunkerError(e) => Some(e),
+            CreateArchiveError::OutputWriteError(e) => Some(e),
+        }
+    }
+}
 
 /// Compress the input into the output as a bita archive
 pub async fn create_archive<R: AsyncRead + Unpin + Send, W: AsyncWrite + Unpin>(
