@@ -5,7 +5,7 @@ mod info_cmd;
 mod string_utils;
 
 use anyhow::{anyhow, bail, Context, Result};
-use clap::{App, Arg, SubCommand};
+use clap::{Arg, Command};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::path::Path;
 use std::time::Duration;
@@ -20,7 +20,7 @@ pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");
 pub const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn parse_hash_chunker_config(
-    matches: &clap::ArgMatches<'_>,
+    matches: &clap::ArgMatches,
     default_window_size: &str,
 ) -> Result<chunker::FilterConfig> {
     let avg_chunk_size = parse_size(matches.value_of("avg-chunk-size").unwrap_or("64KiB"))?;
@@ -50,7 +50,7 @@ fn parse_hash_chunker_config(
     })
 }
 
-fn parse_chunker_config(matches: &clap::ArgMatches<'_>) -> Result<chunker::Config> {
+fn parse_chunker_config(matches: &clap::ArgMatches) -> Result<chunker::Config> {
     Ok(
         match (
             matches.value_of("fixed-size"),
@@ -68,7 +68,7 @@ fn parse_chunker_config(matches: &clap::ArgMatches<'_>) -> Result<chunker::Confi
     )
 }
 
-pub fn compression_names() -> String {
+fn compression_names() -> String {
     let mut s = "(brotli, ".to_owned();
     #[cfg(feature = "lzma-compression")]
     {
@@ -82,7 +82,7 @@ pub fn compression_names() -> String {
     s
 }
 
-fn parse_compression(matches: &clap::ArgMatches<'_>) -> Result<Option<Compression>> {
+fn parse_compression(matches: &clap::ArgMatches) -> Result<Option<Compression>> {
     let compression_level = matches
         .value_of("compression-level")
         .unwrap_or("6")
@@ -122,7 +122,7 @@ fn parse_size(size_str: &str) -> Result<usize> {
     })
 }
 
-fn parse_input_config(matches: &clap::ArgMatches<'_>) -> Result<clone_cmd::InputArchive> {
+fn parse_input_config(matches: &clap::ArgMatches) -> Result<clone_cmd::InputArchive> {
     let input = matches.value_of("INPUT").unwrap().to_string();
 
     let input_path = Path::new(&input);
@@ -214,106 +214,102 @@ fn init_log(level: log::LevelFilter) -> Result<()> {
     Ok(())
 }
 
-fn add_chunker_args<'a, 'b>(
-    sub_cmd: clap::App<'a, 'b>,
-    compression_desc: &'b str,
-) -> clap::App<'a, 'b> {
-    sub_cmd
+fn add_chunker_args<'a>(cmd: Command<'a>, compression_desc: &'a str) -> Command<'a> {
+    cmd
         .arg(
-            Arg::with_name("avg-chunk-size")
+            Arg::new("avg-chunk-size")
                 .long("avg-chunk-size")
                 .value_name("SIZE")
                 .help("Indication of target chunk size [default: 64KiB]"),
         )
         .arg(
-            Arg::with_name("min-chunk-size")
+            Arg::new("min-chunk-size")
                 .long("min-chunk-size")
                 .value_name("SIZE")
                 .help("Set minimal size of chunks [default: 16KiB]"),
         )
         .arg(
-            Arg::with_name("max-chunk-size")
+            Arg::new("max-chunk-size")
                 .long("max-chunk-size")
                 .value_name("SIZE")
                 .help("Set maximal size of chunks [default: 16MiB]"),
         )
         .arg(
-            Arg::with_name("hash-chunking")
+            Arg::new("hash-chunking")
                 .long("hash-chunking")
                 .value_name("HASH")
                 .help("Set hash to use for chunking (RollSum/BuzHash). [default: RollSum]"),
         )
         .arg(
-            Arg::with_name("rolling-window-size")
+            Arg::new("rolling-window-size")
                 .long("rolling-window-size")
                 .value_name("SIZE")
                 .help("Set size of the rolling hash window to use for chunking. [default: 64B for RollSum, 16B for BuzHash]")
         )
         .arg(
-            Arg::with_name("fixed-size")
+            Arg::new("fixed-size")
                 .long("fixed-size")
                 .value_name("SIZE")
                 .help("Use fixed size chunking instead of rolling hash.")
                 .conflicts_with("hash-chunking"),
         )
         .arg(
-            Arg::with_name("compression-level")
+            Arg::new("compression-level")
                 .long("compression-level")
                 .value_name("LEVEL")
                 .help("Set the chunk data compression level [default: 6]"),
         )
         .arg(
-            Arg::with_name("compression")
+            Arg::new("compression")
                 .long("compression")
                 .value_name("TYPE")
                 .help(compression_desc),
         ).arg(
-            Arg::with_name("hash-length")
+            Arg::new("hash-length")
                 .long("hash-length")
                 .value_name("LENGTH")
                 .help("Truncate the length of the stored chunk hash [default: 64]"),
         )
 }
 
-fn add_input_archive_args<'a, 'b>(sub_cmd: clap::App<'a, 'b>) -> clap::App<'a, 'b> {
-    sub_cmd
-        .arg(
-            Arg::with_name("INPUT")
-                .value_name("INPUT")
-                .help("Input file (can be a local archive or a URL)")
-                .required(true),
-        )
-        .arg(
-            Arg::with_name("http-retry-count")
-                .long("http-retry-count")
-                .value_name("COUNT")
-                .help("Retry transfer on failure [default: 0]"),
-        )
-        .arg(
-            Arg::with_name("http-retry-delay")
-                .long("http-retry-delay")
-                .value_name("SECONDS")
-                .help("Delay retry for some time on transfer failure [default: 0]"),
-        )
-        .arg(
-            Arg::with_name("http-timeout")
-                .long("http-timeout")
-                .value_name("SECONDS")
-                .help("Fail transfer if unresponsive for some time [default: None]"),
-        )
-        .arg(
-            Arg::with_name("http-header")
-                .long("http-header")
-                .value_name("HEADER")
-                .multiple(true)
-                .help("Provide custom http header"),
-        )
-        .arg(
-            Arg::with_name("verify-header")
-                .long("verify-header")
-                .value_name("CHECKSUM")
-                .help("Verify that the archive header checksum is the one given"),
-        )
+fn add_input_archive_args(cmd: Command<'_>) -> Command<'_> {
+    cmd.arg(
+        Arg::new("INPUT")
+            .value_name("INPUT")
+            .help("Input file (can be a local archive or a URL)")
+            .required(true),
+    )
+    .arg(
+        Arg::new("http-retry-count")
+            .long("http-retry-count")
+            .value_name("COUNT")
+            .help("Retry transfer on failure [default: 0]"),
+    )
+    .arg(
+        Arg::new("http-retry-delay")
+            .long("http-retry-delay")
+            .value_name("SECONDS")
+            .help("Delay retry for some time on transfer failure [default: 0]"),
+    )
+    .arg(
+        Arg::new("http-timeout")
+            .long("http-timeout")
+            .value_name("SECONDS")
+            .help("Fail transfer if unresponsive for some time [default: None]"),
+    )
+    .arg(
+        Arg::new("http-header")
+            .long("http-header")
+            .value_name("HEADER")
+            .multiple(true)
+            .help("Provide custom http header"),
+    )
+    .arg(
+        Arg::new("verify-header")
+            .long("verify-header")
+            .value_name("CHECKSUM")
+            .help("Verify that the archive header checksum is the one given"),
+    )
 }
 
 async fn parse_opts() -> Result<()> {
@@ -322,74 +318,74 @@ async fn parse_opts() -> Result<()> {
         compression_names()
     );
     let compress_subcmd = add_chunker_args(
-        SubCommand::with_name("compress")
+        Command::new("compress")
             .about("Compress a file or stream.")
             .arg(
-                Arg::with_name("INPUT")
-                    .short("i")
+                Arg::new("INPUT")
+                    .short('i')
                     .long("input")
                     .value_name("FILE")
                     .help("Input file, if none is given stdin is used")
                     .required(false),
             )
             .arg(
-                Arg::with_name("OUTPUT")
+                Arg::new("OUTPUT")
                     .value_name("OUTPUT")
                     .help("Output file")
                     .required(true),
             )
             .arg(
-                Arg::with_name("force-create")
-                    .short("f")
+                Arg::new("force-create")
+                    .short('f')
                     .long("force-create")
                     .help("Overwrite output files if they exist"),
             ),
         &compression_desc,
     );
     let clone_subcmd =
-        add_input_archive_args(SubCommand::with_name("clone").about(
+        add_input_archive_args(Command::new("clone").about(
             "Clone a remote (or local archive). The archive is unpacked while being cloned.",
         ))
         .arg(
-            Arg::with_name("OUTPUT")
+            Arg::new("OUTPUT")
                 .value_name("OUTPUT")
                 .help("Output file")
                 .required(true),
         )
         .arg(
-            Arg::with_name("seed")
+            Arg::new("seed")
                 .value_name("FILE")
                 .long("seed")
                 .help("File to use as seed while cloning or '-' to read from stdin")
                 .multiple(true),
         )
         .arg(
-            Arg::with_name("seed-output")
+            Arg::new("seed-output")
                 .long("seed-output")
                 .help("Use the output file as seed and update in-place."),
         )
         .arg(
-            Arg::with_name("force-create")
-                .short("f")
+            Arg::new("force-create")
+                .short('f')
                 .long("force-create")
                 .help("Overwrite output files if they exist"),
         )
         .arg(
-            Arg::with_name("verify-output")
+            Arg::new("verify-output")
                 .long("verify-output")
                 .help("Vefify that the checksum of the output matches with the archive."),
         );
     let diff_subcmd = add_chunker_args(
-        SubCommand::with_name("diff")
+        Command::new("diff")
             .about("Show the differential between two files.")
             .arg(
-                Arg::with_name("A")
+                Arg::new("A")
                     .value_name("FILE")
                     .help("Input file A")
                     .required(true),
             )
             .arg(
-                Arg::with_name("B")
+                Arg::new("B")
                     .value_name("FILE")
                     .help("Input file B")
                     .required(true),
@@ -397,25 +393,25 @@ async fn parse_opts() -> Result<()> {
         &compression_desc,
     );
     let matches =
-        App::new(PKG_NAME)
+        Command::new(PKG_NAME)
             .version(PKG_VERSION)
             .arg(
-                Arg::with_name("verbose")
-                    .short("v")
+                Arg::new("verbose")
+                    .short('v')
                     .multiple(true)
                     .global(true)
                     .help("Set verbosity level"),
             )
-            .arg(Arg::with_name("buffered-chunks").long("buffered-chunks").value_name("COUNT").global(true).help(
+            .arg(Arg::new("buffered-chunks").long("buffered-chunks").value_name("COUNT").global(true).help(
                 "Limit number of chunks processed simultaneously [default: cores available x 2]",
             ))
             .subcommand(compress_subcmd)
             .subcommand(clone_subcmd)
             .subcommand(
-                SubCommand::with_name("info")
+                Command::new("info")
                     .about("Print archive details.")
                     .arg(
-                        Arg::with_name("INPUT")
+                        Arg::new("INPUT")
                             .value_name("INPUT")
                             .help("Input file (can be a local archive or a URL)")
                             .required(true),
