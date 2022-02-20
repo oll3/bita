@@ -168,7 +168,7 @@ pub async fn write_random_bytes(input: &mut File, byte_count: usize) {
         data.push(rng.gen());
     }
 
-    input.write_all(&mut data).await.unwrap();
+    input.write_all(&data).await.unwrap();
     input.flush().await.unwrap();
     input.rewind().await.unwrap();
 }
@@ -192,14 +192,10 @@ pub async fn compress_archive(
     chunker_config: chunker::Config,
     algorithm: Option<CompressionAlgorithm>,
 ) {
-    let compression = if let Some(compression_algorithm) = algorithm {
-        Some(
-            bitar::Compression::try_new(compression_algorithm, compression_algorithm.max_level())
-                .unwrap(),
-        )
-    } else {
-        None
-    };
+    let compression = algorithm.map(|compression_algorithm| {
+        bitar::Compression::try_new(compression_algorithm, compression_algorithm.max_level())
+            .unwrap()
+    });
 
     let options = bitar::api::compress::CreateArchiveOptions {
         chunker_config,

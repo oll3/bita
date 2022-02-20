@@ -3,7 +3,6 @@ mod common;
 
 use bitar::chunker;
 
-use tempfile;
 use tokio::fs::File;
 
 use common::*;
