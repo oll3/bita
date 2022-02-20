@@ -301,7 +301,7 @@ fn add_input_archive_args(cmd: Command<'_>) -> Command<'_> {
         Arg::new("http-header")
             .long("http-header")
             .value_name("HEADER")
-            .multiple(true)
+            .multiple_occurrences(true)
             .help("Provide custom http header"),
     )
     .arg(
@@ -357,7 +357,7 @@ async fn parse_opts() -> Result<()> {
                 .value_name("FILE")
                 .long("seed")
                 .help("File to use as seed while cloning or '-' to read from stdin")
-                .multiple(true),
+                .multiple_occurrences(true),
         )
         .arg(
             Arg::new("seed-output")
@@ -398,7 +398,7 @@ async fn parse_opts() -> Result<()> {
             .arg(
                 Arg::new("verbose")
                     .short('v')
-                    .multiple(true)
+                    .multiple_occurrences(true)
                     .global(true)
                     .help("Set verbosity level"),
             )
