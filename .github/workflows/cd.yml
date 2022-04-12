@@ -1,0 +1,79 @@
+name: CD
+on:
+  push:
+
+jobs:
+  cd:
+    strategy:
+      matrix:
+       include:
+        - os: ubuntu-latest
+          target: x86_64-unknown-linux-musl
+          filename: bita-x86_64-unknown-linux-musl
+          extension: ""
+          cargo-flags: "--no-default-features --features rustls-tls" # Since this is the "maximum-compatible" release, link statically against rustls
+        - os: ubuntu-latest
+          target: x86_64-unknown-linux-gnu
+          filename: bita-x86_64-unknown-linux-gnu
+          extension: ""
+          cargo-flags: ""
+        - os: windows-latest
+          target: x86_64-pc-windows-msvc
+          filename: bita-x86_64-pc-windows-msvc.exe
+          extension: ".exe"
+          cargo-flags: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v2
+      - uses: benjlevesque/short-sha@v1.2
+        id: short-sha
+      - name: Determine filename
+        shell: bash
+        run: |
+          if [[ ${{ github.ref_type }} == "branch" ]]; then
+            VERSION="${{ steps.short-sha.outputs.sha }}"
+          else
+            VERSION="${{ github.ref_name }}"
+          fi
+          echo "filename=bita-$VERSION-${{ matrix.target }}${{matrix.extension}}" >> $GITHUB_ENV
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          default: true
+          target: ${{ matrix.target }}
+      - name: Enable static CRT linkage (Windows)
+        if: ${{ matrix.os == 'windows-latest' }} 
+        run: |
+          mkdir .cargo
+          echo '[target.x86_64-pc-windows-msvc]' >> .cargo/config
+          echo 'rustflags = ["-Ctarget-feature=+crt-static"]' >> .cargo/config
+      - name: Install musl-tools (musl)
+        if: ${{ matrix.target == 'x86_64-unknown-linux-musl' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+      - name: Build binary
+        env:
+          MACOSX_DEPLOYMENT_TARGET: 10.14 # For future OSX pipelines, this will ensure the binary is backwards-compatible with 10.14 and newer
+        run: |
+          cargo build --verbose --release --target ${{ matrix.target }} ${{ matrix.cargo-flags }}
+          mv target/${{ matrix.target }}/release/bita${{ matrix.extension }} ${{ env.filename }}
+      - name: Strip binary (Linux)
+        if: ${{ matrix.os != 'windows-latest' }}
+        run: |
+          strip ${{ env.filename }}
+      - name: Upload binary
+        uses: actions/upload-artifact@v3.0.0
+        with:
+          name: ${{ env.filename }}
+          path: ${{ env.filename }}
+      - name: Release binary
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ${{ env.filename }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
