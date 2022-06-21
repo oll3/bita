@@ -369,7 +369,7 @@ mod tests {
         fn from((size, offsets): (usize, &[u64])) -> Self {
             Self {
                 size,
-                offsets: offsets.iter().copied().collect(),
+                offsets: offsets.to_vec(),
             }
         }
     }
