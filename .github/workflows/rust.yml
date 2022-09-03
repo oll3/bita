@@ -12,7 +12,7 @@ jobs:
         rust:
           - stable
           - nightly
-          - 1.51.0
+          - 1.57.0
 
     steps:
       - uses: actions/checkout@v2
@@ -52,7 +52,7 @@ jobs:
         rust:
           - stable
           - nightly
-          - 1.54.0
+          - 1.57.0
 
     steps:
       - uses: actions/checkout@v2
@@ -110,7 +110,7 @@ jobs:
     strategy:
       matrix:
         rust:
-          - 1.56.1
+          - 1.63.0
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
@@ -137,7 +137,7 @@ jobs:
     strategy:
       matrix:
         rust:
-          - 1.56.1
+          - 1.63.0
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
