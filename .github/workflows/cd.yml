@@ -43,6 +43,8 @@ jobs:
           profile: minimal
           default: true
           target: ${{ matrix.target }}
+      - name: Install protoc
+        uses: arduino/setup-protoc@v1
       - name: Enable static CRT linkage (Windows)
         if: ${{ matrix.os == 'windows-latest' }} 
         run: |
