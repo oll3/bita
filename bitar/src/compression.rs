@@ -53,7 +53,7 @@ impl fmt::Display for CompressionLevelOutOfRangeError {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompressionAlgorithm {
     #[cfg(feature = "lzma-compression")]
     Lzma,
@@ -116,7 +116,7 @@ impl fmt::Display for CompressionAlgorithm {
 }
 
 /// Compression.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Compression {
     pub(crate) algorithm: CompressionAlgorithm,
     pub(crate) level: u32,

@@ -6,7 +6,7 @@ use crate::ChunkOffset;
 use crate::{chunk_location_map::ChunkLocationMap, HashSum};
 
 /// Represents a single chunk re-ordering operation.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReorderOp<'a> {
     /// The `Copy` operation says we should copy a chunk from the source location to the
     /// destination offsets. If we already have the given chunk stored in memory (from a
@@ -54,7 +54,7 @@ impl<'a> PartialOrd for MoveChunk<'a> {
 }
 
 /// Size and offsets of a chunk in a file.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ChunkLocation {
     size: usize,
     offsets: Vec<u64>,

@@ -140,7 +140,7 @@ enum RequestState {
     Delay(Pin<Box<tokio::time::Sleep>>),
 }
 
-impl<'a> Stream for HttpRangeRequest {
+impl Stream for HttpRangeRequest {
     type Item = Result<Bytes, HttpReaderError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {

@@ -47,7 +47,7 @@ impl<R> From<prost::DecodeError> for ArchiveError<R> {
 }
 
 /// Description of a chunk within an archive.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ChunkDescriptor {
     /// Chunk checksum.
     pub checksum: HashSum,

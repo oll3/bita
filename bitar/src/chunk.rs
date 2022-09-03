@@ -9,7 +9,7 @@ use crate::{CompressionAlgorithm, CompressionError, HashSum};
 /// A single chunk.
 ///
 /// Represents a single chunk of a file. Is not compressed.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Chunk(pub(crate) Bytes);
 
 impl<T> From<T> for Chunk
