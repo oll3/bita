@@ -395,6 +395,7 @@ async fn parse_opts() -> Result<()> {
     let matches =
         Command::new(PKG_NAME)
             .version(PKG_VERSION)
+            .arg_required_else_help(true)
             .arg(
                 Arg::new("verbose")
                     .short('v')
