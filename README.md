@@ -4,26 +4,24 @@
 
 ## bita
 
-*bita* is a HTTP based file synchronization tool striving for low bandwidth usage through data reuse.
+_bita_ is a HTTP based file synchronization tool striving for low bandwidth usage through data reuse.
 
-* Clone from remote while reusing data from any local file or device 📁
-* Clone using a file or block device as output 💾
-* Host archives using any regular HTTP/HTTPS server or service 🔗
-* Include in your own project with the [bitar](bitar/README.md) library 💫
-* Written in [Rust](https://www.rust-lang.org) for fun, performance and quality 🚀♥
-
+- Clone from remote while reusing data from any local file or device 📁
+- Clone using a file or block device as output 💾
+- Host archives using any regular HTTP/HTTPS server or service 🔗
+- Include in your own project with the [bitar](bitar/README.md) library 💫
+- Written in [Rust](https://www.rust-lang.org) for fun, performance and robustness 🚀♥
 
 ## Software updates
 
-*bita* is a generic file synchronization tool but has been developed with software update of embedded/IoT systems in mind.
+_bita_ is a generic file synchronization tool but has been developed with software update of embedded/IoT systems in mind.
 
-Software update is a typical case where *bita* may provide significant bandwidth reductions, where one can expect that a new software image will contain a lot of data already present on the system being updated. *bita* can identify the parts (*chunks*) already present on the system and fetch the missing ones from remote, still outputing an exact clone of the archived source file.
+Software update is a typical case where _bita_ may provide significant bandwidth reductions, where one can expect that a new software image will contain a lot of data already present on the system being updated. _bita_ can identify the parts (_chunks_) already present on the system and fetch the missing ones from remote, still outputing an exact clone of the archived source file.
 
 No need to pre-build patch files for going to/from different release versions. No need to run any special file server.
 Just `bita compress` the release image, upload the archive to any HTTP file hosting site. And `bita clone` the archive using whatever local data is available on the system.
 
 ![concept](images/concept.png?raw=true)
-
 
 ### Compressing
 
@@ -31,7 +29,6 @@ On compression the input file is scanned for chunk boundaries using a rolling ha
 The chunk location (offset and size) in the input file and the strong hash is then stored in the dictionary. If chunk's strong hash has not been seen before the chunk data is also compressed (using brotli) and inserted into the output archive.
 
 The final archive will contain a dictionary describing the order of chunks in the input file and the compressed chunks necessary to rebuild the input file. The archive will also contain the configuration used when scanning input for chunks.
-
 
 ### Cloning
 
@@ -41,9 +38,9 @@ When all seeds has been consumed the chunks still missing, if any, is fetched fr
 
 To keep the HTTP overhead low while cloning all adjacent chunks are fetched with a single request. And if possible the same connection is used for the whole clone operation.
 
-*bita* can also use the output file as seed and reorganize chunks in place. Except using this for the obvious reason of saving bandwidth this will also let *bita* avoid writing chunks that are already in place in the output file. This may be useful if writing to storage is either slow or we want to avoid tearing on the storage device.
+_bita_ can also use the output file as seed and reorganize chunks in place. Except using this for the obvious reason of saving bandwidth this will also let _bita_ avoid writing chunks that are already in place in the output file. This may be useful if writing to storage is either slow or we want to avoid tearing on the storage device.
 
-Each chunk, both fetched from seed and from archive, is verified by its strong hash before written to the output. *bita* avoids using any extra storage space while cloning, the only file written to is the given output file.
+Each chunk, both fetched from seed and from archive, is verified by its strong hash before written to the output. _bita_ avoids using any extra storage space while cloning, the only file written to is the given output file.
 
 ### Scanning for chunks
 
@@ -55,26 +52,29 @@ When the checksum is within this range a chunk boundary has been found. A strong
 
 The average target chunk size and the upper/lower limit of a chunk's size is runtime configurable.
 
-
 ## Server requirements
 
-The server serving *bita* archives can be any HTTP/HTTPS server supporting [range requests](https://developer.mozilla.org/en-US/docs/Web/HTTP/Range_requests), which should be most.
+The server serving _bita_ archives can be any HTTP/HTTPS server supporting [range requests](https://developer.mozilla.org/en-US/docs/Web/HTTP/Range_requests), which should be most.
 
 ## Install from crates.io
-Install *bita* using cargo:
+
+Install _bita_ using cargo:
+
 ```console
 olle@home:~$ cargo install bita
 ```
 
 ## Build from source
+
 ```console
 olle@home:~$ cargo build
 ```
+
 Build in release mode with rustls TLS backend:
+
 ```console
 olle@home:~$ cargo build --release --no-default-features --features rustls-tls
 ```
-
 
 ## Example usage
 
@@ -116,8 +116,9 @@ olle@home:~$ bita diff --hash-chunking BuzHash --avg-chunk-size 8KiB release_v1.
 ```
 
 ## Similar tools and inspiration
-* [casync](https://github.com/systemd/casync)
-* [zchunk](https://github.com/zchunk/zchunk)
-* [zsync](http://zsync.moria.org.uk)
-* [rsync](https://rsync.samba.org/)
-* [bup](https://github.com/bup/bup)
+
+- [casync](https://github.com/systemd/casync)
+- [zchunk](https://github.com/zchunk/zchunk)
+- [zsync](http://zsync.moria.org.uk)
+- [rsync](https://rsync.samba.org/)
+- [bup](https://github.com/bup/bup)

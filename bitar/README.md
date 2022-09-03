@@ -6,19 +6,16 @@
 
 A library to use for low bandwidth file synchronization over HTTP.
 
-* [Documentation](https://docs.rs/bitar)
-* See [bita](https://github.com/oll3/bita) for a more detailed description of the synchronization process.
-
+- [Documentation](https://docs.rs/bitar)
+- See [bita](https://github.com/oll3/bita) for a more detailed description of the synchronization process.
 
 ### Minimum Supported Rust Version (MSRV)
 
-This crate is guaranteed to compile on stable rust 1.51 and up. It might compile with older versions depending
-on features set but it may change in any new patch release.
-
+This crate is guaranteed to compile on stable rust 1.51 and up. It might compile with older versions depending on features set but it may change in any new patch release.
 
 ### Usage
 
-Examples of how to use *bitar* is available under the ![examples](examples) directory.
+Examples of how to use _bitar_ is available under the ![examples](examples) directory.
 Also see [bita](https://github.com/oll3/bita) for more example usage.
 
 ```console
