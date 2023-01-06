@@ -23,7 +23,7 @@ log = "0.4.14"
 fern = "0.6.0"
 chrono = "0.4.19"
 futures-util = { version = "0.3.19", default-features = false, features = ["std"] }
-tokio = { version = "1.15.0", features = ["fs", "io-std", "macros", "time", "rt-multi-thread"] }
+tokio = { version = "1.23.1", features = ["fs", "io-std", "macros", "time", "rt-multi-thread"] }
 bitar = { version = "0.10.0", path = "bitar", features = ["compress"] }
 url = "2.2.2"
 num_cpus = "1.13.1"
