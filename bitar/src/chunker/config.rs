@@ -33,7 +33,7 @@ impl FilterBits {
     }
     /// Get the bit mask value of the filter.
     pub fn mask(self) -> u32 {
-        (!0 as u32) >> (32 - self.0)
+        !0 >> (32 - self.0)
     }
     /// Get the average target size from the filter.
     pub fn chunk_target_average(self) -> u32 {

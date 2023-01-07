@@ -248,7 +248,7 @@ impl<R> Archive<R> {
         let mut chunk_offset = 0;
         self.source_order.iter().copied().map(move |index| {
             let offset = chunk_offset;
-            let cd = &self.archive_chunks[index as usize];
+            let cd = &self.archive_chunks[index];
             chunk_offset += cd.source_size as u64;
             (offset, cd)
         })

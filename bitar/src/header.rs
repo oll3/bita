@@ -34,7 +34,7 @@ pub fn build(
     header.extend(ARCHIVE_MAGIC);
 
     // Chunk dictionary size
-    header.extend(&(dictionary_buf.len() as u64).to_le_bytes());
+    header.extend((dictionary_buf.len() as u64).to_le_bytes());
 
     // The chunk dictionary
     header.extend(dictionary_buf);
@@ -44,11 +44,11 @@ pub fn build(
         Some(o) => o,
         None => header.len() as u64 + 8 + 64,
     };
-    header.extend(&(offset as u64).to_le_bytes());
+    header.extend(offset.to_le_bytes());
 
     // Create and store hash of full header
     hasher.update(&header);
-    header.extend(&hasher.finalize());
+    header.extend(hasher.finalize());
 
     Ok(header)
 }
