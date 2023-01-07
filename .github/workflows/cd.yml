@@ -6,22 +6,22 @@ jobs:
   cd:
     strategy:
       matrix:
-       include:
-        - os: ubuntu-latest
-          target: x86_64-unknown-linux-musl
-          filename: bita-x86_64-unknown-linux-musl
-          extension: ""
-          cargo-flags: "--no-default-features --features rustls-tls" # Since this is the "maximum-compatible" release, link statically against rustls
-        - os: ubuntu-latest
-          target: x86_64-unknown-linux-gnu
-          filename: bita-x86_64-unknown-linux-gnu
-          extension: ""
-          cargo-flags: ""
-        - os: windows-latest
-          target: x86_64-pc-windows-msvc
-          filename: bita-x86_64-pc-windows-msvc.exe
-          extension: ".exe"
-          cargo-flags: ""
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            filename: bita-x86_64-unknown-linux-musl
+            extension: ""
+            cargo-flags: "--no-default-features --features rustls-tls" # Since this is the "maximum-compatible" release, link statically against rustls
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            filename: bita-x86_64-unknown-linux-gnu
+            extension: ""
+            cargo-flags: ""
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            filename: bita-x86_64-pc-windows-msvc.exe
+            extension: ".exe"
+            cargo-flags: ""
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v2
@@ -45,8 +45,10 @@ jobs:
           target: ${{ matrix.target }}
       - name: Install protoc
         uses: arduino/setup-protoc@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Enable static CRT linkage (Windows)
-        if: ${{ matrix.os == 'windows-latest' }} 
+        if: ${{ matrix.os == 'windows-latest' }}
         run: |
           mkdir .cargo
           echo '[target.x86_64-pc-windows-msvc]' >> .cargo/config

@@ -24,6 +24,8 @@ jobs:
 
       - name: Install protoc
         uses: arduino/setup-protoc@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions-rs/cargo@v1
         name: build
@@ -64,6 +66,8 @@ jobs:
 
       - name: Install protoc
         uses: arduino/setup-protoc@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions-rs/cargo@v1
         name: build
@@ -153,6 +157,8 @@ jobs:
 
       - name: Install protoc
         uses: arduino/setup-protoc@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run cargo clippy
         uses: actions-rs/cargo@v1
