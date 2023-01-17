@@ -48,9 +48,9 @@ jobs:
   # Run bita tests.
   bita:
     name: "bita tests"
-    runs-on: ubuntu-latest
     strategy:
       matrix:
+        os: [ubuntu-latest, macos-latest]
         rust:
           - stable
           - nightly
