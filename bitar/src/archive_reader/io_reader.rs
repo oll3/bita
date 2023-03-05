@@ -88,7 +88,7 @@ where
         }
     }
 
-    fn poll_chunk<'b>(&'b mut self, cx: &mut Context) -> Poll<Option<Result<Bytes, io::Error>>>
+    fn poll_chunk(&mut self, cx: &mut Context) -> Poll<Option<Result<Bytes, io::Error>>>
     where
         R: AsyncSeek + AsyncRead + Send + Unpin,
         Self: Unpin + Send,
