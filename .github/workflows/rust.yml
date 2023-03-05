@@ -12,7 +12,7 @@ jobs:
         rust:
           - stable
           - nightly
-          - 1.57.0
+          - 1.61.0
 
     steps:
       - uses: actions/checkout@v2
@@ -37,13 +37,13 @@ jobs:
         name: test
         with:
           command: test
-          args: -p bitar --verbose
+          args: -p bitar --verbose --features compress
 
       - uses: actions-rs/cargo@v1
         name: bita lzma/zstd compression tests
         with:
           command: test
-          args: -p bitar --verbose --features lzma-compression,zstd-compression
+          args: -p bitar --verbose --features lzma-compression,zstd-compression,compress
 
   # Run bita tests.
   bita:
@@ -55,7 +55,7 @@ jobs:
         rust:
           - stable
           - nightly
-          - 1.57.0
+          - 1.61.0
 
     steps:
       - uses: actions/checkout@v2
