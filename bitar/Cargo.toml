@@ -14,7 +14,7 @@ keywords = [
     "differential",
 ]
 categories = ["compression", "filesystem"]
-rust-version = "1.61"
+rust-version = "1.64"
 
 [build-dependencies]
 prost-build = "0.12"
