@@ -40,7 +40,7 @@ async fn file_checksum(file: &mut File) -> Result<HashSum, std::io::Error> {
 
 // Check if file is a regular file or block device
 #[cfg(unix)]
-async fn is_block_dev(file: &mut File) -> Result<bool, std::io::Error> {
+async fn is_block_dev(file: &File) -> Result<bool, std::io::Error> {
     #[cfg(target_os = "linux")]
     use std::os::linux::fs::MetadataExt;
     #[cfg(target_os = "macos")]
@@ -54,7 +54,7 @@ async fn is_block_dev(file: &mut File) -> Result<bool, std::io::Error> {
 }
 
 #[cfg(not(unix))]
-async fn is_block_dev(_file: &mut File) -> Result<bool, std::io::Error> {
+async fn is_block_dev(_file: &File) -> Result<bool, std::io::Error> {
     Ok(false)
 }
 
@@ -201,7 +201,7 @@ where
     // Check if the given output file is a regular file or block device.
     // If it is a block device we should check its size against the target size before
     // writing. If a regular file then resize that file to target size.
-    let output_is_block_dev = is_block_dev(&mut output_file).await?;
+    let output_is_block_dev = is_block_dev(&output_file).await?;
     if output_is_block_dev {
         let size = file_size(&mut output_file).await?;
         if size < archive.total_source_size() {

@@ -309,23 +309,23 @@ fn chunker_config_from_params<R>(
     p: dict::ChunkerParameters,
 ) -> Result<chunker::Config, ArchiveError<R>> {
     use dict::chunker_parameters::ChunkingAlgorithm;
-    match ChunkingAlgorithm::from_i32(p.chunking_algorithm) {
-        Some(ChunkingAlgorithm::Buzhash) => Ok(chunker::Config::BuzHash(chunker::FilterConfig {
+    match ChunkingAlgorithm::try_from(p.chunking_algorithm) {
+        Ok(ChunkingAlgorithm::Buzhash) => Ok(chunker::Config::BuzHash(chunker::FilterConfig {
             filter_bits: chunker::FilterBits::from_bits(p.chunk_filter_bits),
             min_chunk_size: p.min_chunk_size as usize,
             max_chunk_size: p.max_chunk_size as usize,
             window_size: p.rolling_hash_window_size as usize,
         })),
-        Some(ChunkingAlgorithm::Rollsum) => Ok(chunker::Config::RollSum(chunker::FilterConfig {
+        Ok(ChunkingAlgorithm::Rollsum) => Ok(chunker::Config::RollSum(chunker::FilterConfig {
             filter_bits: chunker::FilterBits::from_bits(p.chunk_filter_bits),
             min_chunk_size: p.min_chunk_size as usize,
             max_chunk_size: p.max_chunk_size as usize,
             window_size: p.rolling_hash_window_size as usize,
         })),
-        Some(ChunkingAlgorithm::FixedSize) => {
+        Ok(ChunkingAlgorithm::FixedSize) => {
             Ok(chunker::Config::FixedSize(p.max_chunk_size as usize))
         }
-        _ => Err(ArchiveError::invalid_archive("unknown chunking algorithm")),
+        Err(_err) => Err(ArchiveError::invalid_archive("unknown chunking algorithm")),
     }
 }
 
@@ -333,30 +333,30 @@ fn compression_from_dictionary<R>(
     c: dict::ChunkCompression,
 ) -> Result<Option<Compression>, ArchiveError<R>> {
     use dict::chunk_compression::CompressionType;
-    match CompressionType::from_i32(c.compression) {
+    match CompressionType::try_from(c.compression) {
         #[cfg(feature = "lzma-compression")]
-        Some(dict::chunk_compression::CompressionType::Lzma) => Ok(Some(Compression {
+        Ok(dict::chunk_compression::CompressionType::Lzma) => Ok(Some(Compression {
             algorithm: CompressionAlgorithm::Lzma,
             level: c.compression_level,
         })),
         #[cfg(not(feature = "lzma-compression"))]
-        Some(CompressionType::Lzma) => Err(ArchiveError::invalid_archive(
+        Ok(CompressionType::Lzma) => Err(ArchiveError::invalid_archive(
             "LZMA compression not enabled",
         )),
         #[cfg(feature = "zstd-compression")]
-        Some(CompressionType::Zstd) => Ok(Some(Compression {
+        Ok(CompressionType::Zstd) => Ok(Some(Compression {
             algorithm: CompressionAlgorithm::Zstd,
             level: c.compression_level,
         })),
         #[cfg(not(feature = "zstd-compression"))]
-        Some(CompressionType::Zstd) => Err(ArchiveError::invalid_archive(
+        Ok(CompressionType::Zstd) => Err(ArchiveError::invalid_archive(
             "ZSTD compression not enabled",
         )),
-        Some(CompressionType::Brotli) => Ok(Some(Compression {
+        Ok(CompressionType::Brotli) => Ok(Some(Compression {
             algorithm: CompressionAlgorithm::Brotli,
             level: c.compression_level,
         })),
-        Some(CompressionType::None) => Ok(None),
-        None => Err(ArchiveError::invalid_archive("unknown compression")),
+        Ok(CompressionType::None) => Ok(None),
+        Err(_err) => Err(ArchiveError::invalid_archive("unknown compression")),
     }
 }
