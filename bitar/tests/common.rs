@@ -1,10 +1,12 @@
 #![allow(dead_code)]
 use std::io::Cursor;
-use std::io::Read;
 
 use blake2::{Blake2b512, Digest};
 use futures_util::stream::StreamExt;
-use hyper::service::{make_service_fn, service_fn};
+use http_body_util::Full;
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
+use hyper_util::rt::TokioIo;
 use rand::Rng;
 use reqwest::Url;
 use tokio::fs::File;
@@ -12,6 +14,7 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 use bitar::archive_reader::{HttpReader, IoReader};
 use bitar::{Archive, CloneOutput};
+use tokio::net::TcpListener;
 
 // Checksum of the rand archive source file.
 pub static RAND_B2SUM: &[u8] = &[
@@ -47,10 +50,10 @@ pub async fn clone_local_expect_checksum(path: &str, b2sum: &[u8]) {
 }
 
 pub async fn clone_remote_expect_checksum(path: &str, b2sum: &'static [u8]) {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let server_port = listener.local_addr().unwrap().port();
     let server = serve_archive(listener, path);
-    let clone_task = tokio::spawn(async move {
+    let clone_task = async move {
         clone_expect_checksum(
             Archive::try_init(HttpReader::from_url(
                 Url::parse(&format!("http://127.0.0.1:{}", server_port)).unwrap(),
@@ -60,7 +63,7 @@ pub async fn clone_remote_expect_checksum(path: &str, b2sum: &'static [u8]) {
             b2sum,
         )
         .await
-    });
+    };
     tokio::select! {
         _ = server => panic!("server ended"),
         _ = clone_task => {},
@@ -98,37 +101,34 @@ async fn clone_expect_checksum<R: bitar::archive_reader::ArchiveReader>(
     assert_eq!(archive.source_checksum().slice(), b2sum);
 }
 
-async fn serve_archive(listener: std::net::TcpListener, path: &str) {
-    let mut archive_data = vec![];
-    std::fs::File::open(path)
-        .unwrap()
-        .read_to_end(&mut archive_data)
-        .unwrap();
-    hyper::Server::from_tcp(listener)
-        .unwrap()
-        .serve(make_service_fn(move |_conn| {
-            let data = archive_data.clone();
-            async move {
-                Ok::<_, std::convert::Infallible>(service_fn(move |req| {
-                    // Only respond with the requested range of bytes
-                    let range = req
-                        .headers()
-                        .get("range")
-                        .expect("range header")
-                        .to_str()
-                        .unwrap()[6..]
-                        .split('-')
-                        .map(|s| s.parse::<u64>().unwrap())
-                        .collect::<Vec<u64>>();
-                    let start = range[0] as usize;
-                    let end = std::cmp::min(range[1] as usize + 1, data.len());
-                    let data = data[start..end].to_vec();
-                    async move {
-                        Ok::<_, hyper::Error>(hyper::Response::new(hyper::Body::from(data)))
-                    }
-                }))
-            }
-        }))
+async fn serve_archive(listener: TcpListener, path: &str) {
+    let archive_data = tokio::fs::read(path).await.unwrap();
+    let (stream, _) = listener.accept().await.unwrap();
+    let io = TokioIo::new(stream);
+    http1::Builder::new()
+        .serve_connection(
+            io,
+            service_fn(move |req| {
+                // Only respond with the requested range of bytes
+                let range = req
+                    .headers()
+                    .get("range")
+                    .expect("range header")
+                    .to_str()
+                    .unwrap()[6..]
+                    .split('-')
+                    .map(|s| s.parse::<u64>().unwrap())
+                    .collect::<Vec<u64>>();
+                let start = range[0] as usize;
+                let end = (range[1] as usize + 1).min(archive_data.len());
+                let data = archive_data[start..end].to_vec();
+                async move {
+                    Ok::<_, hyper::Error>(hyper::Response::new(Full::new(
+                        hyper::body::Bytes::from(data),
+                    )))
+                }
+            }),
+        )
         .await
         .unwrap();
 }

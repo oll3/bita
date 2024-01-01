@@ -219,34 +219,37 @@ impl From<reqwest::Error> for HttpReaderError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hyper::service::{make_service_fn, service_fn};
+    use http_body_util::Full;
+    use hyper::{server::conn::http1, service::service_fn};
+    use tokio::net::TcpListener;
 
-    async fn new_server(listener: std::net::TcpListener, data: Vec<u8>) {
-        hyper::Server::from_tcp(listener)
-            .unwrap()
-            .serve(make_service_fn(move |_conn| {
-                let data = data.clone();
-                async move {
-                    Ok::<_, std::convert::Infallible>(service_fn(move |req| {
-                        // Only respond with the requested range of bytes
-                        let range = req
-                            .headers()
-                            .get("range")
-                            .expect("range header")
-                            .to_str()
-                            .unwrap()[6..]
-                            .split('-')
-                            .map(|s| s.parse::<u64>().unwrap())
-                            .collect::<Vec<u64>>();
-                        let start = range[0] as usize;
-                        let end = std::cmp::min(range[1] as usize + 1, data.len());
-                        let data = data[start..end].to_vec();
-                        async move {
-                            Ok::<_, hyper::Error>(hyper::Response::new(hyper::Body::from(data)))
-                        }
-                    }))
-                }
-            }))
+    async fn new_server(listener: TcpListener, data: Vec<u8>) {
+        let (stream, _) = listener.accept().await.unwrap();
+        let io = hyper_util::rt::TokioIo::new(stream);
+        http1::Builder::new()
+            .serve_connection(
+                io,
+                service_fn(move |req| {
+                    // Only respond with the requested range of bytes
+                    let range = req
+                        .headers()
+                        .get("range")
+                        .expect("range header")
+                        .to_str()
+                        .unwrap()[6..]
+                        .split('-')
+                        .map(|s| s.parse::<u64>().unwrap())
+                        .collect::<Vec<u64>>();
+                    let start = range[0] as usize;
+                    let end = std::cmp::min(range[1] as usize + 1, data.len());
+                    let data = data[start..end].to_vec();
+                    async move {
+                        Ok::<_, hyper::Error>(hyper::Response::new(Full::new(
+                            hyper::body::Bytes::from(data),
+                        )))
+                    }
+                }),
+            )
             .await
             .unwrap();
     }
@@ -255,8 +258,8 @@ mod tests {
         HttpReader::from_url(Url::parse(&format!("http://127.0.0.1:{}", port)).unwrap())
     }
 
-    fn new_listener() -> (std::net::TcpListener, u16) {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    async fn new_listener() -> (TcpListener, u16) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         (listener, port)
     }
@@ -304,7 +307,7 @@ mod tests {
     #[tokio::test]
     async fn read_single() {
         let expect = vec![1, 2, 3, 4, 5, 6];
-        let (listener, port) = new_listener();
+        let (listener, port) = new_listener().await;
         let server = new_server(listener, expect.clone());
         let mut reader = new_reader(port);
         let read = reader.read_at(0, expect.len());
@@ -317,7 +320,7 @@ mod tests {
     #[tokio::test]
     async fn read_single_offset() {
         let expect = vec![1, 2, 3, 4, 5, 6];
-        let (listener, port) = new_listener();
+        let (listener, port) = new_listener().await;
         let server = new_server(listener, expect.clone());
         let mut reader = new_reader(port);
         let read = reader.read_at(1, expect.len() - 1);
@@ -329,7 +332,7 @@ mod tests {
 
     #[tokio::test]
     async fn read_single_zero() {
-        let (listener, port) = new_listener();
+        let (listener, port) = new_listener().await;
         let server = new_server(listener, vec![1, 2, 3, 4, 5, 6]);
         let mut reader = new_reader(port);
         let read = reader.read_at(1, 0);
@@ -341,7 +344,7 @@ mod tests {
 
     #[tokio::test]
     async fn unexpected_end() {
-        let (listener, port) = new_listener();
+        let (listener, port) = new_listener().await;
         let server = new_server(listener, vec![1, 2, 3, 4, 5, 6]);
         let mut reader = new_reader(port);
         let read = reader.read_at(0, 10);
@@ -356,7 +359,7 @@ mod tests {
         let expect = vec![
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
         ];
-        let (listener, port) = new_listener();
+        let (listener, port) = new_listener().await;
         let server = new_server(listener, expect.clone());
         let mut reader = new_reader(port);
         let chunks = vec![
@@ -384,7 +387,7 @@ mod tests {
         let expect = vec![
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
         ];
-        let (listener, port) = new_listener();
+        let (listener, port) = new_listener().await;
         let server = new_server(listener, expect.clone());
         let mut reader = new_reader(port);
         let chunks = vec![
@@ -409,7 +412,7 @@ mod tests {
 
     #[tokio::test]
     async fn connection_timeout() {
-        let (listener, port) = new_listener();
+        let (listener, port) = new_listener().await;
         let _server = new_server(listener, vec![]);
         let mut reader = HttpReader::from_request(
             reqwest::Client::new()
