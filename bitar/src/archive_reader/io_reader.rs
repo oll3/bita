@@ -75,7 +75,7 @@ where
 {
     fn new(reader: &'a mut R, chunks: Vec<ChunkOffset>) -> Self {
         let first = chunks
-            .get(0)
+            .first()
             .cloned()
             .unwrap_or(ChunkOffset { offset: 0, size: 0 });
         Self {
