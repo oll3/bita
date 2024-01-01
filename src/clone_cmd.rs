@@ -339,7 +339,7 @@ where
     Ok(())
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemoteInput {
     pub url: Url,
     pub retries: u32,
@@ -348,7 +348,7 @@ pub struct RemoteInput {
     pub headers: HeaderMap,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InputArchive {
     Local(std::path::PathBuf),
     Remote(Box<RemoteInput>),
@@ -362,7 +362,7 @@ impl InputArchive {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Options {
     pub force_create: bool,
     pub input_archive: InputArchive,

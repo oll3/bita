@@ -150,7 +150,7 @@ fn selection_string(
     )
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Options {
     pub input_a: PathBuf,
     pub input_b: PathBuf,

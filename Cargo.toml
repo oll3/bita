@@ -41,3 +41,6 @@ lzma-compression = ["bitar/lzma-compression"]
 zstd-compression = ["bitar/zstd-compression"]
 default-tls = ["reqwest/default-tls", "bitar/default-tls"]
 rustls-tls = ["reqwest/rustls-tls", "bitar/rustls-tls"]
+
+[dev-dependencies]
+tempfile = "3.9.0"

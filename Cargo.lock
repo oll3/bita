@@ -127,6 +127,7 @@ dependencies = [
  "log",
  "num_cpus",
  "reqwest",
+ "tempfile",
  "tokio",
  "url",
 ]

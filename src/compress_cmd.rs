@@ -141,11 +141,10 @@ where
     ))
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Options {
     pub force_create: bool,
-
-    // Use stdin if input not given
+    /// File to compress, or stdin if input is None.
     pub input: Option<PathBuf>,
     pub output: PathBuf,
     pub temp_file: PathBuf,
@@ -154,6 +153,7 @@ pub struct Options {
     pub compression: Option<Compression>,
     pub num_chunk_buffers: usize,
 }
+
 pub async fn compress_cmd(opts: Options) -> Result<()> {
     let chunker_config = opts.chunker_config.clone();
     let compression = opts.compression;
