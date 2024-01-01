@@ -15,7 +15,8 @@ use crate::{
 /// When `sum | filter_mask == sum` then we have found a chunk boundary.
 /// That is, with a mask set to 0b1 a chunk will be found every 2nd byte on average.
 /// With a mask set to 0b11 a chunk will be found every 4th byte on average.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+
 pub struct FilterBits(pub u32);
 
 impl FilterBits {
@@ -46,7 +47,7 @@ impl FilterBits {
 }
 
 /// Filter configuration to use while scanning for chunk boundaries.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct FilterConfig {
     /// Bit mask filter resulting in an average chunk size.
     pub filter_bits: FilterBits,
@@ -70,7 +71,7 @@ impl Default for FilterConfig {
 }
 
 /// Algorithm and configuration to use while scanning for chunk boundaries.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Config {
     BuzHash(FilterConfig),
     RollSum(FilterConfig),
