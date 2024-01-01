@@ -11,7 +11,7 @@ use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 use bitar::archive_reader::{HttpReader, IoReader};
-use bitar::{api, chunker, Archive, CloneOutput, CompressionAlgorithm};
+use bitar::{Archive, CloneOutput};
 
 // Checksum of the rand archive source file.
 pub static RAND_B2SUM: &[u8] = &[
@@ -186,11 +186,12 @@ pub async fn check_archive_equals_source(archive: &mut File, source: &mut File) 
     assert_eq!(input_bytes, cloned_bytes);
 }
 
+#[cfg(feature = "compress")]
 pub async fn compress_archive(
     input: &mut File,
     output: &mut File,
-    chunker_config: chunker::Config,
-    algorithm: Option<CompressionAlgorithm>,
+    chunker_config: bitar::chunker::Config,
+    algorithm: Option<bitar::CompressionAlgorithm>,
 ) {
     let compression = algorithm.map(|compression_algorithm| {
         bitar::Compression::try_new(compression_algorithm, compression_algorithm.max_level())
@@ -203,7 +204,7 @@ pub async fn compress_archive(
         ..Default::default()
     };
 
-    api::compress::create_archive(input, output, &options)
+    bitar::api::compress::create_archive(input, output, &options)
         .await
         .unwrap();
 }
