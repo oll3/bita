@@ -1,3 +1,5 @@
+use std::ffi::OsString;
+
 use anyhow::Result;
 use log::*;
 use tokio::fs::File;
@@ -93,8 +95,8 @@ pub fn print_archive<R>(archive: &Archive<R>) {
     );
 }
 
-pub async fn info_cmd(input: String) -> Result<()> {
-    if let Ok(url) = input.parse::<reqwest::Url>() {
+pub async fn info_cmd(input: OsString) -> Result<()> {
+    if let Some(Ok(url)) = input.to_str().map(|s| s.parse::<reqwest::Url>()) {
         print_archive_reader(HttpReader::from_url(url)).await
     } else {
         print_archive_reader(IoReader::new(File::open(&input).await?)).await

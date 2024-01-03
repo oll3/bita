@@ -16,7 +16,7 @@ members = [
 ]
 
 [dependencies]
-clap = "3.1.0"
+clap = { version = "4.4.12" }
 blake2 = "0.10.0"
 atty = "0.2.14"
 log = "0.4.14"
