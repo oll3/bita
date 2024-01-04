@@ -18,7 +18,6 @@ members = [
 [dependencies]
 clap = { version = "4.4.12" }
 blake2 = "0.10.0"
-atty = "0.2.14"
 log = "0.4.14"
 fern = "0.6.0"
 chrono = "0.4.19"

@@ -2,9 +2,9 @@ use anyhow::{anyhow, Context, Result};
 use blake2::{Blake2b512, Digest};
 use futures_util::{future, StreamExt};
 use log::*;
-use std::collections::HashMap;
 use std::io::Write;
 use std::path::PathBuf;
+use std::{collections::HashMap, io::IsTerminal};
 use tokio::{
     fs::{File, OpenOptions},
     io::{AsyncRead, AsyncWriteExt},
@@ -183,7 +183,7 @@ pub async fn compress_cmd(opts: Options) -> Result<()> {
                 opts.num_chunk_buffers,
             )
             .await?
-        } else if !atty::is(atty::Stream::Stdin) {
+        } else if !std::io::stdin().is_terminal() {
             // Read source from stdin
             chunk_input(
                 tokio::io::stdin(),

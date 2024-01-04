@@ -3,7 +3,7 @@ use blake2::{Blake2b512, Digest};
 use futures_util::StreamExt;
 use log::*;
 use reqwest::header::HeaderMap;
-use std::io::SeekFrom;
+use std::io::{SeekFrom, IsTerminal};
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::fs::File;
@@ -245,7 +245,7 @@ where
     }
 
     // Read chunks from seed files
-    if opts.seed_stdin && !atty::is(atty::Stream::Stdin) {
+    if opts.seed_stdin && !std::io::stdin().is_terminal() {
         info!(
             "Scanning stdin for chunks ({} left to find)...",
             output.len()
