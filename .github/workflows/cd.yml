@@ -24,8 +24,8 @@ jobs:
             cargo-flags: ""
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v2
-      - uses: benjlevesque/short-sha@v1.2
+      - uses: actions/checkout@v4
+      - uses: benjlevesque/short-sha@v2.2
         id: short-sha
       - name: Determine filename
         shell: bash
@@ -37,12 +37,10 @@ jobs:
           fi
           echo "filename=bita-$VERSION-${{ matrix.target }}${{matrix.extension}}" >> $GITHUB_ENV
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-          profile: minimal
-          default: true
-          target: ${{ matrix.target }}
+          targets: ${{ matrix.target }}
       - name: Install protoc
         uses: arduino/setup-protoc@v1
         with:
