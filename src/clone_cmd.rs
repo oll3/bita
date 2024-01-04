@@ -3,7 +3,7 @@ use blake2::{Blake2b512, Digest};
 use futures_util::StreamExt;
 use log::*;
 use reqwest::header::HeaderMap;
-use std::io::{SeekFrom, IsTerminal};
+use std::io::{IsTerminal, SeekFrom};
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::fs::File;
