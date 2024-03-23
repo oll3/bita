@@ -7,13 +7,16 @@ edition = '2021'
 description = "Differential file synchronization over http(s)."
 repository = "https://github.com/oll3/bita"
 readme = "README.md"
-keywords = ["sofware-update", "file-synchronization", "delta-update",  "differential"]
+keywords = [
+  "sofware-update",
+  "file-synchronization",
+  "delta-update",
+  "differential",
+]
 categories = ["command-line-utilities", "compression", "filesystem"]
 
 [workspace]
-members = [
-  "bitar"
-]
+members = ["bitar"]
 
 [dependencies]
 clap = { version = "4.4.12" }
@@ -21,8 +24,16 @@ blake2 = "0.10.0"
 log = "0.4.14"
 fern = "0.6.0"
 chrono = "0.4.19"
-futures-util = { version = "0.3.19", default-features = false, features = ["std"] }
-tokio = { version = "1.24.1", features = ["fs", "io-std", "macros", "time", "rt-multi-thread"] }
+futures-util = { version = "0.3.19", default-features = false, features = [
+  "std",
+] }
+tokio = { version = "1.24.1", features = [
+  "fs",
+  "io-std",
+  "macros",
+  "time",
+  "rt-multi-thread",
+] }
 bitar = { version = "0.11.0", path = "bitar", features = ["compress"] }
 url = "2.2.2"
 num_cpus = "1.13.1"
@@ -30,9 +41,9 @@ async-trait = "0.1.52"
 anyhow = "1.0.52"
 
 [dependencies.reqwest]
-version = "0.11.8"
+version = "0.12.1"
 default-features = false
-features = ["stream"]
+features = ["stream", "http2"]
 
 [features]
 default = ["default-tls"]
