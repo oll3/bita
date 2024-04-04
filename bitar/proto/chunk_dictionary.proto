@@ -1,3 +1,9 @@
+/*
+  Note: When editing this file, delete `src/chunk_dictionary.rs`
+  and run `cargo build` to have the buildscript regenerate it.
+  `protoc` needs to be in your PATH.
+ */
+
 syntax = "proto3";
 
 package chunk_dictionary;

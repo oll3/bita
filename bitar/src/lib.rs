@@ -11,6 +11,7 @@ mod rolling_hash;
 pub mod api;
 
 pub mod archive_reader;
+pub mod chunk_dictionary;
 pub mod chunker;
 pub mod header;
 
@@ -26,8 +27,3 @@ pub use compression::{
     Compression, CompressionAlgorithm, CompressionError, CompressionLevelOutOfRangeError,
 };
 pub use hashsum::HashSum;
-
-pub mod chunk_dictionary {
-    #![allow(clippy::derive_partial_eq_without_eq)]
-    include!(concat!(env!("OUT_DIR"), "/chunk_dictionary.rs"));
-}
