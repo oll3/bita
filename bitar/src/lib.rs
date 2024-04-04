@@ -11,6 +11,7 @@ mod rolling_hash;
 pub mod api;
 
 pub mod archive_reader;
+#[rustfmt::skip]
 pub mod chunk_dictionary;
 pub mod chunker;
 pub mod header;
