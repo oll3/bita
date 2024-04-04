@@ -20,11 +20,6 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
 
-      - name: Install protoc
-        uses: arduino/setup-protoc@v1
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: build
         run: cargo build -p bitar --verbose
 
@@ -51,11 +46,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ matrix.rust }}
-
-      - name: Install protoc
-        uses: arduino/setup-protoc@v1
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: build
         run: cargo build
@@ -122,11 +112,6 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
           components: clippy
-
-      - name: Install protoc
-        uses: arduino/setup-protoc@v1
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check lints
         run: cargo clippy --all -- -D warnings -A clippy::cognitive-complexity
