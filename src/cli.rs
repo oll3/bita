@@ -531,7 +531,7 @@ mod tests {
 
     #[test]
     fn compress_command_default() {
-        let (opts, log) = parse_opts(&[
+        let (opts, log) = parse_opts([
             "bita",
             "compress",
             "-v",
@@ -566,7 +566,7 @@ mod tests {
     #[test]
     fn compress_command_stdin() {
         let (opts, log) =
-            parse_opts(&["bita", "compress", "./output.cba"]).unwrap_or_else(|e| panic!("{}", e));
+            parse_opts(["bita", "compress", "./output.cba"]).unwrap_or_else(|e| panic!("{}", e));
         assert_eq!(log, LogOpts::new(LevelFilter::Info));
         assert_eq!(
             opts,
@@ -592,7 +592,7 @@ mod tests {
 
     #[test]
     fn compress_command_specific() {
-        let (opts, log) = parse_opts(&[
+        let (opts, log) = parse_opts([
             "bita",
             "compress",
             "-v",
@@ -646,7 +646,7 @@ mod tests {
         let mut temp_file_path = input_path.to_path_buf();
         temp_file_path.set_extension(".tmp");
 
-        let (opts, log) = parse_opts(&[
+        let (opts, log) = parse_opts([
             "bita",
             "clone",
             "--seed",
@@ -682,7 +682,7 @@ mod tests {
         let mut temp_file_path = input_path.to_path_buf();
         temp_file_path.set_extension(".tmp");
 
-        let (opts, log) = parse_opts(&[
+        let (opts, log) = parse_opts([
             "bita",
             "clone",
             "--seed",
@@ -717,7 +717,7 @@ mod tests {
         let mut temp_file_path = input_path.to_path_buf();
         temp_file_path.set_extension(".tmp");
 
-        let (opts, log) = parse_opts(&[
+        let (opts, log) = parse_opts([
             "bita",
             "clone",
             "--verify-header",
@@ -745,7 +745,7 @@ mod tests {
 
     #[test]
     fn clone_command_remote_archive() {
-        let (opts, log) = parse_opts(&[
+        let (opts, log) = parse_opts([
             "bita",
             "clone",
             "--seed",
@@ -781,7 +781,7 @@ mod tests {
 
     #[test]
     fn clone_command_remote_archive_headers() {
-        let (opts, log) = parse_opts(&[
+        let (opts, log) = parse_opts([
             "bita",
             "-vv",
             "clone",
@@ -826,7 +826,7 @@ mod tests {
 
     #[test]
     fn info_command() {
-        let (info, log) = parse_opts(&["bita", "info", "-v", "an-input-file.cba"])
+        let (info, log) = parse_opts(["bita", "info", "-v", "an-input-file.cba"])
             .unwrap_or_else(|e| panic!("{}", e));
         assert_eq!(log, LogOpts::new(LevelFilter::Debug));
         assert_eq!(
@@ -839,13 +839,13 @@ mod tests {
 
     #[test]
     fn info_command_missing_input() {
-        parse_opts(&["bita", "info"]).unwrap_err();
+        parse_opts(["bita", "info"]).unwrap_err();
     }
 
     #[test]
     fn diff_command() {
         let (opts, log) =
-            parse_opts(&["bita", "diff", "file1", "file2"]).unwrap_or_else(|e| panic!("{}", e));
+            parse_opts(["bita", "diff", "file1", "file2"]).unwrap_or_else(|e| panic!("{}", e));
         assert_eq!(log, LogOpts::new(LevelFilter::Info));
         assert_eq!(
             opts,
