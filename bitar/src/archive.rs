@@ -1,6 +1,10 @@
 use blake2::{Blake2b512, Digest};
 use futures_util::{stream::Stream, StreamExt};
-use std::{convert::TryInto, fmt};
+use std::{
+    convert::TryInto,
+    fmt,
+    task::{ready, Poll},
+};
 
 use crate::{
     archive_reader::ArchiveReader, chunk_dictionary as dict, chunker,
@@ -279,29 +283,34 @@ impl<R> Archive<R> {
             .map(|cd| ChunkOffset::new(cd.archive_offset, cd.archive_size))
             .collect();
         let archive_chunk_compression = self.chunk_compression().map(|c| c.algorithm);
-        self.reader
+        let stream = self
+            .reader
             .read_chunks(read_at)
             .enumerate()
             .map(move |(index, result)| {
-                let source_size = descriptors[index].source_size as usize;
                 match result {
-                    Ok(chunk) => Ok(CompressedArchiveChunk {
-                        chunk: CompressedChunk {
-                            compression: if source_size == chunk.len() {
-                                // When chunk size matches the source chunk size chunk has not been compressed
-                                // since compressing it probably made it bigger.
-                                None
-                            } else {
-                                archive_chunk_compression
+                    Ok(chunk) => {
+                        let descriptor = descriptors[index];
+                        let source_size: usize = descriptor.source_size.try_into().unwrap();
+                        Ok(CompressedArchiveChunk {
+                            chunk: CompressedChunk {
+                                compression: if source_size == chunk.len() {
+                                    // When chunk size matches the source chunk size chunk has not been compressed
+                                    // since compressing it probably made it bigger.
+                                    None
+                                } else {
+                                    archive_chunk_compression
+                                },
+                                data: chunk,
+                                source_size,
                             },
-                            data: chunk,
-                            source_size,
-                        },
-                        expected_hash: descriptors[index].checksum.clone(),
-                    }),
+                            expected_hash: descriptor.checksum.clone(),
+                        })
+                    }
                     Err(err) => Err(err),
                 }
-            })
+            });
+        StreamUntilFirstError::new(stream)
     }
 }
 
@@ -358,5 +367,41 @@ fn compression_from_dictionary<R>(
         })),
         Ok(CompressionType::None) => Ok(None),
         Err(_err) => Err(ArchiveError::invalid_archive("unknown compression")),
+    }
+}
+
+/// The first error returned by the underlying stream will be emitted.
+/// Any following read from the stream will result in end of stream (None).
+struct StreamUntilFirstError<S> {
+    stream: S,
+    end: bool,
+}
+
+impl<S> StreamUntilFirstError<S> {
+    fn new(stream: S) -> Self {
+        Self { stream, end: false }
+    }
+}
+
+impl<S, T, E> Stream for StreamUntilFirstError<S>
+where
+    S: Stream<Item = Result<T, E>> + Unpin,
+{
+    type Item = S::Item;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> Poll<Option<Self::Item>> {
+        if self.end {
+            return Poll::Ready(None);
+        }
+        Poll::Ready(match ready!(self.stream.poll_next_unpin(cx)) {
+            Some(Err(r)) => {
+                self.end = true;
+                Some(Err(r))
+            }
+            other => other,
+        })
     }
 }

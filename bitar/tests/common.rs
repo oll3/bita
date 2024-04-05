@@ -34,6 +34,7 @@ pub static ARCHIVE_0_1_1_ZSTD: &str = "tests/resources/zero-0_1_1-zstd.cba";
 pub static ARCHIVE_0_7_1_CORRUPT_HEADER: &str = "tests/resources/rand-0_7_1-corrupt-header.cba";
 pub static ARCHIVE_0_7_1_CORRUPT_CHUNK: &str = "tests/resources/rand-0_7_1-corrupt-chunk.cba";
 pub static ARCHIVE_0_7_1_BROTLI: &str = "tests/resources/zero-0_7_1-brotli.cba";
+pub static ARCHIVE_0_11_0_BROTLI_TRUNCATED: &str = "tests/resources/rand-0_11_0-brotli-trunc.cba";
 
 pub async fn clone_local_expect_checksum(path: &str, b2sum: &[u8]) {
     clone_expect_checksum(
