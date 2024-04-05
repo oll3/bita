@@ -1,5 +1,7 @@
 mod common;
 
+use std::io::ErrorKind;
+
 use bitar::{archive_reader::IoReader, Archive};
 use futures_util::stream::StreamExt;
 use tokio::fs::File;
@@ -75,4 +77,28 @@ async fn clone_local_v0_7_1_corrupt_chunk() {
         }
     }
     panic!("no hashsum mismatch error?!");
+}
+
+#[tokio::test]
+async fn clone_local_v0_11_0_brotli_expect_unexpected_end() {
+    let mut archive = Archive::try_init(IoReader::new(
+        File::open(ARCHIVE_0_11_0_BROTLI_TRUNCATED).await.unwrap(),
+    ))
+    .await
+    .unwrap();
+    let mut chunk_stream = archive.chunk_stream(&archive.build_source_index());
+    let _chunk1 = chunk_stream
+        .next()
+        .await
+        .unwrap()
+        .unwrap()
+        .decompress()
+        .unwrap()
+        .verify()
+        .unwrap();
+    let first_err = chunk_stream.next().await.unwrap().unwrap_err();
+    assert_eq!(first_err.kind(), ErrorKind::UnexpectedEof);
+    assert!(chunk_stream.next().await.is_none());
+    assert!(chunk_stream.next().await.is_none());
+    assert!(chunk_stream.next().await.is_none());
 }
