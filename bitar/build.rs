@@ -1,6 +1,4 @@
 fn main() {
-    println!("cargo:rerun-if-changed=proto/"); // Note: change this to cargo:: (double colon) once MSRV>=1.77
-
     let output_file = std::path::PathBuf::from("src/chunk_dictionary.rs");
     let generated_file =
         std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("chunk_dictionary.rs");
