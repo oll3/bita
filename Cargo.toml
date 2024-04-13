@@ -43,7 +43,7 @@ anyhow = "1.0.52"
 [dependencies.reqwest]
 version = "0.12.1"
 default-features = false
-features = ["stream", "http2"]
+features = ["stream"]
 
 [features]
 default = ["default-tls"]
