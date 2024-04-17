@@ -1,0 +1,67 @@
+on: [push, pull_request]
+
+name: bitar-CI
+
+env:
+  MSRV: 1.70.0
+
+jobs:
+  # Run bitar tests.
+  bitar:
+    name: "bitar tests"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust:
+          - stable
+          - nightly
+          - $MSRV
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.rust }}
+
+      - name: build
+        run: cargo build -p bitar --verbose
+
+      - name: test
+        run: cargo test -p bitar --verbose --features compress
+
+      - name: bitar lzma/zstd compression tests
+        run: cargo test -p bitar --verbose --features lzma-compression,zstd-compression,compress
+
+  # Run formatting check.
+  fmt:
+    name: formatting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.77.2
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt -p bitar -- --check
+
+  # Run clippy check.
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.77.2
+          components: clippy
+
+      - name: Check lints
+        run: cargo clippy -p bitar -- -D warnings -A clippy::cognitive-complexity

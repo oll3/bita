@@ -1,34 +1,11 @@
 on: [push, pull_request]
 
-name: CI
+name: bita-CI
+
+env:
+  MSRV: 1.70.0
 
 jobs:
-  # Run bitar tests.
-  bitar:
-    name: "bitar tests"
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust:
-          - stable
-          - nightly
-          - 1.70.0
-
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ matrix.rust }}
-
-      - name: build
-        run: cargo build -p bitar --verbose
-
-      - name: test
-        run: cargo test -p bitar --verbose --features compress
-
-      - name: bita lzma/zstd compression tests
-        run: cargo test -p bitar --verbose --features lzma-compression,zstd-compression,compress
-
   # Run bita tests.
   bita:
     name: "bita tests"
@@ -39,7 +16,7 @@ jobs:
         rust:
           - stable
           - nightly
-          - 1.70.0
+          - $MSRV
 
     steps:
       - uses: actions/checkout@v4
@@ -74,14 +51,10 @@ jobs:
       - name: Verify build without libssl
         run: ./scripts/test-no-ssl-build.sh
 
-  # Run formatting check on workspace.
+  # Run formatting check.
   fmt:
     name: formatting
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust:
-          - 1.70.0
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
@@ -89,20 +62,16 @@ jobs:
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ matrix.rust }}
+          toolchain: 1.77.2
           components: rustfmt
 
       - name: Check formatting
-        run: cargo fmt --all -- --check
+        run: cargo fmt -p bita -- --check
 
-  # Run clippy on workspace.
+  # Run clippy check.
   clippy:
     name: clippy
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust:
-          - 1.70.0
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
@@ -110,8 +79,8 @@ jobs:
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ matrix.rust }}
+          toolchain: 1.77.2
           components: clippy
 
       - name: Check lints
-        run: cargo clippy --all -- -D warnings -A clippy::cognitive-complexity
+        run: cargo clippy -p bita -- -D warnings -A clippy::cognitive-complexity
