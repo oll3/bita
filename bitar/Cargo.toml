@@ -29,7 +29,7 @@ brotli = { version = "5.0", default-features = false, features = [
     "disable-timer",
 ], optional = true }
 futures-util = { version = "0.3", default-features = false }
-tokio = "1"
+tokio = { version = "1", features = ["io-util"] }
 bytes = "1.1"
 rust-lzma = { version = "0.6", optional = true }
 zstd = { version = "0.13", optional = true }
