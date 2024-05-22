@@ -24,7 +24,7 @@ blake2 = "0.10"
 prost = "0.12"
 log = "0.4"
 brotli-decompressor = "4.0"
-brotli = { version = "5.0", default-features = false, features = [
+brotli = { version = "6.0", default-features = false, features = [
     "std",
     "disable-timer",
 ], optional = true }
