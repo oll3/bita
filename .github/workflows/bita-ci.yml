@@ -3,7 +3,7 @@ on: [push, pull_request]
 name: bita-CI
 
 env:
-  MSRV: 1.70.0
+  MSRV: 1.74.1
 
 jobs:
   # Run bita tests.
