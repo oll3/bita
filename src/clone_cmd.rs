@@ -45,6 +45,8 @@ async fn is_block_dev(file: &File) -> Result<bool, std::io::Error> {
     use std::os::linux::fs::MetadataExt;
     #[cfg(target_os = "macos")]
     use std::os::macos::fs::MetadataExt;
+    #[cfg(target_os = "android")]
+    use std::os::android::fs::MetadataExt;
     let meta = file.metadata().await?;
     if meta.st_mode() & 0x6000 == 0x6000 {
         Ok(true)
