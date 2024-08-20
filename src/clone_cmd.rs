@@ -41,12 +41,12 @@ async fn file_checksum(file: &mut File) -> Result<HashSum, std::io::Error> {
 // Check if file is a regular file or block device
 #[cfg(unix)]
 async fn is_block_dev(file: &File) -> Result<bool, std::io::Error> {
+    #[cfg(target_os = "android")]
+    use std::os::android::fs::MetadataExt;
     #[cfg(target_os = "linux")]
     use std::os::linux::fs::MetadataExt;
     #[cfg(target_os = "macos")]
     use std::os::macos::fs::MetadataExt;
-    #[cfg(target_os = "android")]
-    use std::os::android::fs::MetadataExt;
     let meta = file.metadata().await?;
     if meta.st_mode() & 0x6000 == 0x6000 {
         Ok(true)
