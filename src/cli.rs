@@ -11,6 +11,7 @@ use url::Url;
 use crate::clone_cmd;
 use crate::compress_cmd;
 use crate::diff_cmd;
+use crate::info_cmd;
 use crate::string_utils::*;
 use crate::PKG_NAME;
 use crate::PKG_VERSION;
@@ -33,7 +34,7 @@ impl LogOpts {
 pub enum CommandOpts {
     Compress(compress_cmd::Options),
     Clone(clone_cmd::Options),
-    Info { input: OsString },
+    Info(info_cmd::Options),
     Diff(diff_cmd::Options),
 }
 
@@ -158,6 +159,16 @@ where
             )
             .arg(buffered_chunks_arg()),
     );
+    
+    let info_subcmd = Command::new("info")
+        .about("Print archive details")
+        .arg(input_archive_arg())
+        .arg(
+            Arg::new("metadata-key")
+                .long("metadata-key")
+                .value_name("KEY")
+                .help("Print only the metadata value for the given key"),
+        );
 
     let mut cmd = Command::new(PKG_NAME)
         .version(PKG_VERSION)
@@ -171,11 +182,7 @@ where
         )
         .subcommand(compress_subcmd)
         .subcommand(clone_subcmd)
-        .subcommand(
-            Command::new("info")
-                .about("Print archive details")
-                .arg(input_archive_arg()),
-        )
+        .subcommand(info_subcmd)
         .subcommand(diff_subcmd);
 
     let matches = cmd.try_get_matches_from_mut(args)?;
@@ -272,10 +279,12 @@ where
         ))
     } else if let Some(matches) = matches.subcommand_matches("info") {
         let input = matches.get_one::<OsString>("ARCHIVE").unwrap();
+        let metadata_key = matches.get_one::<String>("metadata-key");
         Ok((
-            CommandOpts::Info {
+            CommandOpts::Info(info_cmd::Options {
                 input: input.clone(),
-            },
+                metadata_key: metadata_key.cloned(),
+            }),
             log_opts,
         ))
     } else if let Some(matches) = matches.subcommand_matches("diff") {
@@ -877,9 +886,10 @@ mod tests {
         assert_eq!(log, LogOpts::new(LevelFilter::Debug));
         assert_eq!(
             info,
-            CommandOpts::Info {
-                input: "an-input-file.cba".into()
-            }
+            CommandOpts::Info(info_cmd::Options {
+                input: "an-input-file.cba".into(),
+                metadata_key: None,
+            }),
         );
     }
 
