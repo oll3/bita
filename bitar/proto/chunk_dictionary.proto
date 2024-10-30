@@ -68,4 +68,7 @@ message ChunkDictionary {
 
   // Chunk descriptors in order of first occurence in source file
   repeated ChunkDescriptor chunk_descriptors = 7;
+
+  // Custom key-value-pair metadata to store with the dictionary
+  map<string, bytes> metadata = 8;
 }

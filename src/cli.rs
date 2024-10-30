@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use clap::error::ErrorKind;
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use log::LevelFilter;
@@ -55,7 +56,23 @@ where
             )
             .arg(output_file_arg())
             .arg(force_create_arg())
-            .arg(buffered_chunks_arg()),
+            .arg(buffered_chunks_arg())
+            .arg(
+                Arg::new("metadata-file")
+                    .long("metadata-file")
+                    .num_args(2) // Expect exactly 2 values (key and path) each time
+                    .action(clap::ArgAction::Append) // Append to the list of values
+                    .value_names(&["KEY", "PATH"]) 
+                    .help("Custom metadata key-value pair where the value is a file contents"),
+            )
+            .arg(
+                Arg::new("metadata-value")
+                    .long("metadata-value")
+                    .num_args(2) // Expect exactly 2 values (key and path) each time
+                    .action(clap::ArgAction::Append) // Append to the list of values
+                    .value_names(&["NAME", "VALUE"])
+                    .help("Custom metadata key-value pair where the value is a provided string"),
+            ),
     );
 
     let clone_subcmd = Command::new("clone")
@@ -184,6 +201,27 @@ where
         let hash_length = *matches.get_one::<u32>("hash-length").unwrap();
         let chunker_config = parse_chunker_config(&mut cmd, matches)?;
         let compression = parse_compression(&mut cmd, matches)?;
+
+        let mut metadata_files: HashMap<String, PathBuf> = HashMap::new();
+        if let Some(values) = matches.get_many::<String>("metadata-file") {
+            let values: Vec<_> = values.collect();
+            for pair in values.chunks_exact(2) {
+                if let [key, value] = *pair {
+                    metadata_files.insert(key.to_owned(), PathBuf::from(value));
+                }
+            }
+        }
+        
+        let mut metadata_strings: HashMap<String, String> = HashMap::new();
+        if let Some(values) = matches.get_many::<String>("metadata-value") {
+            let values: Vec<_> = values.collect();
+            for pair in values.chunks_exact(2) {
+                if let [key, value] = *pair {
+                    metadata_strings.insert(key.to_owned(), value.to_owned());
+                }
+            }
+        }
+        
         Ok((
             CommandOpts::Compress(compress_cmd::Options {
                 input: input.cloned(),
@@ -194,6 +232,8 @@ where
                 chunker_config,
                 compression,
                 num_chunk_buffers: num_chunk_buffers(matches),
+                metadata_files,
+                metadata_strings,
             }),
             log_opts,
         ))
@@ -559,6 +599,8 @@ mod tests {
                     Compression::try_new(bitar::CompressionAlgorithm::Brotli, 6).unwrap()
                 ),
                 num_chunk_buffers: get_num_chunk_buffers(),
+                metadata_files: std::collections::HashMap::new(),
+                metadata_strings: std::collections::HashMap::new(),
             })
         );
     }
@@ -586,6 +628,8 @@ mod tests {
                     Compression::try_new(bitar::CompressionAlgorithm::Brotli, 6).unwrap()
                 ),
                 num_chunk_buffers: get_num_chunk_buffers(),
+                metadata_files: std::collections::HashMap::new(),
+                metadata_strings: std::collections::HashMap::new(),
             })
         );
     }
@@ -635,6 +679,8 @@ mod tests {
                     Compression::try_new(bitar::CompressionAlgorithm::Brotli, 2).unwrap()
                 ),
                 num_chunk_buffers: get_num_chunk_buffers(),
+                metadata_files: std::collections::HashMap::new(),
+                metadata_strings: std::collections::HashMap::new(),
             })
         );
     }
