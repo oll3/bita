@@ -37,7 +37,7 @@ pub struct CreateArchiveOptions {
 
     /// The type of compression to use when compressing a chunk
     pub compression: Option<Compression>,
-    
+
     /// Custom string/bytes key-value pair metadata to be stored in the archive header
     pub metadata: HashMap<String, Vec<u8>>,
 }

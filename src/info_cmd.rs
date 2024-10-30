@@ -1,19 +1,22 @@
-use std::collections::HashMap;
-use std::ffi::OsString;
-use std::io::Write;
 use anyhow::{bail, Result};
 use log::*;
+use std::collections::HashMap;
+use std::io::Write;
 use tokio::fs::File;
 
+use crate::clone_cmd::InputArchive;
 use crate::human_size;
-use bitar::{archive_reader::{ArchiveReader, HttpReader, IoReader}, chunker, Archive};
+use bitar::{
+    archive_reader::{ArchiveReader, HttpReader, IoReader},
+    chunker, Archive,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Options {
     /// Medatada key to get value for, or None to print regular archive info.
     pub metadata_key: Option<String>,
-    /// File to compress, or stdin if input is None.
-    pub input: OsString,
+    /// Local file or URL to read archive from.
+    pub input_archive: InputArchive,
 }
 
 pub async fn print_archive_reader<R>(reader: R) -> Result<()>
@@ -62,7 +65,8 @@ pub fn print_metadata_overview(metadata: &HashMap<String, Vec<u8>>) {
     if metadata.is_empty() {
         info!("  Metadata: None");
     } else {
-        let display = metadata.iter()
+        let display = metadata
+            .iter()
             .map(|(key, value)| format!("{}({})", key, value.len()))
             .collect::<Vec<String>>()
             .join(", ");
@@ -135,10 +139,21 @@ where
 }
 
 pub async fn info_cmd(options: Options) -> Result<()> {
-    let input = &options.input;
-    if let Some(Ok(url)) = input.to_str().map(|s| s.parse::<reqwest::Url>()) {
-        info_impl(HttpReader::from_url(url), options.metadata_key).await
-    } else {
-        info_impl(IoReader::new(File::open(&input).await?), options.metadata_key).await
+    match options.input_archive {
+        InputArchive::Local(path) => {
+            info_impl(IoReader::new(File::open(path).await?), options.metadata_key).await
+        }
+        InputArchive::Remote(input) => {
+            let mut request = reqwest::Client::new()
+                .get(input.url.clone())
+                .headers(input.headers.clone());
+            if let Some(timeout) = input.receive_timeout {
+                request = request.timeout(timeout);
+            }
+            let reader = HttpReader::from_request(request)
+                .retries(input.retries)
+                .retry_delay(input.retry_delay);
+            info_impl(reader, options.metadata_key).await
+        }
     }
 }
