@@ -19,10 +19,10 @@ categories = ["command-line-utilities", "compression", "filesystem"]
 members = ["bitar"]
 
 [dependencies]
-clap = { version = "4.4.12" }
+clap = { version = "4.5.20" }
 blake2 = "0.10.0"
 log = "0.4.14"
-fern = "0.6.0"
+fern = "0.7.0"
 chrono = "0.4.19"
 futures-util = { version = "0.3.19", default-features = false, features = [
   "std",
@@ -35,8 +35,8 @@ tokio = { version = "1.24.1", features = [
   "rt-multi-thread",
 ] }
 bitar = { version = "0.12.0", path = "bitar", features = ["compress"] }
-url = "2.2.2"
-num_cpus = "1.13.1"
+url = "2.5.2"
+num_cpus = "1.16.0"
 async-trait = "0.1.52"
 anyhow = "1.0.52"
 
@@ -53,4 +53,4 @@ default-tls = ["reqwest/default-tls", "bitar/default-tls"]
 rustls-tls = ["reqwest/rustls-tls", "bitar/rustls-tls"]
 
 [dev-dependencies]
-tempfile = "3.9.0"
+tempfile = "3.13.0"
