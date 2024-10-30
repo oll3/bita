@@ -3,7 +3,7 @@ on: [push, pull_request]
 name: bitar-CI
 
 env:
-  MSRV: 1.70.0
+  MSRV: 1.71.1
 
 jobs:
   # Run bitar tests.

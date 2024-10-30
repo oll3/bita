@@ -14,17 +14,17 @@ keywords = [
     "differential",
 ]
 categories = ["compression", "filesystem"]
-rust-version = "1.70"
+rust-version = "1.71.1"
 
 [build-dependencies]
-prost-build = "0.12"
+prost-build = "0.13"
 
 [dependencies]
 blake2 = "0.10"
-prost = "0.12"
+prost = "0.13"
 log = "0.4"
 brotli-decompressor = "4.0"
-brotli = { version = "6.0", default-features = false, features = [
+brotli = { version = "7.0", default-features = false, features = [
     "std",
     "disable-timer",
 ], optional = true }
