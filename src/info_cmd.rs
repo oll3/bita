@@ -1,15 +1,20 @@
 use std::collections::HashMap;
 use std::ffi::OsString;
-
-use anyhow::Result;
+use std::io::Write;
+use anyhow::{bail, Result};
 use log::*;
 use tokio::fs::File;
 
 use crate::human_size;
-use bitar::{
-    archive_reader::{ArchiveReader, HttpReader, IoReader},
-    chunker, Archive,
-};
+use bitar::{archive_reader::{ArchiveReader, HttpReader, IoReader}, chunker, Archive};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Options {
+    /// Medatada key to get value for, or None to print regular archive info.
+    pub metadata_key: Option<String>,
+    /// File to compress, or stdin if input is None.
+    pub input: OsString,
+}
 
 pub async fn print_archive_reader<R>(reader: R) -> Result<()>
 where
@@ -74,7 +79,7 @@ pub fn print_archive<R>(archive: &Archive<R>) {
     );
 
     print_metadata_overview(archive.metadata());
-    
+
     info!("  Header checksum: {}", archive.header_checksum());
     info!("  Chunk hash length: {} bytes", archive.chunk_hash_length());
     info!(
@@ -111,10 +116,29 @@ pub fn print_archive<R>(archive: &Archive<R>) {
     );
 }
 
-pub async fn info_cmd(input: OsString) -> Result<()> {
-    if let Some(Ok(url)) = input.to_str().map(|s| s.parse::<reqwest::Url>()) {
-        print_archive_reader(HttpReader::from_url(url)).await
+async fn info_impl<R>(reader: R, metadata_key: Option<String>) -> Result<()>
+where
+    R: ArchiveReader,
+    R::Error: std::error::Error + Send + Sync + 'static,
+{
+    if let Some(key) = metadata_key {
+        let archive = Archive::try_init(reader).await?;
+        if let Some(value) = archive.metadata_value(key.as_str()) {
+            std::io::stdout().write_all(&value)?;
+        } else {
+            bail!("Metadata key not found: {}", key);
+        }
+        Ok(())
     } else {
-        print_archive_reader(IoReader::new(File::open(&input).await?)).await
+        print_archive_reader(reader).await
+    }
+}
+
+pub async fn info_cmd(options: Options) -> Result<()> {
+    let input = &options.input;
+    if let Some(Ok(url)) = input.to_str().map(|s| s.parse::<reqwest::Url>()) {
+        info_impl(HttpReader::from_url(url), options.metadata_key).await
+    } else {
+        info_impl(IoReader::new(File::open(&input).await?), options.metadata_key).await
     }
 }
