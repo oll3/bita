@@ -226,20 +226,18 @@ pub async fn compress_cmd(opts: Options) -> Result<()> {
             chunking_algorithm: dict::chunker_parameters::ChunkingAlgorithm::FixedSize as i32,
         },
     };
-    
+
     // Construct custom metadata hashmap
     let mut metadata = HashMap::new();
     for (key, path) in opts.metadata_files {
-        let content = std::fs::read(&path).context(format!(
-            "Failed to read metadata file {}",
-            path.display()
-        ))?;
+        let content = std::fs::read(&path)
+            .context(format!("Failed to read metadata file {}", path.display()))?;
         metadata.insert(key, content);
     }
     for (key, value) in opts.metadata_strings {
         metadata.insert(key, value.into());
     }
-    
+
     // Build the final archive
     let file_header = dict::ChunkDictionary {
         rebuild_order: chunk_order.iter().map(|&index| index as u32).collect(),
