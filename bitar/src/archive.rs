@@ -5,7 +5,7 @@ use std::{
     fmt,
     task::{ready, Poll},
 };
-
+use std::collections::HashMap;
 use crate::{
     archive_reader::ArchiveReader, chunk_dictionary as dict, chunker,
     compression::CompressionAlgorithm, header, ChunkIndex, ChunkOffset, CompressedArchiveChunk,
@@ -87,6 +87,7 @@ pub struct Archive<R> {
     source_checksum: HashSum,
     chunker_config: chunker::Config,
     chunk_hash_length: usize,
+    metadata: HashMap<String, Vec<u8>>,
 }
 
 impl<R> Archive<R> {
@@ -190,6 +191,7 @@ impl<R> Archive<R> {
             chunk_data_offset,
             chunk_hash_length,
             chunker_config: chunker_config_from_params(chunker_params)?,
+            metadata: dictionary.metadata,
         })
     }
     /// Total number of chunks in archive (including duplicates).
@@ -247,6 +249,10 @@ impl<R> Archive<R> {
     pub fn built_with_version(&self) -> &str {
         &self.created_by_app_version
     }
+    /// Get the custom key-value pair metadata stored in the archive header.
+    pub fn metadata(&self) -> &HashMap<String, Vec<u8>> { &self.metadata }
+    /// Get a specific metadata value stored in the archive header, or None if it is not present.
+    pub fn metadata_value(&self, key: &str) -> Option<&Vec<u8>> { self.metadata.get(key) }
     /// Iterate chunks as ordered in source.
     pub fn iter_source_chunks(&self) -> impl Iterator<Item = (u64, &ChunkDescriptor)> {
         let mut chunk_offset = 0;
