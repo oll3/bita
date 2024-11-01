@@ -1,6 +1,5 @@
 use anyhow::{bail, Result};
 use log::*;
-use std::collections::HashMap;
 use std::io::Write;
 use tokio::fs::File;
 
@@ -61,19 +60,6 @@ pub fn print_chunker_config(config: &chunker::Config) {
     }
 }
 
-pub fn print_metadata_overview(metadata: &HashMap<String, Vec<u8>>) {
-    if metadata.is_empty() {
-        info!("  Metadata: None");
-    } else {
-        let display = metadata
-            .iter()
-            .map(|(key, value)| format!("{}({})", key, value.len()))
-            .collect::<Vec<String>>()
-            .join(", ");
-        info!("  Metadata: {}", display);
-    }
-}
-
 pub fn print_archive<R>(archive: &Archive<R>) {
     info!("Archive: ");
     info!("  Built with version: {}", archive.built_with_version());
@@ -82,7 +68,16 @@ pub fn print_archive<R>(archive: &Archive<R>) {
         human_size!(archive.compressed_size() + archive.header_size() as u64)
     );
 
-    print_metadata_overview(archive.metadata());
+    let mut metadata = archive.metadata_iter().peekable();
+    if metadata.peek().is_none() {
+        info!("  Metadata: None");
+    } else {
+        let display = metadata
+            .map(|(key, value)| format!("{}({})", key, value.len()))
+            .collect::<Vec<String>>()
+            .join(", ");
+        info!("  Metadata: {}", display);
+    }
 
     info!("  Header checksum: {}", archive.header_checksum());
     info!("  Chunk hash length: {} bytes", archive.chunk_hash_length());
@@ -128,7 +123,7 @@ where
     if let Some(key) = metadata_key {
         let archive = Archive::try_init(reader).await?;
         if let Some(value) = archive.metadata_value(key.as_str()) {
-            std::io::stdout().write_all(&value)?;
+            std::io::stdout().write_all(value)?;
         } else {
             bail!("Metadata key not found: {}", key);
         }

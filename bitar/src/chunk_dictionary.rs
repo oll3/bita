@@ -155,8 +155,8 @@ pub struct ChunkDictionary {
     #[prost(message, repeated, tag = "7")]
     pub chunk_descriptors: ::prost::alloc::vec::Vec<ChunkDescriptor>,
     /// Custom key-value-pair metadata to store with the dictionary
-    #[prost(map = "string, bytes", tag = "8")]
-    pub metadata: ::std::collections::HashMap<
+    #[prost(btree_map = "string, bytes", tag = "8")]
+    pub metadata: ::prost::alloc::collections::BTreeMap<
         ::prost::alloc::string::String,
         ::prost::alloc::vec::Vec<u8>,
     >,

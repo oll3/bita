@@ -2,7 +2,6 @@ use clap::error::ErrorKind;
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use log::LevelFilter;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
-use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -63,7 +62,8 @@ where
                     .long("metadata-file")
                     .num_args(2) // Expect exactly 2 values (key and path) each time
                     .action(clap::ArgAction::Append) // Append to the list of values
-                    .value_names(&["KEY", "PATH"])
+                    .value_names(["KEY", "PATH"])
+                    .value_parser(value_parser!(OsString))
                     .help("Custom metadata key-value pair where the value is a file contents"),
             )
             .arg(
@@ -71,7 +71,7 @@ where
                     .long("metadata-value")
                     .num_args(2) // Expect exactly 2 values (key and path) each time
                     .action(clap::ArgAction::Append) // Append to the list of values
-                    .value_names(&["NAME", "VALUE"])
+                    .value_names(["KEY", "VALUE"])
                     .help("Custom metadata key-value pair where the value is a provided string"),
             ),
     );
@@ -183,22 +183,22 @@ where
         let chunker_config = parse_chunker_config(&mut cmd, matches)?;
         let compression = parse_compression(&mut cmd, matches)?;
 
-        let mut metadata_files: HashMap<String, PathBuf> = HashMap::new();
-        if let Some(values) = matches.get_many::<String>("metadata-file") {
+        let mut metadata_files: Vec<(String, PathBuf)> = Vec::new();
+        if let Some(values) = matches.get_many::<OsString>("metadata-file") {
             let values: Vec<_> = values.collect();
             for pair in values.chunks_exact(2) {
                 if let [key, value] = *pair {
-                    metadata_files.insert(key.to_owned(), PathBuf::from(value));
+                    metadata_files.push((key.to_string_lossy().to_string(), PathBuf::from(value)));
                 }
             }
         }
 
-        let mut metadata_strings: HashMap<String, String> = HashMap::new();
+        let mut metadata_strings: Vec<(String, String)> = Vec::new();
         if let Some(values) = matches.get_many::<String>("metadata-value") {
             let values: Vec<_> = values.collect();
             for pair in values.chunks_exact(2) {
                 if let [key, value] = *pair {
-                    metadata_strings.insert(key.to_owned(), value.to_owned());
+                    metadata_strings.push((key.to_owned(), value.to_owned()));
                 }
             }
         }
@@ -611,8 +611,8 @@ mod tests {
                     Compression::try_new(bitar::CompressionAlgorithm::Brotli, 6).unwrap()
                 ),
                 num_chunk_buffers: get_num_chunk_buffers(),
-                metadata_files: std::collections::HashMap::new(),
-                metadata_strings: std::collections::HashMap::new(),
+                metadata_files: Vec::new(),
+                metadata_strings: Vec::new(),
             })
         );
     }
@@ -640,8 +640,8 @@ mod tests {
                     Compression::try_new(bitar::CompressionAlgorithm::Brotli, 6).unwrap()
                 ),
                 num_chunk_buffers: get_num_chunk_buffers(),
-                metadata_files: std::collections::HashMap::new(),
-                metadata_strings: std::collections::HashMap::new(),
+                metadata_files: Vec::new(),
+                metadata_strings: Vec::new(),
             })
         );
     }
@@ -691,8 +691,8 @@ mod tests {
                     Compression::try_new(bitar::CompressionAlgorithm::Brotli, 2).unwrap()
                 ),
                 num_chunk_buffers: get_num_chunk_buffers(),
-                metadata_files: std::collections::HashMap::new(),
-                metadata_strings: std::collections::HashMap::new(),
+                metadata_files: Vec::new(),
+                metadata_strings: Vec::new(),
             })
         );
     }
