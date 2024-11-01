@@ -5,7 +5,7 @@ use crate::{
 };
 use blake2::{Blake2b512, Digest};
 use futures_util::{stream::Stream, StreamExt};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::{
     convert::TryInto,
     fmt,
@@ -87,7 +87,7 @@ pub struct Archive<R> {
     source_checksum: HashSum,
     chunker_config: chunker::Config,
     chunk_hash_length: usize,
-    metadata: HashMap<String, Vec<u8>>,
+    metadata: BTreeMap<String, Vec<u8>>,
 }
 
 impl<R> Archive<R> {
@@ -250,12 +250,14 @@ impl<R> Archive<R> {
         &self.created_by_app_version
     }
     /// Get the custom key-value pair metadata stored in the archive header.
-    pub fn metadata(&self) -> &HashMap<String, Vec<u8>> {
-        &self.metadata
+    pub fn metadata_iter(&self) -> impl Iterator<Item = (&str, &[u8])> {
+        self.metadata
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_slice()))
     }
     /// Get a specific metadata value stored in the archive header, or None if it is not present.
-    pub fn metadata_value(&self, key: &str) -> Option<&Vec<u8>> {
-        self.metadata.get(key)
+    pub fn metadata_value(&self, key: &str) -> Option<&[u8]> {
+        self.metadata.get(key).map(|v| v.as_slice())
     }
     /// Iterate chunks as ordered in source.
     pub fn iter_source_chunks(&self) -> impl Iterator<Item = (u64, &ChunkDescriptor)> {
