@@ -21,7 +21,7 @@ fn main() -> Result<()> {
         match command_opts {
             CommandOpts::Compress(opts) => compress_cmd::compress_cmd(opts).await,
             CommandOpts::Clone(opts) => clone_cmd::clone_cmd(opts).await,
-            CommandOpts::Info { input } => info_cmd::info_cmd(input).await,
+            CommandOpts::Info(opts) => info_cmd::info_cmd(opts).await,
             CommandOpts::Diff(opts) => diff_cmd::diff_cmd(opts).await,
         }
     })

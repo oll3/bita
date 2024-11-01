@@ -10,6 +10,7 @@ use url::Url;
 use crate::clone_cmd;
 use crate::compress_cmd;
 use crate::diff_cmd;
+use crate::info_cmd;
 use crate::string_utils::*;
 use crate::PKG_NAME;
 use crate::PKG_VERSION;
@@ -32,7 +33,7 @@ impl LogOpts {
 pub enum CommandOpts {
     Compress(compress_cmd::Options),
     Clone(clone_cmd::Options),
-    Info { input: OsString },
+    Info(info_cmd::Options),
     Diff(diff_cmd::Options),
 }
 
@@ -55,72 +56,61 @@ where
             )
             .arg(output_file_arg())
             .arg(force_create_arg())
-            .arg(buffered_chunks_arg()),
+            .arg(buffered_chunks_arg())
+            .arg(
+                Arg::new("metadata-file")
+                    .long("metadata-file")
+                    .num_args(2) // Expect exactly 2 values (key and path) each time
+                    .action(clap::ArgAction::Append) // Append to the list of values
+                    .value_names(["KEY", "PATH"])
+                    .value_parser(value_parser!(OsString))
+                    .help("Custom metadata key-value pair where the value is a file contents"),
+            )
+            .arg(
+                Arg::new("metadata-value")
+                    .long("metadata-value")
+                    .num_args(2) // Expect exactly 2 values (key and path) each time
+                    .action(clap::ArgAction::Append) // Append to the list of values
+                    .value_names(["KEY", "VALUE"])
+                    .help("Custom metadata key-value pair where the value is a provided string"),
+            ),
     );
 
-    let clone_subcmd = Command::new("clone")
-        .about("Clone a remote (or local archive). The archive is unpacked while being cloned.")
-        .arg(input_archive_arg())
-        .arg(
-            Arg::new("http-retry-count")
-                .long("http-retry-count")
-                .value_name("COUNT")
-                .value_parser(value_parser!(u32))
-                .default_value("0")
-                .help("Retry transfer on failure"),
-        )
-        .arg(
-            Arg::new("http-retry-delay")
-                .long("http-retry-delay")
-                .value_name("SECONDS")
-                .value_parser(value_parser!(u64))
-                .default_value("0")
-                .help("Delay retry for some time on transfer failure"),
-        )
-        .arg(
-            Arg::new("http-timeout")
-                .long("http-timeout")
-                .value_name("SECONDS")
-                .value_parser(value_parser!(u64))
-                .help("Fail transfer if unresponsive for some time"),
-        )
-        .arg(
-            Arg::new("http-header")
-                .long("http-header")
-                .value_name("HEADER")
-                .action(ArgAction::Append)
-                .help("Provide custom http header(s)"),
-        )
-        .arg(
-            Arg::new("verify-header")
-                .long("verify-header")
-                .value_name("CHECKSUM")
-                .value_parser(parse_hash_sum)
-                .help("Verify that the archive header checksum is the one given"),
-        )
-        .arg(output_file_arg())
-        .arg(
-            Arg::new("seed")
-                .value_name("FILE")
-                .value_parser(value_parser!(OsString))
-                .action(ArgAction::Append)
-                .long("seed")
-                .help("File to use as seed while cloning or '-' to read from stdin"),
-        )
-        .arg(
-            Arg::new("seed-output")
-                .long("seed-output")
-                .action(ArgAction::SetTrue)
-                .help("Use the output file as seed and update in-place"),
-        )
-        .arg(force_create_arg())
-        .arg(
-            Arg::new("verify-output")
-                .long("verify-output")
-                .action(ArgAction::SetTrue)
-                .help("Verify that the checksum of the output matches with the archive"),
-        )
-        .arg(buffered_chunks_arg());
+    let clone_subcmd = add_archive_input_http_args(
+        Command::new("clone")
+            .about("Clone a remote (or local archive). The archive is unpacked while being cloned.")
+            .arg(input_archive_arg())
+            .arg(
+                Arg::new("verify-header")
+                    .long("verify-header")
+                    .value_name("CHECKSUM")
+                    .value_parser(parse_hash_sum)
+                    .help("Verify that the archive header checksum is the one given"),
+            )
+            .arg(output_file_arg())
+            .arg(
+                Arg::new("seed")
+                    .value_name("FILE")
+                    .value_parser(value_parser!(OsString))
+                    .action(ArgAction::Append)
+                    .long("seed")
+                    .help("File to use as seed while cloning or '-' to read from stdin"),
+            )
+            .arg(
+                Arg::new("seed-output")
+                    .long("seed-output")
+                    .action(ArgAction::SetTrue)
+                    .help("Use the output file as seed and update in-place"),
+            )
+            .arg(force_create_arg())
+            .arg(
+                Arg::new("verify-output")
+                    .long("verify-output")
+                    .action(ArgAction::SetTrue)
+                    .help("Verify that the checksum of the output matches with the archive"),
+            )
+            .arg(buffered_chunks_arg()),
+    );
 
     let diff_subcmd = add_chunker_args(
         Command::new("diff")
@@ -142,6 +132,18 @@ where
             .arg(buffered_chunks_arg()),
     );
 
+    let info_subcmd = add_archive_input_http_args(
+        Command::new("info")
+            .about("Print archive details")
+            .arg(
+                Arg::new("metadata-key")
+                    .long("metadata-key")
+                    .value_name("KEY")
+                    .help("Print only the metadata value for the given key"),
+            )
+            .arg(input_archive_arg()),
+    );
+
     let mut cmd = Command::new(PKG_NAME)
         .version(PKG_VERSION)
         .arg_required_else_help(true)
@@ -154,11 +156,7 @@ where
         )
         .subcommand(compress_subcmd)
         .subcommand(clone_subcmd)
-        .subcommand(
-            Command::new("info")
-                .about("Print archive details")
-                .arg(input_archive_arg()),
-        )
+        .subcommand(info_subcmd)
         .subcommand(diff_subcmd);
 
     let matches = cmd.try_get_matches_from_mut(args)?;
@@ -184,6 +182,27 @@ where
         let hash_length = *matches.get_one::<u32>("hash-length").unwrap();
         let chunker_config = parse_chunker_config(&mut cmd, matches)?;
         let compression = parse_compression(&mut cmd, matches)?;
+
+        let mut metadata_files: Vec<(String, PathBuf)> = Vec::new();
+        if let Some(values) = matches.get_many::<OsString>("metadata-file") {
+            let values: Vec<_> = values.collect();
+            for pair in values.chunks_exact(2) {
+                if let [key, value] = *pair {
+                    metadata_files.push((key.to_string_lossy().to_string(), PathBuf::from(value)));
+                }
+            }
+        }
+
+        let mut metadata_strings: Vec<(String, String)> = Vec::new();
+        if let Some(values) = matches.get_many::<String>("metadata-value") {
+            let values: Vec<_> = values.collect();
+            for pair in values.chunks_exact(2) {
+                if let [key, value] = *pair {
+                    metadata_strings.push((key.to_owned(), value.to_owned()));
+                }
+            }
+        }
+
         Ok((
             CommandOpts::Compress(compress_cmd::Options {
                 input: input.cloned(),
@@ -194,6 +213,8 @@ where
                 chunker_config,
                 compression,
                 num_chunk_buffers: num_chunk_buffers(matches),
+                metadata_files,
+                metadata_strings,
             }),
             log_opts,
         ))
@@ -231,11 +252,13 @@ where
             log_opts,
         ))
     } else if let Some(matches) = matches.subcommand_matches("info") {
-        let input = matches.get_one::<OsString>("ARCHIVE").unwrap();
+        let metadata_key = matches.get_one::<String>("metadata-key");
+        let input_archive = parse_input_archive_config(&mut cmd, matches)?;
         Ok((
-            CommandOpts::Info {
-                input: input.clone(),
-            },
+            CommandOpts::Info(info_cmd::Options {
+                input_archive,
+                metadata_key: metadata_key.cloned(),
+            }),
             log_opts,
         ))
     } else if let Some(matches) = matches.subcommand_matches("diff") {
@@ -394,6 +417,39 @@ fn parse_hash_sum(hex_str: &str) -> Result<HashSum, std::num::ParseIntError> {
     hex_str_to_vec(hex_str).map(HashSum::from)
 }
 
+fn add_archive_input_http_args(cmd: Command) -> Command {
+    cmd.arg(
+        Arg::new("http-retry-count")
+            .long("http-retry-count")
+            .value_name("COUNT")
+            .value_parser(value_parser!(u32))
+            .default_value("0")
+            .help("Retry transfer on failure"),
+    )
+    .arg(
+        Arg::new("http-retry-delay")
+            .long("http-retry-delay")
+            .value_name("SECONDS")
+            .value_parser(value_parser!(u64))
+            .default_value("0")
+            .help("Delay retry for some time on transfer failure"),
+    )
+    .arg(
+        Arg::new("http-timeout")
+            .long("http-timeout")
+            .value_name("SECONDS")
+            .value_parser(value_parser!(u64))
+            .help("Fail transfer if unresponsive for some time"),
+    )
+    .arg(
+        Arg::new("http-header")
+            .long("http-header")
+            .value_name("HEADER")
+            .action(ArgAction::Append)
+            .help("Provide custom http header(s)"),
+    )
+}
+
 fn add_chunker_args(cmd: Command) -> Command {
     cmd.arg(
         Arg::new("avg-chunk-size")
@@ -514,13 +570,9 @@ fn force_create_arg() -> Arg {
 
 #[cfg(test)]
 mod tests {
-
+    use super::*;
     use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
     use tempfile::NamedTempFile;
-
-    use crate::clone_cmd::RemoteInput;
-
-    use super::*;
 
     fn get_num_chunk_buffers() -> usize {
         match num_cpus::get() {
@@ -559,6 +611,8 @@ mod tests {
                     Compression::try_new(bitar::CompressionAlgorithm::Brotli, 6).unwrap()
                 ),
                 num_chunk_buffers: get_num_chunk_buffers(),
+                metadata_files: Vec::new(),
+                metadata_strings: Vec::new(),
             })
         );
     }
@@ -586,6 +640,8 @@ mod tests {
                     Compression::try_new(bitar::CompressionAlgorithm::Brotli, 6).unwrap()
                 ),
                 num_chunk_buffers: get_num_chunk_buffers(),
+                metadata_files: Vec::new(),
+                metadata_strings: Vec::new(),
             })
         );
     }
@@ -635,6 +691,8 @@ mod tests {
                     Compression::try_new(bitar::CompressionAlgorithm::Brotli, 2).unwrap()
                 ),
                 num_chunk_buffers: get_num_chunk_buffers(),
+                metadata_files: Vec::new(),
+                metadata_strings: Vec::new(),
             })
         );
     }
@@ -725,14 +783,14 @@ mod tests {
             &input.path().to_string_lossy(),
             "./output.img",
         ])
-        .unwrap_or_else(|e| panic!("{}", e));
+            .unwrap_or_else(|e| panic!("{}", e));
         assert_eq!(log, LogOpts::new(LevelFilter::Info));
         assert_eq!(
             opts,
             CommandOpts::Clone(clone_cmd::Options {
                 force_create: false,
                 input_archive: clone_cmd::InputArchive::Local(input_path.into()),
-                header_checksum:  Some(parse_hash_sum("5520529d1175327f9a39df0a75fe6bd314f9e6bedd89734c508a043c66066c7ada2a7b493659794f916840d976e9f0b10ec94a09caec0296ced9666998ec7977").unwrap()),
+                header_checksum: Some(parse_hash_sum("5520529d1175327f9a39df0a75fe6bd314f9e6bedd89734c508a043c66066c7ada2a7b493659794f916840d976e9f0b10ec94a09caec0296ced9666998ec7977").unwrap()),
                 output: "./output.img".into(),
                 seed_stdin: false,
                 seed_files: vec![],
@@ -761,7 +819,7 @@ mod tests {
             opts,
             CommandOpts::Clone(clone_cmd::Options {
                 force_create: false,
-                input_archive: clone_cmd::InputArchive::Remote(Box::new(RemoteInput {
+                input_archive: clone_cmd::InputArchive::Remote(Box::new(clone_cmd::RemoteInput {
                     url: "https://some-url.com/archive.cba".try_into().unwrap(),
                     headers: HeaderMap::new(),
                     receive_timeout: None,
@@ -806,7 +864,7 @@ mod tests {
             opts,
             CommandOpts::Clone(clone_cmd::Options {
                 force_create: true,
-                input_archive: clone_cmd::InputArchive::Remote(Box::new(RemoteInput {
+                input_archive: clone_cmd::InputArchive::Remote(Box::new(clone_cmd::RemoteInput {
                     url: "https://some-url.com/archive.cba".try_into().unwrap(),
                     headers,
                     receive_timeout: None,
@@ -826,14 +884,20 @@ mod tests {
 
     #[test]
     fn info_command() {
-        let (info, log) = parse_opts(["bita", "info", "-v", "an-input-file.cba"])
+        let input = NamedTempFile::new().unwrap();
+        let input_path = input.path();
+        let mut temp_file_path = input_path.to_path_buf();
+        temp_file_path.set_extension(".tmp");
+
+        let (info, log) = parse_opts(["bita", "info", "-v", &input.path().to_string_lossy()])
             .unwrap_or_else(|e| panic!("{}", e));
         assert_eq!(log, LogOpts::new(LevelFilter::Debug));
         assert_eq!(
             info,
-            CommandOpts::Info {
-                input: "an-input-file.cba".into()
-            }
+            CommandOpts::Info(info_cmd::Options {
+                input_archive: clone_cmd::InputArchive::Local(input_path.into()),
+                metadata_key: None,
+            }),
         );
     }
 

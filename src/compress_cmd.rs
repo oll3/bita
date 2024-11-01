@@ -4,7 +4,7 @@ use futures_util::{future, StreamExt};
 use log::*;
 use std::io::Write;
 use std::path::PathBuf;
-use std::{collections::HashMap, io::IsTerminal};
+use std::{collections::BTreeMap, collections::HashMap, io::IsTerminal};
 use tokio::{
     fs::{File, OpenOptions},
     io::{AsyncRead, AsyncWriteExt},
@@ -152,6 +152,8 @@ pub struct Options {
     pub chunker_config: chunker::Config,
     pub compression: Option<Compression>,
     pub num_chunk_buffers: usize,
+    pub metadata_files: Vec<(String, PathBuf)>,
+    pub metadata_strings: Vec<(String, String)>,
 }
 
 pub async fn compress_cmd(opts: Options) -> Result<()> {
@@ -225,6 +227,17 @@ pub async fn compress_cmd(opts: Options) -> Result<()> {
         },
     };
 
+    // Construct custom metadata hashmap
+    let mut metadata = BTreeMap::new();
+    for (key, value) in opts.metadata_strings {
+        metadata.insert(key, value.into());
+    }
+    for (key, path) in opts.metadata_files {
+        let content = std::fs::read(&path)
+            .context(format!("Failed to read metadata file {}", path.display()))?;
+        metadata.insert(key, content);
+    }
+
     // Build the final archive
     let file_header = dict::ChunkDictionary {
         rebuild_order: chunk_order.iter().map(|&index| index as u32).collect(),
@@ -234,6 +247,7 @@ pub async fn compress_cmd(opts: Options) -> Result<()> {
         chunk_compression: Some(opts.compression.into()),
         source_total_size: source_size,
         chunker_params: Some(chunker_params),
+        metadata,
     };
     let header_buf = bitar::header::build(&file_header, None)?;
     output_file.write_all(&header_buf).context(format!(

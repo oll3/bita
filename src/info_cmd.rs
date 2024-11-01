@@ -1,14 +1,22 @@
-use std::ffi::OsString;
-
-use anyhow::Result;
+use anyhow::{bail, Result};
 use log::*;
+use std::io::Write;
 use tokio::fs::File;
 
+use crate::clone_cmd::InputArchive;
 use crate::human_size;
 use bitar::{
     archive_reader::{ArchiveReader, HttpReader, IoReader},
     chunker, Archive,
 };
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Options {
+    /// Medatada key to get value for, or None to print regular archive info.
+    pub metadata_key: Option<String>,
+    /// Local file or URL to read archive from.
+    pub input_archive: InputArchive,
+}
 
 pub async fn print_archive_reader<R>(reader: R) -> Result<()>
 where
@@ -59,6 +67,18 @@ pub fn print_archive<R>(archive: &Archive<R>) {
         "  Archive size: {}",
         human_size!(archive.compressed_size() + archive.header_size() as u64)
     );
+
+    let mut metadata = archive.metadata_iter().peekable();
+    if metadata.peek().is_none() {
+        info!("  Metadata: None");
+    } else {
+        let display = metadata
+            .map(|(key, value)| format!("{}({})", key, value.len()))
+            .collect::<Vec<String>>()
+            .join(", ");
+        info!("  Metadata: {}", display);
+    }
+
     info!("  Header checksum: {}", archive.header_checksum());
     info!("  Chunk hash length: {} bytes", archive.chunk_hash_length());
     info!(
@@ -95,10 +115,40 @@ pub fn print_archive<R>(archive: &Archive<R>) {
     );
 }
 
-pub async fn info_cmd(input: OsString) -> Result<()> {
-    if let Some(Ok(url)) = input.to_str().map(|s| s.parse::<reqwest::Url>()) {
-        print_archive_reader(HttpReader::from_url(url)).await
+async fn info_impl<R>(reader: R, metadata_key: Option<String>) -> Result<()>
+where
+    R: ArchiveReader,
+    R::Error: std::error::Error + Send + Sync + 'static,
+{
+    if let Some(key) = metadata_key {
+        let archive = Archive::try_init(reader).await?;
+        if let Some(value) = archive.metadata_value(key.as_str()) {
+            std::io::stdout().write_all(value)?;
+        } else {
+            bail!("Metadata key not found: {}", key);
+        }
+        Ok(())
     } else {
-        print_archive_reader(IoReader::new(File::open(&input).await?)).await
+        print_archive_reader(reader).await
+    }
+}
+
+pub async fn info_cmd(options: Options) -> Result<()> {
+    match options.input_archive {
+        InputArchive::Local(path) => {
+            info_impl(IoReader::new(File::open(path).await?), options.metadata_key).await
+        }
+        InputArchive::Remote(input) => {
+            let mut request = reqwest::Client::new()
+                .get(input.url.clone())
+                .headers(input.headers.clone());
+            if let Some(timeout) = input.receive_timeout {
+                request = request.timeout(timeout);
+            }
+            let reader = HttpReader::from_request(request)
+                .retries(input.retries)
+                .retry_delay(input.retry_delay);
+            info_impl(reader, options.metadata_key).await
+        }
     }
 }

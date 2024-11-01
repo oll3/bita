@@ -1,15 +1,15 @@
-use blake2::{Blake2b512, Digest};
-use futures_util::{stream::Stream, StreamExt};
-use std::{
-    convert::TryInto,
-    fmt,
-    task::{ready, Poll},
-};
-
 use crate::{
     archive_reader::ArchiveReader, chunk_dictionary as dict, chunker,
     compression::CompressionAlgorithm, header, ChunkIndex, ChunkOffset, CompressedArchiveChunk,
     CompressedChunk, Compression, HashSum,
+};
+use blake2::{Blake2b512, Digest};
+use futures_util::{stream::Stream, StreamExt};
+use std::collections::BTreeMap;
+use std::{
+    convert::TryInto,
+    fmt,
+    task::{ready, Poll},
 };
 
 #[derive(Debug)]
@@ -87,6 +87,7 @@ pub struct Archive<R> {
     source_checksum: HashSum,
     chunker_config: chunker::Config,
     chunk_hash_length: usize,
+    metadata: BTreeMap<String, Vec<u8>>,
 }
 
 impl<R> Archive<R> {
@@ -190,6 +191,7 @@ impl<R> Archive<R> {
             chunk_data_offset,
             chunk_hash_length,
             chunker_config: chunker_config_from_params(chunker_params)?,
+            metadata: dictionary.metadata,
         })
     }
     /// Total number of chunks in archive (including duplicates).
@@ -246,6 +248,16 @@ impl<R> Archive<R> {
     /// Get the version of crate used when building the archive.
     pub fn built_with_version(&self) -> &str {
         &self.created_by_app_version
+    }
+    /// Get the custom key-value pair metadata stored in the archive header.
+    pub fn metadata_iter(&self) -> impl Iterator<Item = (&str, &[u8])> {
+        self.metadata
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_slice()))
+    }
+    /// Get a specific metadata value stored in the archive header, or None if it is not present.
+    pub fn metadata_value(&self, key: &str) -> Option<&[u8]> {
+        self.metadata.get(key).map(|v| v.as_slice())
     }
     /// Iterate chunks as ordered in source.
     pub fn iter_source_chunks(&self) -> impl Iterator<Item = (u64, &ChunkDescriptor)> {

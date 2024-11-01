@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::default::Default;
 use std::error;
 use std::fmt;
@@ -37,6 +37,9 @@ pub struct CreateArchiveOptions {
 
     /// The type of compression to use when compressing a chunk
     pub compression: Option<Compression>,
+
+    /// Custom string/bytes key-value pair metadata to be stored in the archive header
+    pub metadata: BTreeMap<String, Vec<u8>>,
 }
 
 impl Default for CreateArchiveOptions {
@@ -55,6 +58,7 @@ impl Default for CreateArchiveOptions {
                 algorithm: CompressionAlgorithm::Brotli,
                 level: 6,
             }),
+            metadata: BTreeMap::new(),
         }
     }
 }
@@ -247,6 +251,7 @@ pub async fn create_archive<R: AsyncRead + Unpin + Send, W: AsyncWrite + Unpin>(
         source_total_size: source_length as u64,
         chunker_params: Some(chunker_params),
         chunk_compression: Some(options.compression.into()),
+        metadata: options.metadata.clone(),
     };
 
     let header_buf = crate::header::build(&file_header, None).expect("Failed to create header");
