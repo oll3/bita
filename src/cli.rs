@@ -506,7 +506,7 @@ fn add_chunker_args(cmd: Command) -> Command {
             .long("compression-level")
             .value_name("LEVEL")
             .default_value("6")
-            .value_parser(value_parser!(u32).range(1..22))
+            .value_parser(value_parser!(u32))
             .help("Set the chunk data compression level"),
     )
     .arg(
@@ -695,6 +695,77 @@ mod tests {
                 metadata_strings: Vec::new(),
             })
         );
+    }
+
+    #[cfg(feature = "zstd-compression")]
+    #[test]
+    fn compress_command_max_zstd_level() {
+        let (opts, log) = parse_opts([
+            "bita",
+            "compress",
+            "--compression",
+            "zstd",
+            "--compression-level",
+            "22",
+            "-i",
+            "./input.img",
+            "./output.cba",
+        ])
+        .unwrap_or_else(|e| panic!("{:#?}", e));
+        assert_eq!(log, LogOpts::new(LevelFilter::Info));
+        assert_eq!(
+            dbg!(opts),
+            CommandOpts::Compress(compress_cmd::Options {
+                force_create: false,
+                input: Some("./input.img".into()),
+                output: "./output.cba".into(),
+                temp_file: "./output..tmp".into(),
+                hash_length: 64,
+                chunker_config: chunker::Config::RollSum(chunker::FilterConfig {
+                    filter_bits: chunker::FilterBits(15),
+                    min_chunk_size: 16384,
+                    max_chunk_size: 16777216,
+                    window_size: 64
+                }),
+                compression: Some(
+                    Compression::try_new(bitar::CompressionAlgorithm::Zstd, 22).unwrap()
+                ),
+                num_chunk_buffers: get_num_chunk_buffers(),
+                metadata_files: Vec::new(),
+                metadata_strings: Vec::new(),
+            })
+        );
+    }
+
+    #[cfg(feature = "zstd-compression")]
+    #[test]
+    fn compress_command_invalid_zstd_level() {
+        parse_opts([
+            "bita",
+            "compress",
+            "--compression",
+            "zstd",
+            "--compression-level",
+            "23",
+            "-i",
+            "./input.img",
+            "./output.cba",
+        ])
+        .unwrap_err();
+    }
+
+    #[test]
+    fn compress_command_invalid_level() {
+        parse_opts([
+            "bita",
+            "compress",
+            "--compression-level",
+            "0",
+            "-i",
+            "./input.img",
+            "./output.cba",
+        ])
+        .unwrap_err();
     }
 
     #[test]
