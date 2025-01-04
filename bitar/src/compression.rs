@@ -69,7 +69,9 @@ impl CompressionAlgorithm {
             #[cfg(feature = "lzma-compression")]
             CompressionAlgorithm::Lzma => 9,
             #[cfg(feature = "zstd-compression")]
-            CompressionAlgorithm::Zstd => 22,
+            CompressionAlgorithm::Zstd => {
+                u32::try_from(*zstd::compression_level_range().end()).unwrap()
+            }
             CompressionAlgorithm::Brotli => 11,
         }
     }
