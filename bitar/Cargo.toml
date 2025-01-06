@@ -1,6 +1,6 @@
 [package]
 name = "bitar"
-version = "0.12.0"
+version = "0.13.0"
 authors = ["Olle Sandberg <olle@b3rg.se>"]
 license = "MIT"
 edition = '2021'
