@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 mod archive;
 mod chunk;
 mod chunk_index;
