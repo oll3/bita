@@ -138,7 +138,7 @@ where
     }
 }
 
-impl<'a, R> Stream for IoChunkReader<'a, R>
+impl<R> Stream for IoChunkReader<'_, R>
 where
     R: AsyncRead + AsyncSeek + Unpin + Send,
 {

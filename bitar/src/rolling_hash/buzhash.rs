@@ -134,10 +134,10 @@ mod tests {
     fn equal_sums_for_equal_range() {
         let window_size = 8;
         let mut h = BuzHash::new(window_size);
-        let data1 = vec![
+        let data1 = [
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
         ];
-        let data2 = vec![
+        let data2 = [
             1, 99, 99, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
         ];
         let sums1: Vec<u32> = data1

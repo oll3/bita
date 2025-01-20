@@ -188,7 +188,7 @@ mod tests {
             };
             let expected_offsets = {
                 chunker_config
-                    .new_chunker(&mut Box::new(&source_data[..]))
+                    .new_chunker(Box::new(&source_data[..]))
                     .map(|result| {
                         let (offset, _chunk) = result.unwrap();
                         offset
@@ -231,7 +231,7 @@ mod tests {
             static SRC: [u8; 0] = [];
             assert_eq!(
                 chunker_config
-                    .new_chunker(&mut Box::new(&SRC[..]))
+                    .new_chunker(Box::new(&SRC[..]))
                     .map(|result| {
                         let (offset, chunk) = result.unwrap();
                         assert_eq!(chunk.len(), 0);
@@ -264,7 +264,7 @@ mod tests {
             static SRC: [u8; 5] = [0x1f, 0x55, 0x39, 0x5e, 0xfa];
             assert_eq!(
                 chunker_config
-                    .new_chunker(&mut Box::new(&SRC[..]))
+                    .new_chunker(Box::new(&SRC[..]))
                     .map(|result| {
                         let (offset, chunk) = result.unwrap();
                         assert_eq!(chunk, Chunk::from(vec![0x1f, 0x55, 0x39, 0x5e, 0xfa]));
@@ -297,7 +297,7 @@ mod tests {
             static SRC: [u8; 5] = [0x1f, 0x55, 0x39, 0x5e, 0xfa];
             assert_eq!(
                 chunker_config
-                    .new_chunker(&mut Box::new(&SRC[..]))
+                    .new_chunker(Box::new(&SRC[..]))
                     .map(|result| {
                         let (offset, chunk) = result.unwrap();
                         assert_eq!(chunk, Chunk::from(vec![0x1f, 0x55, 0x39, 0x5e, 0xfa]));

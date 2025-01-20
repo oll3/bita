@@ -41,13 +41,13 @@ struct MoveChunk<'a> {
     source: u64,
 }
 
-impl<'a> Ord for MoveChunk<'a> {
+impl Ord for MoveChunk<'_> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.source.cmp(&other.source)
     }
 }
 
-impl<'a> PartialOrd for MoveChunk<'a> {
+impl PartialOrd for MoveChunk<'_> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
@@ -106,7 +106,7 @@ struct TruncatedHashSum<'a> {
     truncate_len: usize,
 }
 
-impl<'a> HashSumKey for TruncatedHashSum<'a> {
+impl HashSumKey for TruncatedHashSum<'_> {
     fn sum(&self) -> &[u8] {
         let hash = self.hash.slice();
         if hash.len() > self.truncate_len {
@@ -117,15 +117,15 @@ impl<'a> HashSumKey for TruncatedHashSum<'a> {
     }
 }
 
-impl<'a> Eq for (dyn HashSumKey + 'a) {}
+impl Eq for (dyn HashSumKey + '_) {}
 
-impl<'a> PartialEq for (dyn HashSumKey + 'a) {
+impl PartialEq for (dyn HashSumKey + '_) {
     fn eq(&self, other: &dyn HashSumKey) -> bool {
         self.sum() == other.sum()
     }
 }
 
-impl<'a> std::hash::Hash for (dyn HashSumKey + 'a) {
+impl std::hash::Hash for (dyn HashSumKey + '_) {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.sum().hash(state)
     }

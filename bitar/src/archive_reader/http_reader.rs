@@ -78,7 +78,7 @@ struct ChunkReader<'a> {
     request: Option<HttpRangeRequest>,
 }
 
-impl<'a> ChunkReader<'a>
+impl ChunkReader<'_>
 where
     Self: Unpin,
 {
@@ -138,7 +138,7 @@ where
     }
 }
 
-impl<'a> Stream for ChunkReader<'a> {
+impl Stream for ChunkReader<'_> {
     type Item = Result<Bytes, HttpReaderError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
@@ -266,13 +266,13 @@ mod tests {
 
     #[test]
     fn one_adjacent_reads() {
-        let chunks = vec![ChunkOffset::new(0, 1), ChunkOffset::new(10, 1)];
+        let chunks = [ChunkOffset::new(0, 1), ChunkOffset::new(10, 1)];
         assert_eq!(ChunkReader::adjacent_reads(&chunks[..]), 1);
     }
 
     #[test]
     fn two_adjacent_reads() {
-        let chunks = vec![
+        let chunks = [
             ChunkOffset::new(0, 1),
             ChunkOffset::new(1, 3),
             ChunkOffset::new(10, 3),
@@ -282,7 +282,7 @@ mod tests {
 
     #[test]
     fn multiple_adjacent_reads() {
-        let chunks = vec![
+        let chunks = [
             ChunkOffset::new(0, 1),
             ChunkOffset::new(1, 3),
             ChunkOffset::new(4, 3),
