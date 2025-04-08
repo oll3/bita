@@ -27,7 +27,7 @@ chrono = "0.4.19"
 futures-util = { version = "0.3.19", default-features = false, features = [
   "std",
 ] }
-tokio = { version = "1.24.1", features = [
+tokio = { version = "1.43.1", features = [
   "fs",
   "io-std",
   "macros",
