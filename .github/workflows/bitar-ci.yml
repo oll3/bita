@@ -3,7 +3,7 @@ on: [push, pull_request]
 name: bitar-CI
 
 env:
-  MSRV: 1.71.1
+  MSRV: 1.81.0
 
 jobs:
   # Run bitar tests.
@@ -45,7 +45,7 @@ jobs:
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.77.2
+          toolchain: 1.86.0
           components: rustfmt
 
       - name: Check formatting
@@ -62,7 +62,7 @@ jobs:
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.77.2
+          toolchain: 1.86.0
           components: clippy
 
       - name: Check lints

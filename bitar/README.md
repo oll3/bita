@@ -11,7 +11,7 @@ A library to use for low bandwidth file synchronization over HTTP.
 
 ### Minimum Supported Rust Version (MSRV)
 
-This crate is guaranteed to compile on stable rust 1.70 and up. It might compile with older versions depending on features set but it may change in any new patch release.
+This crate is guaranteed to compile on stable rust 1.81.0 and up. It might compile with older versions depending on features set but it may change in any new patch release.
 
 ### Usage
 

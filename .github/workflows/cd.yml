@@ -63,7 +63,7 @@ jobs:
         run: |
           strip ${{ env.filename }}
       - name: Upload binary
-        uses: actions/upload-artifact@v3.0.0
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ env.filename }}
           path: ${{ env.filename }}

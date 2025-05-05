@@ -8,13 +8,13 @@ description = "bita archive utilities"
 repository = "https://github.com/oll3/bita"
 readme = "README.md"
 keywords = [
-    "sofware-update",
+    "software-update",
     "file-synchronization",
     "delta-update",
     "differential",
 ]
 categories = ["compression", "filesystem"]
-rust-version = "1.71.1"
+rust-version = "1.81.0"
 
 [build-dependencies]
 prost-build = "0.13"
@@ -23,8 +23,8 @@ prost-build = "0.13"
 blake2 = "0.10"
 prost = "0.13"
 log = "0.4"
-brotli-decompressor = "4.0"
-brotli = { version = "7.0", default-features = false, features = [
+brotli-decompressor = "5.0.0"
+brotli = { version = "8.0.1", default-features = false, features = [
     "std",
     "disable-timer",
 ], optional = true }
@@ -41,7 +41,7 @@ num_cpus = { version = "1.13", optional = true }
 hyper = { version = "1.1.0", features = ["server", "http1"] }
 hyper-util = { version = "0.1.2", features = ["tokio", "server"] }
 http-body-util = "0.1.0"
-rand = { version = "0.8", features = ["std"] }
+rand = { version = "0.9", features = ["std"] }
 tempfile = "3.2"
 tokio = { version = "1", features = ["fs", "macros", "rt-multi-thread"] }
 
