@@ -6,8 +6,9 @@
 
 _bita_ is an HTTP-based file synchronization tool optimized to minimize bandwidth by reusing existing data without requiring pre-built patches or specialized servers.
 
-🔗 Host archives on any regular HTTP/HTTPS server
-🖴 Clone and reuse existing data from any file or block device, and write the clone to a file or block device
+🔗 Host archives on any regular HTTP/HTTPS server \
+♻️ Reuse existing data from any local file or block device \
+💾 Write clone to a file or block device \
 💫 Integrate into your own Rust project using the [bitar](bitar/README.md) library
 
 ## Software updates
