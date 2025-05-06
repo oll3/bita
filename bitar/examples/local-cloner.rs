@@ -14,7 +14,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create output to contain the clone of the archive's source
     let mut output = CloneOutput::new(
         OpenOptions::new()
-            .create(true)
+            .create_new(true)
             .write(true)
             .open(output_name)
             .await

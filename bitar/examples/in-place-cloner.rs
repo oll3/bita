@@ -12,7 +12,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create a file for clone output
     let mut output_file = OpenOptions::new()
-        .create(true)
+        .create_new(true)
         .write(true)
         .read(true)
         .open(output_name)
