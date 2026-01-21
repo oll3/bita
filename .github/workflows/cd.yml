@@ -11,7 +11,7 @@ jobs:
             target: x86_64-unknown-linux-musl
             filename: bita-x86_64-unknown-linux-musl
             extension: ""
-            cargo-flags: "--no-default-features --features rustls-tls" # Since this is the "maximum-compatible" release, link statically against rustls
+            cargo-flags: "--no-default-features" # Since this is the "maximum-compatible" release, link statically against rustls
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             filename: bita-x86_64-unknown-linux-gnu

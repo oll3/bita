@@ -47,13 +47,13 @@ tokio = { version = "1", features = ["fs", "macros", "rt-multi-thread"] }
 
 
 [dependencies.reqwest]
-version = "0.12.1"
+version = "0.13.1"
 default-features = false
 features = ["stream"]
 
 [features]
 default-tls = ["reqwest/default-tls"]
-rustls-tls = ["reqwest/rustls-tls"]
+native-tls = ["reqwest/native-tls"]
 lzma-compression = ["rust-lzma"]
 zstd-compression = ["zstd"]
 compress = ["brotli", "tempfile", "num_cpus", "futures-util/std"]
