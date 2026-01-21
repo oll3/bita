@@ -4,6 +4,8 @@ All notable changes to the bitar library will be documented in this file.
 
 ## [Unreleased]
 
+## [0.14.0]
+
 - Remove use of unsafe code
 - Make rustls the default TLS backend
 - Update dependencies
