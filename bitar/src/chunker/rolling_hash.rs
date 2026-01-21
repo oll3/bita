@@ -16,11 +16,7 @@ pub struct RollingHashChunker<H> {
 impl<H> RollingHashChunker<H> {
     pub fn new(hasher: H, config: &FilterConfig) -> Self {
         // Allow for chunk size less than the rolling hash window.
-        let hash_input_limit = if config.min_chunk_size >= config.window_size {
-            config.min_chunk_size - config.window_size
-        } else {
-            0
-        };
+        let hash_input_limit = config.min_chunk_size.saturating_sub(config.window_size);
         Self {
             filter_mask: config.filter_bits.mask(),
             min_chunk_size: config.min_chunk_size,

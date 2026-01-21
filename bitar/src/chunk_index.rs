@@ -117,15 +117,15 @@ impl HashSumKey for TruncatedHashSum<'_> {
     }
 }
 
-impl Eq for (dyn HashSumKey + '_) {}
+impl Eq for dyn HashSumKey + '_ {}
 
-impl PartialEq for (dyn HashSumKey + '_) {
+impl PartialEq for dyn HashSumKey + '_ {
     fn eq(&self, other: &dyn HashSumKey) -> bool {
         self.sum() == other.sum()
     }
 }
 
-impl std::hash::Hash for (dyn HashSumKey + '_) {
+impl std::hash::Hash for dyn HashSumKey + '_ {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.sum().hash(state)
     }
@@ -295,7 +295,7 @@ impl ChunkIndex {
     /// The transformation is done by reordering the chunks of a file in place trying to match the new
     /// order. Only the chunks present in both the current index and the new index will be reordered,
     /// while chunks that are not present in the current index still has to be fetched from elsewhere.
-    pub fn reorder_ops(&self, new_order: &ChunkIndex) -> Vec<ReorderOp> {
+    pub fn reorder_ops(&self, new_order: &ChunkIndex) -> Vec<ReorderOp<'_>> {
         // Generate an intersection between the two chunk sets to find which chunks that should be moved.
         // Also generate a layout of the source where we can go from offset+size to which chunks are
         // located within that range.

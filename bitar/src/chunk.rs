@@ -204,15 +204,15 @@ impl ArchiveChunk {
     ///
     /// Results in a verified chunk or an error if the chunk hash sum doesn't
     /// match with the expected one.
-    pub fn verify(self) -> Result<VerifiedChunk, HashSumMismatchError> {
+    pub fn verify(self) -> Result<VerifiedChunk, Box<HashSumMismatchError>> {
         let mut hash_sum = HashSum::b2_digest(self.chunk.data());
         hash_sum.truncate(self.expected_hash.len());
         if hash_sum != self.expected_hash {
-            Err(HashSumMismatchError {
+            Err(Box::new(HashSumMismatchError {
                 expected: self.expected_hash,
                 got: hash_sum,
                 invalid_chunk: self.chunk,
-            })
+            }))
         } else {
             Ok(VerifiedChunk {
                 chunk: self.chunk,

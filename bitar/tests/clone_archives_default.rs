@@ -66,13 +66,15 @@ async fn clone_local_v0_7_1_corrupt_chunk() {
     .unwrap();
     let mut chunk_stream = archive.chunk_stream(&archive.build_source_index());
     while let Some(result) = chunk_stream.next().await {
-        if let Err(bitar::HashSumMismatchError { .. }) = result
+        let Err(err) = result
             .expect("chunk")
             .decompress()
             .expect("decompress")
             .verify()
-        {
-            // Got the expected hashsum mismatch error!
+        else {
+            continue;
+        };
+        if matches!(err.as_ref(), bitar::HashSumMismatchError { .. }) {
             return;
         }
     }
