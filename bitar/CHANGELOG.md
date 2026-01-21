@@ -7,6 +7,8 @@ All notable changes to the bitar library will be documented in this file.
 - Remove use of unsafe code
 - Make rustls the default TLS backend
 - Update dependencies
+- Set MSRV to 1.83.0
+
 
 ## [0.13.0]
 

@@ -6,7 +6,7 @@ All notable changes to the bita CLI will be documented in this file.
 
 - Update dependencies
 - Make rustls the default TLS backend
-
+- Set MSRV to 1.83.0
 
 ## [0.13.0]
 

@@ -8,12 +8,13 @@ description = "Differential file synchronization over http(s)."
 repository = "https://github.com/oll3/bita"
 readme = "README.md"
 keywords = [
-  "sofware-update",
-  "file-synchronization",
-  "delta-update",
-  "differential",
+    "sofware-update",
+    "file-synchronization",
+    "delta-update",
+    "differential",
 ]
 categories = ["command-line-utilities", "compression", "filesystem"]
+rust-version = "1.83.0"
 
 [workspace]
 members = ["bitar"]
@@ -25,14 +26,14 @@ log = "0.4.14"
 fern = "0.7.0"
 chrono = "0.4.19"
 futures-util = { version = "0.3.19", default-features = false, features = [
-  "std",
+    "std",
 ] }
 tokio = { version = "1.24.1", features = [
-  "fs",
-  "io-std",
-  "macros",
-  "time",
-  "rt-multi-thread",
+    "fs",
+    "io-std",
+    "macros",
+    "time",
+    "rt-multi-thread",
 ] }
 bitar = { version = "0.13.0", path = "bitar", features = ["compress"] }
 url = "2.5.2"
