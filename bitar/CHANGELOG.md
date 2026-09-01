@@ -4,6 +4,10 @@ All notable changes to the bitar library will be documented in this file.
 
 ## [Unreleased]
 
+- Update dependencies
+- Set MSRV to 1.88.0
+
+
 ## [0.14.0]
 
 - Remove use of unsafe code

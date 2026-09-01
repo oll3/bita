@@ -164,10 +164,8 @@ where
 pub async fn write_random_bytes(input: &mut File, byte_count: usize) {
     let mut rng = rand::rng();
 
-    let mut data = Vec::with_capacity(byte_count);
-    for _ in 0..byte_count {
-        data.push(rng.random());
-    }
+    let mut data = vec![0; byte_count];
+    rng.fill_bytes(&mut data);
 
     input.write_all(&data).await.unwrap();
     input.flush().await.unwrap();

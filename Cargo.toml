@@ -21,7 +21,7 @@ members = ["bitar"]
 
 [dependencies]
 clap = { version = "4.5.20" }
-blake2 = "0.10.0"
+blake2 = "0.11.0"
 log = "0.4.14"
 fern = "0.7.0"
 chrono = "0.4.19"

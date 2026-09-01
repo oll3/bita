@@ -3,7 +3,7 @@ on: [push, pull_request]
 name: bita-CI
 
 env:
-  MSRV: 1.83.0
+  MSRV: 1.88.0
 
 jobs:
   # Run bita tests.
@@ -67,7 +67,7 @@ jobs:
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.86.0
+          toolchain: 1.98.0
           components: rustfmt
 
       - name: Check formatting
@@ -84,7 +84,7 @@ jobs:
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.86.0
+          toolchain: 1.98.0
           components: clippy
 
       - name: Check lints
