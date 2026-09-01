@@ -4,6 +4,8 @@ All notable changes to the bita CLI will be documented in this file.
 
 ## [Unreleased]
 
+## [0.15.0]
+
 - Update dependencies
 - Set MSRV to 1.88.0
 
