@@ -14,7 +14,7 @@ keywords = [
     "differential",
 ]
 categories = ["command-line-utilities", "compression", "filesystem"]
-rust-version = "1.83.0"
+rust-version = "1.88.0"
 
 [workspace]
 members = ["bitar"]

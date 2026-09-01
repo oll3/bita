@@ -184,22 +184,16 @@ where
         let compression = parse_compression(&mut cmd, matches)?;
 
         let mut metadata_files: Vec<(String, PathBuf)> = Vec::new();
-        if let Some(values) = matches.get_many::<OsString>("metadata-file") {
-            let values: Vec<_> = values.collect();
-            for pair in values.chunks_exact(2) {
-                if let [key, value] = *pair {
-                    metadata_files.push((key.to_string_lossy().to_string(), PathBuf::from(value)));
-                }
+        if let Some(mut values) = matches.get_many::<OsString>("metadata-file") {
+            while let (Some(key), Some(value)) = (values.next(), values.next()) {
+                metadata_files.push((key.to_string_lossy().into_owned(), PathBuf::from(value)));
             }
         }
 
         let mut metadata_strings: Vec<(String, String)> = Vec::new();
-        if let Some(values) = matches.get_many::<String>("metadata-value") {
-            let values: Vec<_> = values.collect();
-            for pair in values.chunks_exact(2) {
-                if let [key, value] = *pair {
-                    metadata_strings.push((key.to_owned(), value.to_owned()));
-                }
+        if let Some(mut values) = matches.get_many::<String>("metadata-value") {
+            while let (Some(key), Some(value)) = (values.next(), values.next()) {
+                metadata_strings.push((key.to_owned(), value.to_owned()));
             }
         }
 
